@@ -8,12 +8,20 @@ A minimal, server-authoritative spaced repetition web app (AnkiWeb-like) built w
 
 ## Run (Docker)
 
+1) Configure env:
 ```bash
 cp .env.example .env
+# edit .env and set Azure AD B2C vars
+```
+
+2) Start:
+```bash
 docker compose up --build
 ```
 
 Open: http://localhost:8000
+
+Login flow: click **Login (Azure AD B2C)** → Azure redirects back to `/auth/callback`.
 
 ## Run (local)
 
