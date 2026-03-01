@@ -32,6 +32,16 @@ uvicorn app.main:app --reload
 - Cards
 - Review flow: `/review` → HTMX loads `/review/next` → rate via `/review/rate`
 
-## Notes
-- For MVP we auto-create tables on startup (`Base.metadata.create_all`).
-  In production, switch to Alembic migrations.
+## Migrations (Alembic)
+
+This project uses Alembic for schema migrations.
+
+### Docker
+Migrations run automatically on container start (see `entrypoint.sh`).
+
+### Local
+```bash
+# ensure DATABASE_URL points to a running postgres
+alembic upgrade head
+uvicorn app.main:app --reload
+```
