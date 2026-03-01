@@ -23,6 +23,12 @@ Open: http://localhost:8000
 
 Login flow: click **Login (Azure AD B2C)** → Azure redirects back to `/auth/callback`.
 
+### Production
+Set:
+- `AZURE_B2C_REDIRECT_URI=https://edu.selviz.in/auth/callback`
+
+And add that exact Redirect URI in the Azure AD B2C app registration.
+
 ## Run (local)
 
 ```bash
