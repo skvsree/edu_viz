@@ -1,0 +1,20 @@
+<div class="card">
+  <div><strong>Front</strong></div>
+  <div style="white-space: pre-wrap; margin-bottom: 10px;">{{ card.front }}</div>
+
+  <details>
+    <summary>Show answer</summary>
+    <div style="white-space: pre-wrap; margin-top: 10px;">{{ card.back }}</div>
+  </details>
+
+  <hr />
+  <div>
+    <form hx-post="/review/rate" hx-target="#review-area" hx-swap="innerHTML">
+      <input type="hidden" name="card_id" value="{{ card.id }}" />
+      <button name="rating" value="1">Again</button>
+      <button name="rating" value="2">Hard</button>
+      <button name="rating" value="3">Good</button>
+      <button name="rating" value="4">Easy</button>
+    </form>
+  </div>
+</div>

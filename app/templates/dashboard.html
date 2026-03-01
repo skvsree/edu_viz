@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Dashboard</h2>
+<p class="muted">Logged in as {{ user.email }}</p>
+
+<h3>Create Deck</h3>
+<form method="post" action="/decks">
+  <label>Name</label>
+  <input name="name" required />
+  <label>Description</label>
+  <input name="description" />
+  <button type="submit">Create</button>
+</form>
+
+<h3>Your Decks</h3>
+{% if decks %}
+  <ul>
+  {% for d in decks %}
+    <li><a href="/decks/{{ d.id }}">{{ d.name }}</a> <span class="muted">({{ d.created_at }})</span></li>
+  {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">No decks yet.</p>
+{% endif %}
+{% endblock %}

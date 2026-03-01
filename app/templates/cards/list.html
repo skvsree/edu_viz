@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Deck: {{ deck.name }}</h2>
+<p class="muted">{{ deck.description or '' }}</p>
+
+<h3>Add Card</h3>
+<form method="post" action="/decks/{{ deck.id }}/cards">
+  <label>Front</label>
+  <textarea name="front" rows="3" required></textarea>
+  <label>Back</label>
+  <textarea name="back" rows="3" required></textarea>
+  <button type="submit">Add</button>
+</form>
+
+<h3>Cards</h3>
+{% if cards %}
+  <ul>
+  {% for c in cards %}
+    <li><div class="card"><div><strong>Front:</strong> {{ c.front }}</div><div><strong>Back:</strong> {{ c.back }}</div></div></li>
+  {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">No cards yet.</p>
+{% endif %}
+{% endblock %}

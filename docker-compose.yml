@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: srs
+      POSTGRES_USER: srs
+      POSTGRES_PASSWORD: srs
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

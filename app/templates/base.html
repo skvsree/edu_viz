@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or 'SRS Web' }}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; }
+      nav a { margin-right: 12px; }
+      .card { border: 1px solid #ddd; padding: 16px; border-radius: 10px; }
+      textarea, input { width: 100%; padding: 10px; margin: 6px 0; }
+      button { padding: 10px 14px; margin-right: 8px; }
+      .muted { color: #666; }
+    </style>
+  </head>
+  <body>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/review">Review</a>
+      <form action="/logout" method="post" style="display:inline">
+        <button type="submit">Logout</button>
+      </form>
+    </nav>
+    <hr />
+    {% block content %}{% endblock %}
+  </body>
+</html>

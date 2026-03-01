@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Review</h2>
+<div hx-get="/review/next" hx-trigger="load" hx-target="#review-area" hx-swap="innerHTML"></div>
+<div id="review-area"></div>
+{% endblock %}
