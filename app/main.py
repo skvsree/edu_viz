@@ -1,21 +1,30 @@
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
+from __future__ import annotations
+
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.deps import current_user
+from app.core.config import settings
 from app.core.db import get_db
 from app.models import Card, Deck, User
 from app.models.card_state import CardState
+from app.services.azure_b2c import build_oauth, load_b2c_config
 from app.services.review_service import ReviewService
-from app.services.security import hash_password, verify_password
 from app.services.session import sign_session
 
 app = FastAPI(title="SRS Web")
 
+# Needed by Authlib to store OIDC state/nonce during the redirect flow.
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+
 templates = Jinja2Templates(directory="app/templates")
+
+oauth = build_oauth()
 
 # optional static folder
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -26,52 +35,57 @@ def home(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
 
 
-@app.get("/register", response_class=HTMLResponse)
-def register_form(request: Request):
-    return templates.TemplateResponse("auth/register.html", {"request": request})
+@app.get("/login")
+async def login(request: Request):
+    # Redirect to Azure AD B2C authorization endpoint
+    # Ensure config exists early (gives a clear error if env vars missing)
+    _ = load_b2c_config()
+    return await oauth.azureb2c.authorize_redirect(request, settings.azure_b2c_redirect_uri)
 
 
-@app.post("/register")
-def register(
-    email: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    existing = db.execute(select(User).where(User.email == email)).scalars().first()
-    if existing:
-        raise HTTPException(status_code=400, detail="email already registered")
+@app.get("/auth/callback")
+async def auth_callback(request: Request, db: Session = Depends(get_db)):
+    token = await oauth.azureb2c.authorize_access_token(request)
 
-    user = User(email=email, password_hash=hash_password(password))
-    db.add(user)
-    db.commit()
+    # Parse & validate ID token using provider JWKS.
+    # Contains claims including sub/email/name.
+    userinfo = token.get("userinfo")
+    if not userinfo:
+        userinfo = await oauth.azureb2c.parse_id_token(request, token)
 
-    resp = RedirectResponse(url="/dashboard", status_code=303)
-    resp.set_cookie("session", sign_session(user.id), httponly=True, samesite="lax")
-    return resp
+    if not isinstance(userinfo, dict) or not userinfo.get("sub"):
+        raise HTTPException(status_code=400, detail="invalid id token")
 
+    sub = str(userinfo["sub"])
+    email = userinfo.get("email")
+    if not email and isinstance(userinfo.get("emails"), list) and userinfo["emails"]:
+        email = userinfo["emails"][0]
 
-@app.get("/login", response_class=HTMLResponse)
-def login_form(request: Request):
-    return templates.TemplateResponse("auth/login.html", {"request": request})
-
-
-@app.post("/login")
-def login(
-    email: str = Form(...),
-    password: str = Form(...),
-    db: Session = Depends(get_db),
-):
-    user = db.execute(select(User).where(User.email == email)).scalars().first()
-    if not user or not verify_password(password, user.password_hash):
-        raise HTTPException(status_code=400, detail="invalid credentials")
+    user = db.execute(select(User).where(User.b2c_sub == sub)).scalars().first()
+    if user is None:
+        user = User(b2c_sub=sub, email=email)
+        db.add(user)
+        db.commit()
+    else:
+        # keep email updated if provided
+        if email and user.email != email:
+            user.email = email
+            db.commit()
 
     resp = RedirectResponse(url="/dashboard", status_code=303)
-    resp.set_cookie("session", sign_session(user.id), httponly=True, samesite="lax")
+    resp.set_cookie(
+        "session",
+        sign_session(user_id=user.id, claims=userinfo),
+        httponly=True,
+        samesite="lax",
+    )
     return resp
 
 
 @app.post("/logout")
 def logout():
+    # Local logout (clears our session cookie).
+    # Optional: redirect to Azure B2C logout endpoint later.
     resp = RedirectResponse(url="/", status_code=303)
     resp.delete_cookie("session")
     return resp
@@ -147,10 +161,7 @@ def create_card(
 
 
 @app.get("/review", response_class=HTMLResponse)
-def review_page(
-    request: Request,
-    user: User = Depends(current_user),
-):
+def review_page(request: Request, user: User = Depends(current_user)):
     return templates.TemplateResponse("review/page.html", {"request": request, "user": user})
 
 
@@ -191,5 +202,4 @@ def review_rate(
     svc.rate(db, card_id=card.id, rating=rating)
     db.commit()
 
-    # Return the next card fragment for HTMX
     return review_next(request=request, user=user, db=db)

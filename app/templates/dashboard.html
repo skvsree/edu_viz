@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>Dashboard</h2>
-<p class="muted">Logged in as {{ user.email }}</p>
+<p class="muted">Logged in as {{ user.email or user.b2c_sub }}</p>
 
 <h3>Create Deck</h3>
 <form method="post" action="/decks">

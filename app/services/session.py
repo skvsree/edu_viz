@@ -6,13 +6,20 @@ from app.core.config import settings
 _serializer = URLSafeSerializer(settings.secret_key, salt="session")
 
 
-def sign_session(user_id: uuid.UUID) -> str:
-    return _serializer.dumps({"user_id": str(user_id)})
+def sign_session(*, user_id: uuid.UUID | None = None, claims: dict | None = None) -> str:
+    payload: dict = {}
+    if user_id is not None:
+        payload["user_id"] = str(user_id)
+    if claims is not None:
+        payload["claims"] = claims
+    return _serializer.dumps(payload)
 
 
-def unsign_session(token: str) -> uuid.UUID | None:
+def unsign_session(token: str) -> dict | None:
     try:
         data = _serializer.loads(token)
-        return uuid.UUID(data.get("user_id"))
+        if not isinstance(data, dict):
+            return None
+        return data
     except (BadSignature, ValueError, TypeError):
         return None

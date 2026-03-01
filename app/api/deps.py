@@ -15,8 +15,17 @@ def current_user(
     if not session:
         raise HTTPException(status_code=401, detail="not authenticated")
 
-    user_id: uuid.UUID | None = unsign_session(session)
-    if user_id is None:
+    data = unsign_session(session)
+    if not data:
+        raise HTTPException(status_code=401, detail="invalid session")
+
+    user_id_raw = data.get("user_id")
+    if not user_id_raw:
+        raise HTTPException(status_code=401, detail="invalid session")
+
+    try:
+        user_id = uuid.UUID(user_id_raw)
+    except ValueError:
         raise HTTPException(status_code=401, detail="invalid session")
 
     user = db.get(User, user_id)
