@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Card, CardState, Review
-from app.services.fsrs_service import FsrsScheduler
+from app.fsrs.scheduler import FsrsCard, FsrsScheduler
 
 
 class ReviewService:
@@ -60,11 +60,14 @@ class ReviewService:
         res = self.scheduler.rate(
             now=now,
             rating=rating,
-            stability=state.stability,
-            difficulty=state.difficulty,
-            reps=state.reps,
-            lapses=state.lapses,
-            state=state.state,
+            card=FsrsCard(
+                stability=state.stability,
+                difficulty=state.difficulty,
+                reps=state.reps,
+                lapses=state.lapses,
+                state=state.state,
+                last_review=state.last_review,
+            ),
         )
 
         state.stability = res.stability
