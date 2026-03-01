@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
-from app.core.db import Base, engine, get_db
+from app.core.db import get_db
 from app.models import Card, Deck, User
 from app.models.card_state import CardState
 from app.services.review_service import ReviewService
@@ -19,13 +19,6 @@ templates = Jinja2Templates(directory="app/templates")
 
 # optional static folder
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
-
-
-@app.on_event("startup")
-def _startup():
-    # For MVP: create tables automatically.
-    # Replace with Alembic migrations in production.
-    Base.metadata.create_all(bind=engine)
 
 
 @app.get("/", response_class=HTMLResponse)
