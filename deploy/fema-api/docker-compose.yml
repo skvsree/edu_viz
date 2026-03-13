@@ -1,0 +1,10 @@
+version: '3.8'
+services:
+  fema-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+    volumes:
+      - .:/app
