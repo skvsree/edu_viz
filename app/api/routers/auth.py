@@ -13,17 +13,18 @@ from app.services.session import sign_session
 
 router = APIRouter(tags=["auth"])
 
-oauth = build_oauth()
-
 
 @router.get("/login")
 async def login(request: Request):
     _ = load_b2c_config()
+    oauth = build_oauth()
     return await oauth.azureb2c.authorize_redirect(request, settings.azure_b2c_redirect_uri)
 
 
 @router.get("/auth/callback")
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
+    _ = load_b2c_config()
+    oauth = build_oauth()
     token = await oauth.azureb2c.authorize_access_token(request)
 
     userinfo = token.get("userinfo")
