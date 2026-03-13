@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pathlib import Path
+
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,7 +16,8 @@ from app.services.review_service import ReviewService
 
 router = APIRouter(tags=["pages"])
 
-templates = Jinja2Templates(directory="app/templates")
+TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @router.get("/", response_class=HTMLResponse)
