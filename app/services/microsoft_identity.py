@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from authlib.integrations.starlette_client import OAuth
+
+from app.core.config import settings
+
+
+@dataclass(frozen=True)
+class MicrosoftIdentityConfig:
+    provider_name: str
+    client_id: str
+    client_secret: str | None
+    redirect_uri: str
+    scope: str
+    authority: str | None
+    metadata_url: str
+    subject_claim: str = "sub"
+
+
+@dataclass(frozen=True)
+class MicrosoftIdentityConfigStatus:
+    configured: bool
+    provider_name: str
+    missing: tuple[str, ...]
+    metadata_source: str | None
+
+    @property
+    def message(self) -> str:
+        if self.configured:
+            return f"{self.provider_name} OIDC is configured."
+        return (
+            f"{self.provider_name} OIDC is not configured. Set "
+            + ", ".join(self.missing)
+            + "."
+        )
+
+
+def _normalize_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value.strip().rstrip("/")
+
+
+def _legacy_b2c_authority() -> str | None:
+    tenant = settings.azure_b2c_tenant_domain
+    if not tenant and settings.azure_b2c_tenant_name:
+        tenant = f"{settings.azure_b2c_tenant_name}.onmicrosoft.com"
+
+    if tenant and settings.azure_b2c_policy:
+        return f"https://{tenant}/{settings.azure_b2c_policy}/v2.0"
+    return None
+
+
+def _resolve_authority() -> str | None:
+    authority = _normalize_url(settings.microsoft_entra_external_id_authority)
+    if authority:
+        return authority
+    return _normalize_url(_legacy_b2c_authority())
+
+
+def _resolve_metadata_url(authority: str | None) -> tuple[str | None, str | None]:
+    explicit = _normalize_url(settings.microsoft_entra_external_id_metadata_url)
+    if explicit:
+        return explicit, "MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL"
+    if authority:
+        return f"{authority}/.well-known/openid-configuration", "authority"
+    return None, None
+
+
+def get_identity_config_status() -> MicrosoftIdentityConfigStatus:
+    client_id = (
+        settings.microsoft_entra_external_id_client_id
+        or settings.azure_b2c_client_id
+    )
+    authority = _resolve_authority()
+    metadata_url, metadata_source = _resolve_metadata_url(authority)
+
+    missing: list[str] = []
+    if not client_id:
+        missing.append("MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_ID")
+    if not metadata_url:
+        missing.append(
+            "MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL or MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORITY"
+        )
+
+    return MicrosoftIdentityConfigStatus(
+        configured=not missing,
+        provider_name="Microsoft Entra External ID",
+        missing=tuple(missing),
+        metadata_source=metadata_source,
+    )
+
+
+def load_identity_config() -> MicrosoftIdentityConfig:
+    status = get_identity_config_status()
+    if not status.configured:
+        raise RuntimeError(status.message)
+
+    authority = _resolve_authority()
+    metadata_url, _ = _resolve_metadata_url(authority)
+    assert metadata_url is not None
+
+    return MicrosoftIdentityConfig(
+        provider_name=status.provider_name,
+        client_id=(
+            settings.microsoft_entra_external_id_client_id
+            or settings.azure_b2c_client_id
+            or ""
+        ),
+        client_secret=(
+            settings.microsoft_entra_external_id_client_secret
+            or settings.azure_b2c_client_secret
+        ),
+        redirect_uri=(
+            settings.microsoft_entra_external_id_redirect_uri
+            or settings.azure_b2c_redirect_uri
+            or "http://localhost:8000/auth/callback"
+        ),
+        scope=settings.microsoft_entra_external_id_scopes,
+        authority=authority,
+        metadata_url=metadata_url,
+    )
+
+
+def build_oauth() -> OAuth:
+    cfg = load_identity_config()
+
+    oauth = OAuth()
+    oauth.register(
+        name="microsoft",
+        client_id=cfg.client_id,
+        client_secret=cfg.client_secret,
+        server_metadata_url=cfg.metadata_url,
+        client_kwargs={"scope": cfg.scope},
+        redirect_uri=cfg.redirect_uri,
+    )
+    return oauth

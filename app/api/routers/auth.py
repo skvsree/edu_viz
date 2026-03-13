@@ -5,10 +5,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.db import get_db
 from app.models import User
-from app.services.azure_b2c import build_oauth, load_b2c_config
+from app.services.microsoft_identity import build_oauth, load_identity_config
 from app.services.session import sign_session
 
 router = APIRouter(tags=["auth"])
@@ -16,32 +15,32 @@ router = APIRouter(tags=["auth"])
 
 @router.get("/login")
 async def login(request: Request):
-    _ = load_b2c_config()
+    cfg = load_identity_config()
     oauth = build_oauth()
-    return await oauth.azureb2c.authorize_redirect(request, settings.azure_b2c_redirect_uri)
+    return await oauth.microsoft.authorize_redirect(request, cfg.redirect_uri)
 
 
 @router.get("/auth/callback")
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
-    _ = load_b2c_config()
+    cfg = load_identity_config()
     oauth = build_oauth()
-    token = await oauth.azureb2c.authorize_access_token(request)
+    token = await oauth.microsoft.authorize_access_token(request)
 
     userinfo = token.get("userinfo")
     if not userinfo:
-        userinfo = await oauth.azureb2c.parse_id_token(request, token)
+        userinfo = await oauth.microsoft.parse_id_token(request, token)
 
-    if not isinstance(userinfo, dict) or not userinfo.get("sub"):
+    if not isinstance(userinfo, dict) or not userinfo.get(cfg.subject_claim):
         raise HTTPException(status_code=400, detail="invalid id token")
 
-    sub = str(userinfo["sub"])
+    sub = str(userinfo[cfg.subject_claim])
     email = userinfo.get("email")
     if not email and isinstance(userinfo.get("emails"), list) and userinfo["emails"]:
         email = userinfo["emails"][0]
 
-    user = db.execute(select(User).where(User.b2c_sub == sub)).scalars().first()
+    user = db.execute(select(User).where(User.identity_sub == sub)).scalars().first()
     if user is None:
-        user = User(b2c_sub=sub, email=email)
+        user = User(identity_sub=sub, email=email)
         db.add(user)
         db.commit()
     else:
