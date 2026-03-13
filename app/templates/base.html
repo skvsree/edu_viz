@@ -3,21 +3,34 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ title or 'SRS Web' }}</title>
+    <title>{{ title or 'Kalvi Selvi' }}</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/dashboard">Dashboard</a>
-      <a href="/review">Review</a>
-      <a href="/login">Login</a>
-      <form action="/logout" method="post" style="display:inline">
-        <button type="submit">Logout</button>
-      </form>
-    </nav>
-    <hr />
-    {% block content %}{% endblock %}
+    <div class="page-shell">
+      <header class="topbar">
+        <a href="/" class="brand-mark">
+          <span class="brand-mark__badge">KS</span>
+          <span>
+            <strong>Kalvi Selvi</strong>
+            <small>Smart study companion</small>
+          </span>
+        </a>
+        <nav class="topbar-nav" aria-label="Primary navigation">
+          <a href="/">Home</a>
+          <a href="/dashboard">Dashboard</a>
+          <a href="/review">Review</a>
+          <a href="/login">Login</a>
+          <form action="/logout" method="post">
+            <button type="submit" class="button button-secondary">Logout</button>
+          </form>
+        </nav>
+      </header>
+
+      <main class="page-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
   </body>
 </html>

@@ -1,8 +1,67 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>SRS Web</h1>
-<p class="muted">Minimal spaced repetition web app (FSRS-style scheduling + HTMX).</p>
-<ul>
-  <li><a href="/login">Login (Azure AD B2C)</a></li>
-</ul>
+<section class="hero">
+  <div class="hero-copy">
+    <span class="eyebrow">Focused learning, beautifully organized</span>
+    <h1>Meet <span>Kalvi Selvi</span>, your modern spaced-repetition study hub.</h1>
+    <p class="hero-text">
+      Turn daily revision into a calm, high-performance routine with structured decks,
+      frictionless reviews, and a learning experience that feels like a polished app—not a plain demo page.
+    </p>
+
+    <div class="hero-actions">
+      <a href="/login" class="button">Start learning</a>
+      <a href="/dashboard" class="button button-secondary">View dashboard</a>
+    </div>
+
+    <div class="hero-stats">
+      <article>
+        <strong>FSRS-powered</strong>
+        <span>Adaptive scheduling for efficient recall</span>
+      </article>
+      <article>
+        <strong>Deck-first flow</strong>
+        <span>Create, manage, and revise with clarity</span>
+      </article>
+      <article>
+        <strong>Fast HTMX UI</strong>
+        <span>Responsive interactions without heavy complexity</span>
+      </article>
+    </div>
+  </div>
+
+  <div class="hero-panel card">
+    <div class="hero-panel__glow"></div>
+    <p class="panel-label">Today in Kalvi Selvi</p>
+    <h2>Build strong memory, one confident review at a time.</h2>
+    <ul class="feature-list">
+      <li>Track decks in one clean dashboard</li>
+      <li>Review due cards with distraction-free focus</li>
+      <li>Keep momentum with a vibrant, guided workspace</li>
+    </ul>
+    <div class="panel-strip">
+      <span>Personalized rhythm</span>
+      <span>Clear progress flow</span>
+      <span>Professional interface</span>
+    </div>
+  </div>
+</section>
+
+<section class="highlights">
+  <article class="card info-card">
+    <p class="panel-label">Why it feels better</p>
+    <h3>Designed for serious learners</h3>
+    <p class="muted">
+      Strong hierarchy, richer color, and tighter spacing make the experience feel dependable,
+      focused, and ready for daily use.
+    </p>
+  </article>
+  <article class="card info-card">
+    <p class="panel-label">Quick access</p>
+    <h3>Login and continue instantly</h3>
+    <p class="muted">
+      Access your dashboard, create decks, and jump straight into reviews with a cleaner workflow.
+    </p>
+  </article>
+</section>
 {% endblock %}
