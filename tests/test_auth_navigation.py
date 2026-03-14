@@ -91,6 +91,31 @@ def test_load_identity_config_derives_separate_authorize_url():
             microsoft_entra_external_id_client_secret="client-secret",
             microsoft_entra_external_id_redirect_uri="https://callback.example.test",
             microsoft_entra_external_id_scopes="openid profile email",
+            microsoft_entra_external_id_authority="https://contoso.ciamlogin.com/contoso.onmicrosoft.com",
+            microsoft_entra_external_id_authorize_authority="https://login.contoso.com/custom-authority",
+            microsoft_entra_external_id_metadata_url="https://contoso.ciamlogin.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration",
+            azure_b2c_client_id=None,
+            azure_b2c_client_secret=None,
+            azure_b2c_redirect_uri=None,
+            azure_b2c_tenant_domain=None,
+            azure_b2c_tenant_name=None,
+            azure_b2c_policy=None,
+        ),
+    ):
+        cfg = load_identity_config()
+
+    assert cfg.metadata_url == "https://contoso.ciamlogin.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration"
+    assert cfg.authorize_url == "https://login.contoso.com/custom-authority/oauth2/v2.0/authorize"
+
+
+def test_load_identity_config_ignores_broad_authorize_authority_when_metadata_is_tenant_scoped():
+    with patch(
+        "app.services.microsoft_identity.settings",
+        SimpleNamespace(
+            microsoft_entra_external_id_client_id="client-id",
+            microsoft_entra_external_id_client_secret="client-secret",
+            microsoft_entra_external_id_redirect_uri="https://callback.example.test",
+            microsoft_entra_external_id_scopes="openid profile email",
             microsoft_entra_external_id_authority=None,
             microsoft_entra_external_id_authorize_authority="https://login.microsoftonline.com/organizations",
             microsoft_entra_external_id_metadata_url="https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration",
@@ -105,4 +130,4 @@ def test_load_identity_config_derives_separate_authorize_url():
         cfg = load_identity_config()
 
     assert cfg.metadata_url == "https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration"
-    assert cfg.authorize_url == "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize"
+    assert cfg.authorize_url is None

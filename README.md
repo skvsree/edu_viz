@@ -23,6 +23,11 @@ Copy `.env.example` to `.env` and set:
 If you already know the exact OpenID metadata endpoint for your Entra External ID tenant,
 use `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL`. That is the least ambiguous option.
 
+Important: keep the authorize endpoint and token/metadata authority aligned. A broad
+Microsoft authorize authority like `https://login.microsoftonline.com/organizations`
+cannot safely be paired with a tenant-scoped metadata/token endpoint; Azure rejects the
+callback code exchange with `AADSTS700005` in that mixed setup.
+
 ### Legacy Azure AD B2C compatibility
 
 The app still accepts the older `AZURE_B2C_*` variables as a fallback while migrating.

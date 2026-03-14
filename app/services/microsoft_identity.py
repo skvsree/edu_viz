@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from authlib.integrations.starlette_client import OAuth
 
@@ -62,9 +63,41 @@ def _resolve_authority() -> str | None:
     return _normalize_url(_legacy_b2c_authority())
 
 
-def _resolve_authorize_authority(authority: str | None) -> str | None:
+def _metadata_is_tenant_scoped_microsoft(metadata_url: str | None) -> bool:
+    if not metadata_url:
+        return False
+
+    parsed = urlparse(metadata_url)
+    if parsed.netloc.lower() != "login.microsoftonline.com":
+        return False
+
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if not segments:
+        return False
+
+    return segments[0].lower() not in {"common", "organizations", "consumers"}
+
+
+def _is_broad_microsoft_authority(authority: str | None) -> bool:
+    if not authority:
+        return False
+
+    parsed = urlparse(authority)
+    if parsed.netloc.lower() != "login.microsoftonline.com":
+        return False
+
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if not segments:
+        return False
+
+    return segments[0].lower() in {"common", "organizations", "consumers"}
+
+
+def _resolve_authorize_authority(authority: str | None, metadata_url: str | None) -> str | None:
     explicit = _normalize_url(settings.microsoft_entra_external_id_authorize_authority)
     if explicit:
+        if _is_broad_microsoft_authority(explicit) and _metadata_is_tenant_scoped_microsoft(metadata_url):
+            return None
         return explicit
     return authority
 
@@ -116,7 +149,7 @@ def load_identity_config() -> MicrosoftIdentityConfig:
     authority = _resolve_authority()
     metadata_url, _ = _resolve_metadata_url(authority)
     assert metadata_url is not None
-    authorize_authority = _resolve_authorize_authority(authority)
+    authorize_authority = _resolve_authorize_authority(authority, metadata_url)
 
     return MicrosoftIdentityConfig(
         provider_name=status.provider_name,
