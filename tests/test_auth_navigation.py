@@ -22,6 +22,7 @@ def test_home_for_anonymous_user_shows_marketing_nav_only():
     assert ">Workspace<" not in body
     assert ">Review<" not in body
     assert "Logout" not in body
+    assert pages.static_asset_url("vendor/htmx.min.js") in body
 
 
 def test_home_redirects_authenticated_user_to_dashboard():

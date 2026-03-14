@@ -63,7 +63,16 @@
           </div>
           <div class="deck-card__actions">
             <a href="/settings/users" class="button button-secondary button-small">View users</a>
-            <a href="/settings/organizations?modal=edit&edit_org={{ organization.id }}" class="button button-secondary button-small" data-modal-open="edit-organization-modal">Edit</a>
+            <a
+              href="/settings/organizations?modal=edit&edit_org={{ organization.id }}"
+              class="button button-secondary button-small"
+              data-modal-open="edit-organization-modal"
+              data-organization-id="{{ organization.id }}"
+              data-organization-name="{{ organization.name }}"
+              data-organization-update-action="/settings/organizations/{{ organization.id }}/update"
+            >
+              Edit
+            </a>
           </div>
         </article>
       {% endfor %}
@@ -81,11 +90,11 @@
     </div>
   </dialog>
 
-  <dialog id="edit-organization-modal" class="modal" {% if active_modal == "edit" and modal_organization %}data-open-on-load="true"{% endif %}>
+  <dialog id="edit-organization-modal" class="modal" data-default-action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% endif %}" {% if active_modal == "edit" and modal_organization %}data-open-on-load="true"{% endif %}>
     <button type="button" class="modal__backdrop-dismiss" data-modal-close="edit-organization-modal" aria-label="Close edit organization dialog"></button>
     <div class="modal__surface" role="document">
       <div class="section-heading"><div><p class="panel-label">Edit organization</p><h2 class="section-subtitle">{{ modal_organization.name if modal_organization else 'Update organization' }}</h2></div><button type="button" class="button button-secondary button-small" data-modal-close="edit-organization-modal">Close</button></div>
-      <form method="post" action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% else %}#{% endif %}" class="stack-md">
+      <form method="post" action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% else %}#{% endif %}" class="stack-md" data-edit-form>
         <div><label for="organization-name-edit">Organization name</label><input id="organization-name-edit" name="name" value="{{ edit_form.name }}" maxlength="255" required /></div>
         <button type="submit" class="button">Save organization</button>
       </form>
@@ -95,9 +104,45 @@
 <script>
 (() => {
   const dialogs = Array.from(document.querySelectorAll('.modal'));
-  const openModal = (id) => { const dialog = document.getElementById(id); if (dialog && typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal(); };
-  const closeModal = (id) => { const dialog = document.getElementById(id); if (dialog?.open) dialog.close(); };
-  document.querySelectorAll('[data-modal-open]').forEach((trigger) => trigger.addEventListener('click', (event) => { event.preventDefault(); openModal(trigger.dataset.modalOpen); }));
+  const supportsModalDialog = typeof HTMLDialogElement !== 'undefined' && typeof HTMLDialogElement.prototype.showModal === 'function';
+
+  const openModal = (id) => {
+    const dialog = document.getElementById(id);
+    if (dialog && supportsModalDialog && !dialog.open) {
+      dialog.showModal();
+    }
+  };
+
+  const closeModal = (id) => {
+    const dialog = document.getElementById(id);
+    if (dialog?.open) {
+      dialog.close();
+    }
+  };
+
+  document.querySelectorAll('[data-modal-open]').forEach((trigger) => {
+    trigger.addEventListener('click', (event) => {
+      if (!supportsModalDialog) {
+        return;
+      }
+
+      event.preventDefault();
+      const modalId = trigger.dataset.modalOpen;
+      if (modalId === 'edit-organization-modal') {
+        const dialog = document.getElementById(modalId);
+        const form = dialog?.querySelector('[data-edit-form]');
+        const nameInput = dialog?.querySelector('#organization-name-edit');
+        if (form) {
+          form.action = trigger.dataset.organizationUpdateAction || dialog?.dataset.defaultAction || '#';
+        }
+        if (nameInput) {
+          nameInput.value = trigger.dataset.organizationName || '';
+        }
+      }
+      openModal(modalId);
+    });
+  });
+
   document.querySelectorAll('[data-modal-close]').forEach((trigger) => trigger.addEventListener('click', () => closeModal(trigger.dataset.modalClose)));
   document.querySelectorAll('.modal[data-open-on-load="true"]').forEach((dialog) => openModal(dialog.id));
 })();

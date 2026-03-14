@@ -60,6 +60,9 @@ def test_organizations_page_visible_for_system_admin():
     assert "Organizations" in body
     assert "Add organization" in body
     assert "Northwind" in body
+    assert 'data-organization-name="Northwind"' in body
+    assert f'data-organization-update-action="/settings/organizations/{org.id}/update"' in body
+    assert 'const supportsModalDialog =' in body
 
 
 def test_users_page_shows_org_assignment_for_system_admin():

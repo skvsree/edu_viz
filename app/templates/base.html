@@ -11,7 +11,7 @@
     <meta name="theme-color" content="#07111f" />
     <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="{{ static_asset_url('vendor/htmx.min.js') }}"></script>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
     {% block extra_head %}{% endblock %}
   </head>
