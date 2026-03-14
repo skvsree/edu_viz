@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user
 from app.api.routers.pages import templates
 from app.core.db import get_db
-from app.models import Card, CardState, Deck, Test, TestQuestion, User
+from app.models import Card, CardState, Deck, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User
 from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     can_access_deck,
@@ -30,6 +30,25 @@ from app.services.mcq_import import McqImportError, parse_mcq_json
 from app.services.tests import build_test_report, create_test_from_deck, list_accessible_tests, submit_attempt, user_attempts_for_test
 
 router = APIRouter(tags=["content"])
+
+
+def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) -> None:
+    affected_test_ids = db.execute(
+        select(TestQuestion.test_id).where(TestQuestion.card_id.in_(card_ids)).distinct()
+    ).scalars().all()
+    if affected_test_ids:
+        db.execute(
+            delete(TestAttemptAnswer).where(
+                TestAttemptAnswer.attempt_id.in_(
+                    select(TestAttempt.id).where(TestAttempt.test_id.in_(affected_test_ids))
+                )
+            )
+        )
+        db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(affected_test_ids)))
+        db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
+        db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
+
+    db.execute(delete(Card).where(Card.id.in_(card_ids)))
 
 
 def _require_system_admin(user: User) -> None:
@@ -248,8 +267,7 @@ def bulk_delete_flashcards(
     if len(cards) != len(unique_ids) or any(card.deck_id != deck.id or card.card_type != "basic" for card in cards):
         return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_error={quote_plus('Some selected flashcards are invalid for this deck.')}", status_code=303)
 
-    db.execute(delete(TestQuestion).where(TestQuestion.card_id.in_(unique_ids)))
-    db.execute(delete(Card).where(Card.id.in_(unique_ids)))
+    _delete_cards_with_test_dependencies(db, card_ids=unique_ids)
     db.commit()
     return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_success={quote_plus(f'Deleted {len(unique_ids)} flashcard(s)')}", status_code=303)
 
@@ -273,8 +291,7 @@ def bulk_delete_mcqs(
     if len(cards) != len(unique_ids) or any(card.deck_id != deck.id or card.card_type != "mcq" for card in cards):
         return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_error={quote_plus('Some selected MCQs are invalid for this deck.')}", status_code=303)
 
-    db.execute(delete(TestQuestion).where(TestQuestion.card_id.in_(unique_ids)))
-    db.execute(delete(Card).where(Card.id.in_(unique_ids)))
+    _delete_cards_with_test_dependencies(db, card_ids=unique_ids)
     db.commit()
     return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_success={quote_plus(f'Deleted {len(unique_ids)} MCQ(s)')}", status_code=303)
 
