@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     microsoft_entra_external_id_tenant_id: str | None = None
     microsoft_entra_external_id_tenant_domain: str | None = None
     microsoft_entra_external_id_authority: str | None = None
+    microsoft_entra_external_id_authorize_authority: str | None = None
     microsoft_entra_external_id_metadata_url: str | None = None
     microsoft_entra_external_id_client_id: str | None = None
     microsoft_entra_external_id_client_secret: str | None = None

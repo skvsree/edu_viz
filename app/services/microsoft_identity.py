@@ -15,6 +15,8 @@ class MicrosoftIdentityConfig:
     redirect_uri: str
     scope: str
     authority: str | None
+    authorize_authority: str | None
+    authorize_url: str | None
     metadata_url: str
     subject_claim: str = "sub"
 
@@ -60,6 +62,19 @@ def _resolve_authority() -> str | None:
     return _normalize_url(_legacy_b2c_authority())
 
 
+def _resolve_authorize_authority(authority: str | None) -> str | None:
+    explicit = _normalize_url(settings.microsoft_entra_external_id_authorize_authority)
+    if explicit:
+        return explicit
+    return authority
+
+
+def _resolve_authorize_url(authorize_authority: str | None) -> str | None:
+    if not authorize_authority:
+        return None
+    return f"{authorize_authority}/oauth2/v2.0/authorize"
+
+
 def _resolve_metadata_url(authority: str | None) -> tuple[str | None, str | None]:
     explicit = _normalize_url(settings.microsoft_entra_external_id_metadata_url)
     if explicit:
@@ -101,6 +116,7 @@ def load_identity_config() -> MicrosoftIdentityConfig:
     authority = _resolve_authority()
     metadata_url, _ = _resolve_metadata_url(authority)
     assert metadata_url is not None
+    authorize_authority = _resolve_authorize_authority(authority)
 
     return MicrosoftIdentityConfig(
         provider_name=status.provider_name,
@@ -120,6 +136,8 @@ def load_identity_config() -> MicrosoftIdentityConfig:
         ),
         scope=settings.microsoft_entra_external_id_scopes,
         authority=authority,
+        authorize_authority=authorize_authority,
+        authorize_url=_resolve_authorize_url(authorize_authority),
         metadata_url=metadata_url,
     )
 
@@ -133,6 +151,7 @@ def build_oauth() -> OAuth:
         client_id=cfg.client_id,
         client_secret=cfg.client_secret,
         server_metadata_url=cfg.metadata_url,
+        authorize_url=cfg.authorize_url,
         client_kwargs={"scope": cfg.scope},
         redirect_uri=cfg.redirect_uri,
     )

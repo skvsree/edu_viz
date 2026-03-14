@@ -8,6 +8,7 @@ from uuid import uuid4
 from starlette.responses import RedirectResponse
 
 from app.api.routers import auth, pages
+from app.services.microsoft_identity import build_oauth, load_identity_config
 from tests.test_dashboard_routes import make_request
 
 
@@ -62,3 +63,46 @@ def test_login_starts_oauth_for_anonymous_user():
             response = asyncio.run(auth.login(make_request(path="/login"), user=None))
 
     assert response is redirect_response
+
+
+def test_build_oauth_uses_split_authorize_url():
+    cfg = SimpleNamespace(
+        client_id="client-id",
+        client_secret="client-secret",
+        metadata_url="https://login.microsoftonline.com/tenant/v2.0/.well-known/openid-configuration",
+        authorize_url="https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize",
+        scope="openid profile email",
+        redirect_uri="https://callback.example.test",
+    )
+
+    with patch("app.services.microsoft_identity.load_identity_config", return_value=cfg):
+        oauth = build_oauth()
+
+    client = oauth.create_client("microsoft")
+    assert client._server_metadata_url == cfg.metadata_url
+    assert client.authorize_url == cfg.authorize_url
+
+
+def test_load_identity_config_derives_separate_authorize_url():
+    with patch(
+        "app.services.microsoft_identity.settings",
+        SimpleNamespace(
+            microsoft_entra_external_id_client_id="client-id",
+            microsoft_entra_external_id_client_secret="client-secret",
+            microsoft_entra_external_id_redirect_uri="https://callback.example.test",
+            microsoft_entra_external_id_scopes="openid profile email",
+            microsoft_entra_external_id_authority=None,
+            microsoft_entra_external_id_authorize_authority="https://login.microsoftonline.com/organizations",
+            microsoft_entra_external_id_metadata_url="https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration",
+            azure_b2c_client_id=None,
+            azure_b2c_client_secret=None,
+            azure_b2c_redirect_uri=None,
+            azure_b2c_tenant_domain=None,
+            azure_b2c_tenant_name=None,
+            azure_b2c_policy=None,
+        ),
+    ):
+        cfg = load_identity_config()
+
+    assert cfg.metadata_url == "https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration"
+    assert cfg.authorize_url == "https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize"
