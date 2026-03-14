@@ -10,7 +10,21 @@
     <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
   </section>
 
-  <section class="dashboard-grid">
+  {% if import_error %}
+    <section class="status-banner status-banner--error">
+      <strong>CSV import failed.</strong>
+      <span>{{ import_error }}</span>
+    </section>
+  {% endif %}
+
+  {% if import_success %}
+    <section class="status-banner status-banner--success">
+      <strong>Import complete.</strong>
+      <span>{{ import_success }}</span>
+    </section>
+  {% endif %}
+
+  <section class="dashboard-grid dashboard-grid--triple">
     <article class="card form-card">
       <p class="panel-label">Add a card</p>
       <h2 class="section-subtitle">Create focused prompts</h2>
@@ -27,6 +41,22 @@
       </form>
     </article>
 
+    <article class="card form-card">
+      <p class="panel-label">Import from CSV</p>
+      <h2 class="section-subtitle">Bulk add cards</h2>
+      <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
+        <div>
+          <label for="card-csv-file">CSV file</label>
+          <input id="card-csv-file" type="file" name="csv_file" accept=".csv,text/csv" required />
+        </div>
+        <div class="muted compact-copy">
+          Use headers like <strong>question,answer</strong>, <strong>front,back</strong>, or
+          <strong>prompt,response</strong>. Quoted commas, escaped quotes, and multi-line fields are supported.
+        </div>
+        <button type="submit" class="button">Import CSV</button>
+      </form>
+    </article>
+
     <article class="card info-card dashboard-note">
       <p class="panel-label">Card quality</p>
       <h2 class="section-subtitle">Write cards that review well</h2>
@@ -34,6 +64,7 @@
         <li>Keep one clear question per card.</li>
         <li>Use short, precise answers where possible.</li>
         <li>Break dense topics into smaller recall steps.</li>
+        <li>For CSV import, include one card per row after the header.</li>
       </ul>
     </article>
   </section>

@@ -300,6 +300,10 @@ body::after {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.dashboard-grid--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .deck-grid,
 .study-card-grid {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -550,6 +554,30 @@ body::after {
 
 .button-rating--bright {
   background: linear-gradient(135deg, #16a34a, #15803d);
+}
+
+.status-banner {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.84);
+}
+
+.status-banner--success {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(20, 83, 45, 0.2);
+}
+
+.status-banner--error {
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.compact-copy {
+  font-size: 0.94rem;
+  line-height: 1.7;
 }
 
 .empty-state {
