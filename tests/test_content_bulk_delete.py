@@ -64,6 +64,8 @@ def test_bulk_delete_mcqs_removes_linked_test_attempt_data_before_cards():
             [],
             [],
             [],
+            [],
+            [],
         ],
     )
 
@@ -81,7 +83,9 @@ def test_bulk_delete_mcqs_removes_linked_test_attempt_data_before_cards():
     assert "DELETE FROM test_attempts" in db.statements[3]
     assert "DELETE FROM test_questions" in db.statements[4]
     assert "DELETE FROM tests" in db.statements[5]
-    assert "DELETE FROM cards" in db.statements[6]
+    assert "DELETE FROM card_states" in db.statements[6]
+    assert "DELETE FROM reviews" in db.statements[7]
+    assert "DELETE FROM cards" in db.statements[8]
 
 
 def test_bulk_delete_flashcards_skips_test_cleanup_when_no_tests_reference_cards():
@@ -92,6 +96,8 @@ def test_bulk_delete_flashcards_skips_test_cleanup_when_no_tests_reference_cards
         deck,
         execute_results=[
             [SimpleNamespace(id=card_id, deck_id=deck.id, card_type="basic")],
+            [],
+            [],
             [],
             [],
         ],
@@ -106,6 +112,8 @@ def test_bulk_delete_flashcards_skips_test_cleanup_when_no_tests_reference_cards
 
     assert response.headers["location"].startswith(f"/decks/{deck.id}/flashcards?update_success=")
     assert db.committed is True
-    assert len(db.statements) == 3
+    assert len(db.statements) == 5
     assert "FROM test_questions" in db.statements[1]
-    assert "DELETE FROM cards" in db.statements[2]
+    assert "DELETE FROM card_states" in db.statements[2]
+    assert "DELETE FROM reviews" in db.statements[3]
+    assert "DELETE FROM cards" in db.statements[4]

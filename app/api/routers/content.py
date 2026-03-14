@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user
 from app.api.routers.pages import templates
 from app.core.db import get_db
-from app.models import Card, CardState, Deck, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User
+from app.models import Card, CardState, Deck, Review as CardReview, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User
 from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     can_access_deck,
@@ -48,6 +48,8 @@ def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) ->
         db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
         db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
 
+    db.execute(delete(CardState).where(CardState.card_id.in_(card_ids)))
+    db.execute(delete(CardReview).where(CardReview.card_id.in_(card_ids)))
     db.execute(delete(Card).where(Card.id.in_(card_ids)))
 
 
