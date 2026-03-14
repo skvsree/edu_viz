@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from sqlalchemy.exc import IntegrityError
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -46,6 +47,8 @@ def _deck_cards_response(
     status_code: int = 200,
     import_error: str | None = None,
     import_success: str | None = None,
+    update_error: str | None = None,
+    update_success: str | None = None,
 ):
     return templates.TemplateResponse(
         "cards/list.html",
@@ -57,6 +60,8 @@ def _deck_cards_response(
             "title": title,
             "import_error": import_error,
             "import_success": import_success,
+            "update_error": update_error,
+            "update_success": update_success,
         },
         status_code=status_code,
     )
@@ -90,11 +95,65 @@ def create_deck(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    deck = Deck(user_id=user.id, name=name, description=description or None)
+    cleaned_name = name.strip()
+    cleaned_description = description.strip()
+    if not cleaned_name:
+        raise HTTPException(status_code=400, detail="Deck name is required.")
+
+    deck = Deck(user_id=user.id, name=cleaned_name, description=cleaned_description or None)
     db.add(deck)
     db.commit()
 
     return RedirectResponse(url="/dashboard", status_code=303)
+
+
+@router.post("/decks/{deck_id}/update")
+def update_deck(
+    request: Request,
+    deck_id: str,
+    name: str = Form(...),
+    description: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or deck.user_id != user.id:
+        raise HTTPException(status_code=404)
+
+    cleaned_name = name.strip()
+    cleaned_description = description.strip()
+    if not cleaned_name:
+        cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+        return _deck_cards_response(
+            request,
+            user=user,
+            deck=deck,
+            cards=cards,
+            title=f"{deck.name} | edu selviz",
+            status_code=400,
+            update_error="Deck name cannot be empty.",
+        )
+
+    deck.name = cleaned_name
+    deck.description = cleaned_description or None
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+        return _deck_cards_response(
+            request,
+            user=user,
+            deck=deck,
+            cards=cards,
+            title=f"{deck.name} | edu selviz",
+            status_code=400,
+            update_error="Unable to update this deck right now. Please try again.",
+        )
+
+    success_message = quote_plus("Deck details updated")
+    return RedirectResponse(url=f"/decks/{deck.id}?update_success={success_message}", status_code=303)
 
 
 @router.get("/decks/{deck_id}", response_class=HTMLResponse)
@@ -116,6 +175,7 @@ def deck_cards(
         cards=cards,
         title=f"{deck.name} | edu selviz",
         import_success=request.query_params.get("import_success"),
+        update_success=request.query_params.get("update_success"),
     )
 
 

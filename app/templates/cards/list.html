@@ -10,6 +10,20 @@
     <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
   </section>
 
+  {% if update_error %}
+    <section class="status-banner status-banner--error">
+      <strong>Deck update failed.</strong>
+      <span>{{ update_error }}</span>
+    </section>
+  {% endif %}
+
+  {% if update_success %}
+    <section class="status-banner status-banner--success">
+      <strong>Deck updated.</strong>
+      <span>{{ update_success }}</span>
+    </section>
+  {% endif %}
+
   {% if import_error %}
     <section class="status-banner status-banner--error">
       <strong>CSV import failed.</strong>
@@ -26,6 +40,22 @@
 
   <section class="dashboard-grid dashboard-grid--triple">
     <article class="card form-card">
+      <p class="panel-label">Edit deck</p>
+      <h2 class="section-subtitle deck-name-highlight">Update name and notes</h2>
+      <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md">
+        <div>
+          <label for="deck-name">Deck name</label>
+          <input id="deck-name" name="name" value="{{ deck.name }}" maxlength="255" required />
+        </div>
+        <div>
+          <label for="deck-description">Description</label>
+          <textarea id="deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
+        </div>
+        <button type="submit" class="button">Save deck</button>
+      </form>
+    </article>
+
+    <article class="card form-card">
       <p class="panel-label">Add a card</p>
       <h2 class="section-subtitle">Create focused prompts</h2>
       <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
@@ -41,9 +71,9 @@
       </form>
     </article>
 
-    <article class="card form-card">
-      <p class="panel-label">Import from CSV</p>
-      <h2 class="section-subtitle">Bulk add cards</h2>
+    <article class="card form-card csv-form-card">
+      <p class="panel-label csv-highlight">Import from CSV</p>
+      <h2 class="section-subtitle csv-highlight">Bulk add cards</h2>
       <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
         <div>
           <label for="card-csv-file">CSV file</label>

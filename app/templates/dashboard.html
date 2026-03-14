@@ -65,7 +65,8 @@
         {% for d in decks %}
           <a href="/decks/{{ d.id }}" class="deck-card">
             <div>
-              <h3>{{ d.name }}</h3>
+              <p class="deck-card__eyebrow">Deck name</p>
+              <h3 class="deck-card__title">{{ d.name }}</h3>
               <p class="muted">{{ d.description or 'A dedicated deck inside your edu selviz workspace.' }}</p>
             </div>
             <span class="deck-card__meta">Created {{ d.created_at.strftime('%d %b %Y') if d.created_at else '' }}</span>
