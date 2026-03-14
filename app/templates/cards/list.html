@@ -3,9 +3,9 @@
 <section class="stack-lg">
   <section class="card section-heading-card">
     <div>
-      <p class="panel-label">Deck workspace</p>
+      <p class="panel-label">Deck overview</p>
       <h1 class="section-title">{{ deck.name }}</h1>
-      <p class="muted section-copy">{{ deck.description or 'Manage flashcards, MCQs, and test readiness from one place.' }}</p>
+      <p class="muted section-copy">{{ deck.description or 'Organize flashcards, MCQs, and tests with a clearer per-deck workflow.' }}</p>
     </div>
     <div class="deck-card__actions">
       <a href="/dashboard" class="button button-secondary button-small">Back</a>
@@ -14,91 +14,58 @@
     </div>
   </section>
 
-  {% if update_success %}<section class="status-banner status-banner--success"><strong>Updated.</strong><span>{{ update_success }}</span></section>{% endif %}
-  {% if import_error %}<section class="status-banner status-banner--error"><strong>Import failed.</strong><span>{{ import_error }}</span></section>{% endif %}
-  {% if import_success %}<section class="status-banner status-banner--success"><strong>Import complete.</strong><span>{{ import_success }}</span></section>{% endif %}
+  <section class="deck-section-nav" aria-label="Deck sections">
+    <a href="/decks/{{ deck.id }}" class="deck-section-nav__link{% if active_section == 'overview' %} is-active{% endif %}">Overview</a>
+    <a href="/decks/{{ deck.id }}/flashcards" class="deck-section-nav__link{% if active_section == 'flashcards' %} is-active{% endif %}">Flashcards</a>
+    <a href="/decks/{{ deck.id }}/mcqs" class="deck-section-nav__link{% if active_section == 'mcqs' %} is-active{% endif %}">MCQs</a>
+    <a href="/decks/{{ deck.id }}/tests" class="deck-section-nav__link">Tests</a>
+  </section>
 
-  <section class="dashboard-grid dashboard-grid--triple">
-    {% if can_edit %}
-      <article class="card form-card">
-        <p class="panel-label">Add flashcard</p>
-        <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
-          <div><label>Front</label><textarea name="front" rows="4" required></textarea></div>
-          <div><label>Back</label><textarea name="back" rows="4" required></textarea></div>
-          <button type="submit" class="button">Add flashcard</button>
-        </form>
-      </article>
+  <section class="dashboard-grid">
+    <article class="card">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Flashcards</p>
+          <h2 class="section-subtitle">{{ flashcard_count }} ready for review</h2>
+        </div>
+        <a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Manage flashcards</a>
+      </div>
+      <p class="muted">Create cards manually, import CSV sets, and edit the deck’s review prompts from a dedicated page.</p>
+    </article>
 
-      <article class="card form-card">
-        <p class="panel-label">Import flashcards CSV</p>
-        <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
-          <div><label>CSV file</label><input type="file" name="csv_file" accept=".csv,text/csv" required /></div>
-          <button type="submit" class="button">Import CSV</button>
-        </form>
-      </article>
-
-      {% if user.role == "system_admin" %}
-        <article class="card form-card">
-          <p class="panel-label">AI study generation</p>
-          <form method="post" action="/decks/{{ deck.id }}/ai-import" enctype="multipart/form-data" class="stack-md">
-            <div><label>PDF or DOCX</label><input type="file" name="source_file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required /></div>
-            <div><label>Flashcards</label><input type="number" name="flashcard_count" min="1" max="50" value="12" /></div>
-            <div><label>MCQs</label><input type="number" name="mcq_count" min="1" max="50" value="10" /></div>
-            <p class="muted compact-copy">Uses OpenAI. If no API key is configured, the app will show a clear error instead of failing silently.</p>
-            <button type="submit" class="button">Generate from file</button>
-          </form>
-        </article>
-
-        <article class="card form-card">
-          <p class="panel-label">MCQ JSON import</p>
-          <form method="post" action="/decks/{{ deck.id }}/mcqs/import-json" enctype="multipart/form-data" class="stack-md">
-            <div><label>JSON file</label><input type="file" name="mcq_file" accept=".json,application/json" required /></div>
-            <p class="muted compact-copy">Schema: [{"question":"...","options":["A","B","C","D"],"answer_index":1,"explanation":"..."}]</p>
-            <button type="submit" class="button">Import MCQs</button>
-          </form>
-        </article>
-      {% endif %}
-    {% endif %}
+    <article class="card">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">MCQs</p>
+          <h2 class="section-subtitle">{{ mcq_count }} in question bank</h2>
+        </div>
+        <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">Manage MCQs</a>
+      </div>
+      <p class="muted">Keep question-bank editing, JSON import, and system-admin AI generation grouped in one place.</p>
+    </article>
   </section>
 
   <section class="card">
-    <div class="section-heading"><div><p class="panel-label">Flashcards</p><h2 class="section-subtitle">Anki-style review cards</h2></div></div>
-    {% set flashcards = cards | selectattr('card_type', 'equalto', 'basic') | list %}
-    {% if flashcards %}
-      <div class="study-card-grid">
-        {% for c in flashcards %}
-          <article class="study-card">
-            <div class="study-card__label">Front</div>
-            <p>{{ c.front }}</p>
-            <div class="study-card__label">Back</div>
-            <p class="muted">{{ c.back }}</p>
-            {% if can_edit %}<a href="/decks/{{ deck.id }}/flashcards/{{ c.id }}/edit" class="button button-secondary button-small">Edit flashcard</a>{% endif %}
-          </article>
-        {% endfor %}
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Workflow</p>
+        <h2 class="section-subtitle">Per-deck content is now split by study type</h2>
       </div>
-    {% else %}<div class="empty-state"><h3>No flashcards yet</h3></div>{% endif %}
-  </section>
-
-  <section class="card">
-    <div class="section-heading"><div><p class="panel-label">MCQs</p><h2 class="section-subtitle">Question bank</h2></div></div>
-    {% set mcqs = cards | selectattr('card_type', 'equalto', 'mcq') | list %}
-    {% if mcqs %}
-      <div class="study-card-grid">
-        {% for c in mcqs %}
-          <article class="study-card">
-            <div class="study-card__label">Question</div>
-            <p>{{ c.front }}</p>
-            <ol>
-              {% for option in c.mcq_options or [] %}
-                <li{% if loop.index0 == c.mcq_answer_index %} class="study-card__label"{% endif %}>{{ option }}</li>
-              {% endfor %}
-            </ol>
-            <p class="muted">{{ c.back or 'No explanation yet.' }}</p>
-            {% if can_edit %}<a href="/decks/{{ deck.id }}/mcqs/{{ c.id }}/edit" class="button button-secondary button-small">Edit MCQ</a>{% endif %}
-          </article>
-        {% endfor %}
-      </div>
-    {% else %}<div class="empty-state"><h3>No MCQs yet</h3></div>{% endif %}
+    </div>
+    <div class="study-card-grid">
+      <article class="study-card">
+        <div class="study-card__label">Overview</div>
+        <p>Use this page for counts, exports, and navigation across deck tasks.</p>
+      </article>
+      <article class="study-card">
+        <div class="study-card__label">Flashcards page</div>
+        <p>Add, import, browse, and edit review cards without MCQ controls mixed in.</p>
+      </article>
+      <article class="study-card">
+        <div class="study-card__label">MCQ page</div>
+        <p>Work on question banks, JSON uploads, and system-admin-only AI generation separately.</p>
+      </article>
+    </div>
   </section>
 </section>
 {% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card section-heading-card">
+    <div>
+      <p class="panel-label">Flashcard management</p>
+      <h1 class="section-title">{{ deck.name }}</h1>
+      <p class="muted section-copy">{{ deck.description or 'Manage review cards for this deck.' }}</p>
+    </div>
+    <div class="deck-card__actions">
+      <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">Overview</a>
+      <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">MCQs</a>
+      <a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Tests</a>
+    </div>
+  </section>
+
+  <section class="deck-section-nav" aria-label="Deck sections">
+    <a href="/decks/{{ deck.id }}" class="deck-section-nav__link{% if active_section == 'overview' %} is-active{% endif %}">Overview</a>
+    <a href="/decks/{{ deck.id }}/flashcards" class="deck-section-nav__link{% if active_section == 'flashcards' %} is-active{% endif %}">Flashcards</a>
+    <a href="/decks/{{ deck.id }}/mcqs" class="deck-section-nav__link{% if active_section == 'mcqs' %} is-active{% endif %}">MCQs</a>
+    <a href="/decks/{{ deck.id }}/tests" class="deck-section-nav__link">Tests</a>
+  </section>
+
+  {% if update_success %}<section class="status-banner status-banner--success"><strong>Updated.</strong><span>{{ update_success }}</span></section>{% endif %}
+  {% if update_error %}<section class="status-banner status-banner--error"><strong>Update failed.</strong><span>{{ update_error }}</span></section>{% endif %}
+  {% if import_error %}<section class="status-banner status-banner--error"><strong>Import failed.</strong><span>{{ import_error }}</span></section>{% endif %}
+  {% if import_success %}<section class="status-banner status-banner--success"><strong>Import complete.</strong><span>{{ import_success }}</span></section>{% endif %}
+
+  {% if can_edit %}
+    <section class="dashboard-grid">
+      <article class="card form-card">
+        <p class="panel-label">Add flashcard</p>
+        <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
+          <div><label>Front</label><textarea name="front" rows="4" required></textarea></div>
+          <div><label>Back</label><textarea name="back" rows="4" required></textarea></div>
+          <button type="submit" class="button">Add flashcard</button>
+        </form>
+      </article>
+
+      <article class="card form-card">
+        <p class="panel-label">Import flashcards CSV</p>
+        <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
+          <div><label>CSV file</label><input type="file" name="csv_file" accept=".csv,text/csv" required /></div>
+          <button type="submit" class="button">Import CSV</button>
+        </form>
+      </article>
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Flashcards</p>
+        <h2 class="section-subtitle">Anki-style review cards</h2>
+      </div>
+    </div>
+    {% if flashcards %}
+      <div class="study-card-grid">
+        {% for c in flashcards %}
+          <article class="study-card">
+            <div class="study-card__label">Front</div>
+            <p>{{ c.front }}</p>
+            <div class="study-card__label">Back</div>
+            <p class="muted">{{ c.back }}</p>
+            {% if can_edit %}<a href="/decks/{{ deck.id }}/flashcards/{{ c.id }}/edit" class="button button-secondary button-small">Edit flashcard</a>{% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}<div class="empty-state"><h3>No flashcards yet</h3></div>{% endif %}
+  </section>
+</section>
+{% endblock %}

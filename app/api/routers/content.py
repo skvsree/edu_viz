@@ -48,7 +48,7 @@ def ai_import_deck_content(
         pack = generate_study_pack(text, flashcard_count=flashcard_count, mcq_count=mcq_count)
     except (ContentExtractionError, AIGenerationError) as exc:
         message = quote_plus(str(exc))
-        return RedirectResponse(url=f"/decks/{deck.id}?import_error={message}", status_code=303)
+        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_error={message}", status_code=303)
 
     new_cards: list[Card] = []
     for item in pack.flashcards:
@@ -69,7 +69,7 @@ def ai_import_deck_content(
     db.flush()
     db.add_all([CardState(card_id=card.id) for card in new_cards])
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}?import_success={quote_plus(f'Generated {len(pack.flashcards)} flashcards and {len(pack.mcqs)} MCQs')}", status_code=303)
+    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_success={quote_plus(f'Generated {len(pack.flashcards)} flashcards and {len(pack.mcqs)} MCQs')}", status_code=303)
 
 
 @router.post("/decks/{deck_id}/mcqs/import-json")
@@ -87,7 +87,7 @@ def import_mcqs_json(
     try:
         mcqs = parse_mcq_json(mcq_file.file.read())
     except McqImportError as exc:
-        return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus(str(exc))}", status_code=303)
+        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_error={quote_plus(str(exc))}", status_code=303)
     finally:
         mcq_file.file.close()
 
@@ -107,7 +107,7 @@ def import_mcqs_json(
     db.flush()
     db.add_all([CardState(card_id=card.id) for card in cards])
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}?import_success={quote_plus(f'Imported {len(cards)} MCQs from JSON')}", status_code=303)
+    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_success={quote_plus(f'Imported {len(cards)} MCQs from JSON')}", status_code=303)
 
 
 @router.get("/decks/{deck_id}/anki-export.csv")
@@ -148,7 +148,7 @@ def edit_flashcard(deck_id: str, card_id: str, front: str = Form(...), back: str
     card.front = front.strip()
     card.back = back.strip()
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}?update_success={quote_plus('Flashcard updated')}", status_code=303)
+    return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_success={quote_plus('Flashcard updated')}", status_code=303)
 
 
 @router.get("/decks/{deck_id}/mcqs/{card_id}/edit", response_class=HTMLResponse)
@@ -183,7 +183,7 @@ def edit_mcq(
     card.mcq_options = [option_0.strip(), option_1.strip(), option_2.strip(), option_3.strip()]
     card.mcq_answer_index = answer_index
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}?update_success={quote_plus('MCQ updated')}", status_code=303)
+    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_success={quote_plus('MCQ updated')}", status_code=303)
 
 
 @router.get("/decks/{deck_id}/tests", response_class=HTMLResponse)

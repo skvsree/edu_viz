@@ -199,13 +199,15 @@ def _users_response(
 
 
 
-def _deck_cards_response(
+def _deck_content_response(
     request: Request,
     *,
     user: User,
     deck: Deck,
     cards: list[Card],
     title: str,
+    template_name: str,
+    active_section: str,
     status_code: int = 200,
     import_error: str | None = None,
     import_success: str | None = None,
@@ -213,14 +215,21 @@ def _deck_cards_response(
     update_success: str | None = None,
 ):
     can_edit = can_manage_deck(user, deck)
+    flashcards = [card for card in cards if card.card_type == "basic"]
+    mcqs = [card for card in cards if card.card_type == "mcq"]
     return templates.TemplateResponse(
-        "cards/list.html",
+        template_name,
         {
             "request": request,
             "user": user,
             "deck": deck,
             "cards": cards,
+            "flashcards": flashcards,
+            "mcqs": mcqs,
+            "flashcard_count": len(flashcards),
+            "mcq_count": len(mcqs),
             "can_edit": can_edit,
+            "active_section": active_section,
             "title": title,
             "import_error": import_error,
             "import_success": import_success,
@@ -609,7 +618,7 @@ def delete_deck(
 
 
 @router.get("/decks/{deck_id}", response_class=HTMLResponse)
-def deck_cards(
+def deck_overview(
     request: Request,
     deck_id: str,
     user: User = Depends(current_user),
@@ -620,13 +629,69 @@ def deck_cards(
         raise HTTPException(status_code=404)
 
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
-    return _deck_cards_response(
+    return _deck_content_response(
         request,
         user=user,
         deck=deck,
         cards=cards,
         title=f"{deck.name} | edu selviz",
+        template_name="cards/list.html",
+        active_section="overview",
         import_success=request.query_params.get("import_success"),
+        update_success=request.query_params.get("update_success"),
+    )
+
+
+@router.get("/decks/{deck_id}/flashcards", response_class=HTMLResponse)
+def deck_flashcards(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    return _deck_content_response(
+        request,
+        user=user,
+        deck=deck,
+        cards=cards,
+        title=f"Flashcards | {deck.name}",
+        template_name="cards/flashcards.html",
+        active_section="flashcards",
+        import_error=request.query_params.get("import_error"),
+        import_success=request.query_params.get("import_success"),
+        update_error=request.query_params.get("update_error"),
+        update_success=request.query_params.get("update_success"),
+    )
+
+
+@router.get("/decks/{deck_id}/mcqs", response_class=HTMLResponse)
+def deck_mcqs(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    return _deck_content_response(
+        request,
+        user=user,
+        deck=deck,
+        cards=cards,
+        title=f"MCQs | {deck.name}",
+        template_name="cards/mcqs.html",
+        active_section="mcqs",
+        import_error=request.query_params.get("import_error"),
+        import_success=request.query_params.get("import_success"),
+        update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
     )
 
@@ -651,7 +716,7 @@ def create_card(
     db.add(state)
     db.commit()
 
-    return RedirectResponse(url=f"/decks/{deck.id}", status_code=303)
+    return RedirectResponse(url=f"/decks/{deck.id}/flashcards?import_success={quote_plus('Flashcard added')}", status_code=303)
 
 
 @router.post("/decks/{deck_id}/cards/import")
@@ -670,12 +735,14 @@ def import_cards_csv(
 
     filename = (csv_file.filename or "").strip()
     if not filename.lower().endswith(".csv"):
-        return _deck_cards_response(
+        return _deck_content_response(
             request,
             user=user,
             deck=deck,
             cards=cards,
             title=f"{deck.name} | edu selviz",
+            template_name="cards/flashcards.html",
+            active_section="flashcards",
             status_code=400,
             import_error="Please upload a .csv file.",
         )
@@ -683,12 +750,14 @@ def import_cards_csv(
     try:
         imported_rows = parse_cards_csv(csv_file.file)
     except CsvImportError as exc:
-        return _deck_cards_response(
+        return _deck_content_response(
             request,
             user=user,
             deck=deck,
             cards=cards,
             title=f"{deck.name} | edu selviz",
+            template_name="cards/flashcards.html",
+            active_section="flashcards",
             status_code=400,
             import_error=str(exc),
         )
@@ -704,7 +773,7 @@ def import_cards_csv(
     card_word = "card" if len(new_cards) == 1 else "cards"
     success_message = quote_plus(f"Imported {len(new_cards)} {card_word} from CSV")
     return RedirectResponse(
-        url=f"/decks/{deck.id}?import_success={success_message}",
+        url=f"/decks/{deck.id}/flashcards?import_success={success_message}",
         status_code=303,
     )
 

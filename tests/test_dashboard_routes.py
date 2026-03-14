@@ -8,12 +8,13 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse
 
 from app.api.routers import pages
-from app.services.access import ROLE_ADMIN, ROLE_USER
+from app.services.access import ROLE_ADMIN, ROLE_SYSTEM_ADMIN, ROLE_USER
 
 
 class FakeDB:
-    def __init__(self, objects: dict[object, object] | None = None):
+    def __init__(self, objects: dict[object, object] | None = None, execute_results: list[object] | None = None):
         self.objects = objects or {}
+        self.execute_results = execute_results or []
         self.added: list[object] = []
         self.committed = False
         self.rolled_back = False
@@ -23,6 +24,22 @@ class FakeDB:
 
     def add(self, value):
         self.added.append(value)
+
+    def execute(self, stmt):
+        class _ScalarResult:
+            def __init__(self, items):
+                self.items = items
+
+            def scalars(self):
+                return self
+
+            def all(self):
+                return self.items
+
+        return _ScalarResult(self.execute_results)
+
+    def flush(self):
+        pass
 
     def commit(self):
         self.committed = True
@@ -217,3 +234,110 @@ def test_dashboard_hides_management_actions_for_regular_user():
     assert "Delete" not in body
     assert "Edit" not in body
     assert "Review" in body
+
+
+def test_deck_overview_links_to_split_management_pages():
+    org_id = uuid4()
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=False,
+        organization_id=org_id,
+        user_id=uuid4(),
+        name="Biology",
+        description="Cells and tissues",
+    )
+    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id)
+    cards = [
+        SimpleNamespace(card_type="basic"),
+        SimpleNamespace(card_type="basic"),
+        SimpleNamespace(card_type="mcq"),
+    ]
+
+    response = pages.deck_overview(
+        make_request(path=f"/decks/{deck.id}"),
+        deck_id=str(deck.id),
+        user=user,
+        db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards),
+    )
+
+    body = render_body(response)
+    assert "Deck overview" in body
+    assert f"/decks/{deck.id}/flashcards" in body
+    assert f"/decks/{deck.id}/mcqs" in body
+    assert "2 ready for review" in body
+    assert "1 in question bank" in body
+
+
+def test_flashcards_page_keeps_flashcard_management_together():
+    org_id = uuid4()
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=False,
+        organization_id=org_id,
+        user_id=uuid4(),
+        name="Biology",
+        description=None,
+    )
+    flashcard = SimpleNamespace(id=uuid4(), card_type="basic", front="Front", back="Back")
+    mcq = SimpleNamespace(id=uuid4(), card_type="mcq", front="Question", back="Answer", mcq_options=["A", "B", "C", "D"], mcq_answer_index=1)
+    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id)
+
+    response = pages.deck_flashcards(
+        make_request(path=f"/decks/{deck.id}/flashcards"),
+        deck_id=str(deck.id),
+        user=user,
+        db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[flashcard, mcq]),
+    )
+
+    body = render_body(response)
+    assert "Flashcard management" in body
+    assert "Add flashcard" in body
+    assert "Import flashcards CSV" in body
+    assert "Edit flashcard" in body
+    assert "Edit MCQ" not in body
+
+
+def test_mcqs_page_keeps_system_admin_features_and_mcq_list():
+    org_id = uuid4()
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=False,
+        organization_id=org_id,
+        user_id=uuid4(),
+        name="Biology",
+        description=None,
+    )
+    flashcard = SimpleNamespace(id=uuid4(), card_type="basic", front="Front", back="Back")
+    mcq = SimpleNamespace(id=uuid4(), card_type="mcq", front="Question", back="Answer", mcq_options=["A", "B", "C", "D"], mcq_answer_index=1)
+    user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=org_id)
+
+    response = pages.deck_mcqs(
+        make_request(path=f"/decks/{deck.id}/mcqs"),
+        deck_id=str(deck.id),
+        user=user,
+        db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[flashcard, mcq]),
+    )
+
+    body = render_body(response)
+    assert "MCQ management" in body
+    assert "AI study generation" in body
+    assert "MCQ JSON import" in body
+    assert "Edit MCQ" in body
+    assert "Edit flashcard" not in body
+
+
+def test_create_card_redirects_to_flashcards_page():
+    org_id = uuid4()
+    deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
+    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id)
+    db = FakeDB({str(deck.id): deck, deck.id: deck})
+
+    response = pages.create_card(deck_id=str(deck.id), front="Question", back="Answer", user=user, db=db)
+
+    assert isinstance(response, RedirectResponse)
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/decks/{deck.id}/flashcards?import_success=Flashcard+added"
+    assert db.committed is True
