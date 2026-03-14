@@ -17,7 +17,19 @@
   <body class="review-body">
     <div class="review-shell">
       <header class="review-topbar" aria-label="Review page header">
-        <h1 class="review-topbar__title">edu selviz</h1>
+        <a href="/dashboard" class="review-brand" aria-label="edu selviz workspace">
+          <span class="review-brand__media">
+            <img
+              src="{{ static_asset_url('brand/logo.jpg') }}"
+              alt="edu selviz logo"
+              class="review-brand__image"
+            />
+          </span>
+          <span class="review-brand__copy">
+            <strong>edu selviz</strong>
+            <small>Professional study workflow</small>
+          </span>
+        </a>
       </header>
 
       <main class="review-main">
