@@ -23,23 +23,11 @@
   <body class="review-body">
     <div class="review-shell">
       <header class="review-topbar" aria-label="Review session controls">
-        <a href="/dashboard" class="review-topbar__back">Back to workspace</a>
-        <div class="review-topbar__meta">
-          <span class="review-topbar__eyebrow">Focused review</span>
-          <span class="review-topbar__user">{{ user.email or user.identity_sub }}</span>
-        </div>
+        <a href="/dashboard" class="review-topbar__back">Workspace</a>
+        <span class="review-topbar__user">{{ user.email or user.identity_sub }}</span>
       </header>
 
       <main class="review-main">
-        <section class="review-hero" aria-labelledby="review-title">
-          <p class="review-hero__eyebrow">edu selviz review mode</p>
-          <h1 id="review-title">One card. One decision. Less noise.</h1>
-          <p class="review-hero__copy">
-            This review page is intentionally separate from the main workspace so you can stay with
-            the card in front of you and keep your concentration steady.
-          </p>
-        </section>
-
         <section id="review-area" class="review-area" hx-get="/review/next" hx-trigger="load" hx-swap="innerHTML"></section>
       </main>
     </div>

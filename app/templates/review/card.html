@@ -1,19 +1,9 @@
 <article class="card review-card review-focus-card">
-  <div class="review-card__header review-card__header--focus">
-    <div>
-      <p class="panel-label">Prompt</p>
-      <h2 class="section-subtitle">Recall first, then reveal</h2>
-    </div>
-    <p class="review-card__helper">Read slowly. Answer in your head before opening the back.</p>
-  </div>
-
   <div class="review-card__body">
-    <div class="study-card__label">Front</div>
     <div class="review-card__text review-card__text--prompt">{{ card.front }}</div>
 
     <details class="review-answer">
       <summary>Reveal answer</summary>
-      <div class="study-card__label">Back</div>
       <div class="review-card__text review-card__text--answer">{{ card.back }}</div>
     </details>
   </div>
