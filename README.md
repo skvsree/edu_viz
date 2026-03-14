@@ -1,4 +1,4 @@
-# SRS Web
+# edu selviz
 
 A minimal, server-authoritative spaced repetition web app (AnkiWeb-like) built with:
 - FastAPI (Python)
@@ -8,7 +8,7 @@ A minimal, server-authoritative spaced repetition web app (AnkiWeb-like) built w
 
 ## Authentication
 
-EduViz now treats Microsoft sign-in as a generic OpenID Connect integration, with
+edu selviz now treats Microsoft sign-in as a generic OpenID Connect integration, with
 **Microsoft Entra External ID** as the preferred target configuration.
 
 ### Preferred configuration

@@ -11,7 +11,7 @@ from app.core.config import settings
 
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="SRS Web")
+app = FastAPI(title="edu selviz")
 
 # Needed by Authlib to store OIDC state/nonce during the redirect flow.
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)

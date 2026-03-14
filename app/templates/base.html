@@ -3,27 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ title or 'Kalvi Selvi' }}</title>
+    <title>{{ title or 'edu selviz' }}</title>
+    <meta
+      name="description"
+      content="edu selviz is a focused study workspace for spaced repetition, deck management, and calm daily review."
+    />
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="page-shell">
       <header class="topbar">
-        <a href="/" class="brand-mark">
-          <span class="brand-mark__badge">KS</span>
+        <a href="/" class="brand-mark" aria-label="edu selviz home">
+          <span class="brand-mark__badge">ES</span>
           <span>
-            <strong>Kalvi Selvi</strong>
-            <small>Smart study companion</small>
+            <strong>edu selviz</strong>
+            <small>Professional study workflow</small>
           </span>
         </a>
         <nav class="topbar-nav" aria-label="Primary navigation">
           <a href="/">Home</a>
-          <a href="/dashboard">Dashboard</a>
+          <a href="/dashboard">Workspace</a>
           <a href="/review">Review</a>
-          <a href="/login">Login</a>
+          <a href="/login">Sign in</a>
           <form action="/logout" method="post">
-            <button type="submit" class="button button-secondary">Logout</button>
+            <button type="submit" class="button button-secondary button-small">Logout</button>
           </form>
         </nav>
       </header>

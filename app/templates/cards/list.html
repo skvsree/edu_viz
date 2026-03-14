@@ -1,25 +1,69 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Deck: {{ deck.name }}</h2>
-<p class="muted">{{ deck.description or '' }}</p>
+<section class="stack-lg">
+  <section class="card section-heading-card">
+    <div>
+      <p class="panel-label">Deck workspace</p>
+      <h1 class="section-title">{{ deck.name }}</h1>
+      <p class="muted section-copy">{{ deck.description or 'Manage cards, refine prompts, and keep this deck ready for review.' }}</p>
+    </div>
+    <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
+  </section>
 
-<h3>Add Card</h3>
-<form method="post" action="/decks/{{ deck.id }}/cards">
-  <label>Front</label>
-  <textarea name="front" rows="3" required></textarea>
-  <label>Back</label>
-  <textarea name="back" rows="3" required></textarea>
-  <button type="submit">Add</button>
-</form>
+  <section class="dashboard-grid">
+    <article class="card form-card">
+      <p class="panel-label">Add a card</p>
+      <h2 class="section-subtitle">Create focused prompts</h2>
+      <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
+        <div>
+          <label for="card-front">Front</label>
+          <textarea id="card-front" name="front" rows="4" placeholder="Question, prompt, or cue" required></textarea>
+        </div>
+        <div>
+          <label for="card-back">Back</label>
+          <textarea id="card-back" name="back" rows="4" placeholder="Answer, explanation, or key points" required></textarea>
+        </div>
+        <button type="submit" class="button">Add card</button>
+      </form>
+    </article>
 
-<h3>Cards</h3>
-{% if cards %}
-  <ul>
-  {% for c in cards %}
-    <li><div class="card"><div><strong>Front:</strong> {{ c.front }}</div><div><strong>Back:</strong> {{ c.back }}</div></div></li>
-  {% endfor %}
-  </ul>
-{% else %}
-  <p class="muted">No cards yet.</p>
-{% endif %}
+    <article class="card info-card dashboard-note">
+      <p class="panel-label">Card quality</p>
+      <h2 class="section-subtitle">Write cards that review well</h2>
+      <ul class="feature-list feature-list--tight">
+        <li>Keep one clear question per card.</li>
+        <li>Use short, precise answers where possible.</li>
+        <li>Break dense topics into smaller recall steps.</li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Cards</p>
+        <h2 class="section-subtitle">Deck content</h2>
+      </div>
+      <a href="/review" class="button button-secondary button-small">Review due cards</a>
+    </div>
+
+    {% if cards %}
+      <div class="study-card-grid">
+        {% for c in cards %}
+          <article class="study-card">
+            <div class="study-card__label">Front</div>
+            <p>{{ c.front }}</p>
+            <div class="study-card__label">Back</div>
+            <p class="muted">{{ c.back }}</p>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No cards yet</h3>
+        <p class="muted">Add your first card to turn this deck into an active review set.</p>
+      </div>
+    {% endif %}
+  </section>
+</section>
 {% endblock %}

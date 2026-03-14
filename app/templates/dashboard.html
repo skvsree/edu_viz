@@ -1,25 +1,83 @@
 {% extends "base.html" %}
 {% block content %}
-<h2>Dashboard</h2>
-<p class="muted">Logged in as {{ user.email or user.identity_sub }}</p>
+<section class="stack-lg">
+  <section class="dashboard-hero card">
+    <div>
+      <p class="panel-label">edu selviz workspace</p>
+      <h1 class="section-title">Welcome back</h1>
+      <p class="muted section-copy">
+        Signed in as {{ user.email or user.identity_sub }}. Keep your study system tidy, create new
+        decks, and continue revision from one polished workspace.
+      </p>
+    </div>
+    <div class="dashboard-hero__meta">
+      <div class="metric-pill">
+        <strong>{{ decks|length }}</strong>
+        <span>Decks</span>
+      </div>
+      <a href="/review" class="button">Start review</a>
+    </div>
+  </section>
 
-<h3>Create Deck</h3>
-<form method="post" action="/decks">
-  <label>Name</label>
-  <input name="name" required />
-  <label>Description</label>
-  <input name="description" />
-  <button type="submit">Create</button>
-</form>
+  <section class="dashboard-grid">
+    <article class="card form-card">
+      <p class="panel-label">Create a deck</p>
+      <h2 class="section-subtitle">Add a new study space</h2>
+      <form method="post" action="/decks" class="stack-md">
+        <div>
+          <label for="deck-name">Deck name</label>
+          <input id="deck-name" name="name" placeholder="e.g. Biology fundamentals" required />
+        </div>
+        <div>
+          <label for="deck-description">Description</label>
+          <input
+            id="deck-description"
+            name="description"
+            placeholder="Short note about what this deck covers"
+          />
+        </div>
+        <button type="submit" class="button">Create deck</button>
+      </form>
+    </article>
 
-<h3>Your Decks</h3>
-{% if decks %}
-  <ul>
-  {% for d in decks %}
-    <li><a href="/decks/{{ d.id }}">{{ d.name }}</a> <span class="muted">({{ d.created_at }})</span></li>
-  {% endfor %}
-  </ul>
-{% else %}
-  <p class="muted">No decks yet.</p>
-{% endif %}
+    <article class="card info-card dashboard-note">
+      <p class="panel-label">Study flow</p>
+      <h2 class="section-subtitle">Keep your revision loop simple</h2>
+      <ul class="feature-list feature-list--tight">
+        <li>Create focused decks per subject or module.</li>
+        <li>Add cards with clear prompts and answers.</li>
+        <li>Review regularly and let the scheduler guide timing.</li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Your decks</p>
+        <h2 class="section-subtitle">Organized study collections</h2>
+      </div>
+      <a href="/review" class="button button-secondary button-small">Go to review</a>
+    </div>
+
+    {% if decks %}
+      <div class="deck-grid">
+        {% for d in decks %}
+          <a href="/decks/{{ d.id }}" class="deck-card">
+            <div>
+              <h3>{{ d.name }}</h3>
+              <p class="muted">{{ d.description or 'A dedicated deck inside your edu selviz workspace.' }}</p>
+            </div>
+            <span class="deck-card__meta">Created {{ d.created_at.strftime('%d %b %Y') if d.created_at else '' }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No decks yet</h3>
+        <p class="muted">Create your first deck to start building a more consistent study routine.</p>
+      </div>
+    {% endif %}
+  </section>
+</section>
 {% endblock %}

@@ -1,20 +1,27 @@
-<div class="card">
-  <div><strong>Front</strong></div>
-  <div style="white-space: pre-wrap; margin-bottom: 10px;">{{ card.front }}</div>
-
-  <details>
-    <summary>Show answer</summary>
-    <div style="white-space: pre-wrap; margin-top: 10px;">{{ card.back }}</div>
-  </details>
-
-  <hr />
-  <div>
-    <form hx-post="/review/rate" hx-target="#review-area" hx-swap="innerHTML">
-      <input type="hidden" name="card_id" value="{{ card.id }}" />
-      <button name="rating" value="1">Again</button>
-      <button name="rating" value="2">Hard</button>
-      <button name="rating" value="3">Good</button>
-      <button name="rating" value="4">Easy</button>
-    </form>
+<article class="card review-card">
+  <div class="review-card__header">
+    <div>
+      <p class="panel-label">Prompt</p>
+      <h2 class="section-subtitle">Recall before revealing the answer</h2>
+    </div>
   </div>
-</div>
+
+  <div class="review-card__body">
+    <div class="study-card__label">Front</div>
+    <div class="review-card__text">{{ card.front }}</div>
+
+    <details class="review-answer">
+      <summary>Show answer</summary>
+      <div class="study-card__label">Back</div>
+      <div class="review-card__text review-card__text--answer">{{ card.back }}</div>
+    </details>
+  </div>
+
+  <form hx-post="/review/rate" hx-target="#review-area" hx-swap="innerHTML" class="review-rating-row">
+    <input type="hidden" name="card_id" value="{{ card.id }}" />
+    <button class="button button-rating button-rating--muted" name="rating" value="1">Again</button>
+    <button class="button button-rating button-rating--warm" name="rating" value="2">Hard</button>
+    <button class="button button-rating button-rating--cool" name="rating" value="3">Good</button>
+    <button class="button button-rating button-rating--bright" name="rating" value="4">Easy</button>
+  </form>
+</article>

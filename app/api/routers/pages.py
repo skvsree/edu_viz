@@ -22,7 +22,10 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse("home.html", {"request": request})
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request, "title": "edu selviz | Professional study workflow"},
+    )
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -34,7 +37,7 @@ def dashboard(
     decks = db.execute(select(Deck).where(Deck.user_id == user.id).order_by(Deck.created_at.desc())).scalars().all()
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "user": user, "decks": decks},
+        {"request": request, "user": user, "decks": decks, "title": "Workspace | edu selviz"},
     )
 
 
@@ -66,7 +69,7 @@ def deck_cards(
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
     return templates.TemplateResponse(
         "cards/list.html",
-        {"request": request, "user": user, "deck": deck, "cards": cards},
+        {"request": request, "user": user, "deck": deck, "cards": cards, "title": f"{deck.name} | edu selviz"},
     )
 
 
@@ -95,7 +98,10 @@ def create_card(
 
 @router.get("/review", response_class=HTMLResponse)
 def review_page(request: Request, user: User = Depends(current_user)):
-    return templates.TemplateResponse("review/page.html", {"request": request, "user": user})
+    return templates.TemplateResponse(
+        "review/page.html",
+        {"request": request, "user": user, "title": "Review | edu selviz"},
+    )
 
 
 @router.get("/review/next", response_class=HTMLResponse)
