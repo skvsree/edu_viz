@@ -64,6 +64,7 @@ uvicorn app.main:app --reload
 
 ## MVP features
 - Register/login (signed cookie session)
+- Persistent login/session lifetime defaults to 45 days for both the app auth cookie and OIDC state session
 - Decks
 - Cards
 - Review flow: `/review` → HTMX loads `/review/next` → rate via `/review/rate`
@@ -83,6 +84,7 @@ Current implementation notes:
 
 - existing users are backfilled to one personal organization each and promoted to `admin` during migration so pre-Phase-2 data keeps working
 - newly created users still auto-register on first OIDC login, but default to the `user` role and have no organization until a system admin assigns one
+- the configured bootstrap email (`SYSTEM_ADMIN_BOOTSTRAP_EMAIL`, default `skv.sree@outlook.com`) is promoted to `system_admin` on login, and any existing matching user is re-promoted on app startup
 - deck create/edit/import remains available only to `admin` and `system_admin`
 - accuracy is currently calculated as the share of reviews rated `3` or `4`
 

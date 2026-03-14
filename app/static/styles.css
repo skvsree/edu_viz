@@ -170,6 +170,21 @@ body::after {
   padding-top: 28px;
 }
 
+.site-footer {
+  padding: 22px 0 8px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.site-footer small {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.site-footer--review {
+  padding-top: 8px;
+}
+
 .hero {
   display: grid;
   grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);

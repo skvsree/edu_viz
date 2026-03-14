@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.db import get_db
 from app.models import User
+from app.services.admin_bootstrap import bootstrap_system_admin_for_user
 from app.services.microsoft_identity import build_oauth, load_identity_config
 from app.services.session import sign_session
 
@@ -57,12 +58,16 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
             user.email = email
             db.commit()
 
+    bootstrap_system_admin_for_user(db, user)
+
     resp = RedirectResponse(url="/dashboard", status_code=303)
     resp.set_cookie(
         settings.app_session_cookie_name,
         sign_session(user_id=user.id, claims=userinfo),
         httponly=True,
         samesite="lax",
+        max_age=settings.app_session_max_age_seconds,
+        expires=settings.app_session_max_age_seconds,
     )
     return resp
 

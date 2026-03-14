@@ -1,9 +1,9 @@
 import uuid
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.core.config import settings
 
-_serializer = URLSafeSerializer(settings.secret_key, salt="session")
+_serializer = URLSafeTimedSerializer(settings.secret_key, salt="session")
 
 
 def sign_session(*, user_id: uuid.UUID | None = None, claims: dict | None = None) -> str:
@@ -17,9 +17,9 @@ def sign_session(*, user_id: uuid.UUID | None = None, claims: dict | None = None
 
 def unsign_session(token: str) -> dict | None:
     try:
-        data = _serializer.loads(token)
+        data = _serializer.loads(token, max_age=settings.app_session_max_age_seconds)
         if not isinstance(data, dict):
             return None
         return data
-    except (BadSignature, ValueError, TypeError):
+    except (BadSignature, SignatureExpired, ValueError, TypeError):
         return None

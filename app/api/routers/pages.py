@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
+from app.core.config import settings
 from app.core.db import get_db
 from app.models import Card, Deck, User
 from app.models.card_state import CardState
@@ -37,6 +38,7 @@ def static_asset_url(path: str) -> str:
 
 
 templates.env.globals["static_asset_url"] = static_asset_url
+templates.env.globals["footer_copyright_text"] = settings.footer_copyright_text
 
 
 def _deck_cards_response(
