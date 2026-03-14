@@ -7,7 +7,7 @@ from uuid import uuid4
 from starlette.responses import RedirectResponse
 
 from app.api.routers import content, pages
-from app.services.access import can_access_tests, can_import_mcq_json, can_manage_deck, can_use_ai_generation, deck_has_test_content
+from app.services.access import can_access_tests, can_import_mcq_json, can_manage_deck, can_open_test_center, can_use_ai_generation, deck_has_test_content
 from tests.test_dashboard_routes import FakeDB, make_request, render_body
 
 
@@ -24,10 +24,12 @@ def test_access_helpers_cover_test_and_ai_flags():
     assert can_import_mcq_json(admin) is True
     assert can_access_tests(admin, deck) is True
     assert can_access_tests(learner, deck) is False
+    assert can_open_test_center(admin, deck) is True
+    assert can_open_test_center(learner, deck, has_test_content=True) is False
     assert deck_has_test_content([SimpleNamespace(card_type="mcq", mcq_options=["A", "B", "C", "D"], mcq_answer_index=2)]) is True
 
 
-def test_deck_overview_shows_test_action_only_for_enabled_users_with_mcqs():
+def test_deck_overview_shows_test_action_for_managers_even_before_mcqs_and_for_enabled_users_with_mcqs():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description="Cells")
     enabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True, organization=SimpleNamespace(is_ai_enabled=True))
@@ -35,10 +37,12 @@ def test_deck_overview_shows_test_action_only_for_enabled_users_with_mcqs():
     cards = [SimpleNamespace(card_type="mcq", mcq_options=["A", "B", "C", "D"], mcq_answer_index=0)]
 
     enabled = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=enabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards))
-    disabled = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=disabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards))
+    disabled_with_mcqs = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=disabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards))
+    disabled_without_mcqs = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=disabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
 
     assert ">Tests<" in render_body(enabled)
-    assert ">Tests<" not in render_body(disabled)
+    assert ">Tests<" in render_body(disabled_with_mcqs)
+    assert ">Tests<" in render_body(disabled_without_mcqs)
 
 
 def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_when_org_ai_disabled():
@@ -53,6 +57,18 @@ def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_wh
     assert "Download sample JSON" in body
     assert f"/decks/{deck.id}/ai-upload" not in body
     assert "AI study generation" not in body
+
+
+def test_deck_tests_page_allows_manager_without_personal_test_flag_and_guides_when_mcqs_missing():
+    org_id = uuid4()
+    deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description=None)
+    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=False)
+
+    response = content.deck_tests_page(str(deck.id), make_request(path=f"/decks/{deck.id}/tests"), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
+
+    body = render_body(response)
+    assert "Create test" in body
+    assert "Add at least one MCQ in this deck first" in body
 
 
 def test_create_test_allows_admin_manager():

@@ -21,6 +21,7 @@ from app.services.access import (
     can_import_mcq_json,
     can_manage_deck,
     can_manage_tests,
+    can_open_test_center,
     can_use_ai_generation,
 )
 from app.services.ai_generation import AIGenerationError, generate_study_pack
@@ -235,9 +236,10 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
     deck = db.get(Deck, deck_id)
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
-    if not can_access_tests(user, deck):
-        raise HTTPException(status_code=403, detail="Tests are not enabled for your account.")
     tests = list_accessible_tests(db, deck_id=deck.id)
+    has_test_content = bool(db.execute(select(Card.id).where(Card.deck_id == deck.id, Card.card_type == "mcq").limit(1)).scalars().all())
+    if not can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=bool(tests)):
+        raise HTTPException(status_code=403, detail="Tests are not enabled for your account.")
     attempts_by_test = {str(test.id): user_attempts_for_test(db, test_id=test.id, user_id=user.id) for test in tests}
     return templates.TemplateResponse(
         "tests/list.html",
@@ -248,6 +250,7 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
             "tests": tests,
             "attempts_by_test": attempts_by_test,
             "can_edit": can_manage_tests(user, deck),
+            "has_test_content": has_test_content,
             "title": f"Tests | {deck.name}",
         },
     )

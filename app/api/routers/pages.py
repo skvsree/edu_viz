@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, User
+from app.models import Card, Deck, Organization, Test, User
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -27,6 +27,7 @@ from app.services.access import (
     can_access_tests,
     can_manage_deck,
     can_manage_decks,
+    can_open_test_center,
     can_use_ai_generation,
     deck_has_test_content,
     normalize_deck_name,
@@ -63,6 +64,10 @@ def static_asset_url(path: str) -> str:
 
 templates.env.globals["static_asset_url"] = static_asset_url
 templates.env.globals["footer_copyright_text"] = settings.footer_copyright_text
+
+
+def _deck_has_published_tests(db: Session, deck_id: UUID) -> bool:
+    return bool(db.execute(select(Test.id).where(Test.deck_id == deck_id, Test.is_published.is_(True)).limit(1)).scalars().all())
 
 
 def _require_settings_access(user: User) -> None:
@@ -220,11 +225,13 @@ def _deck_content_response(
     import_success: str | None = None,
     update_error: str | None = None,
     update_success: str | None = None,
+    has_published_tests: bool = False,
 ):
     can_edit = can_manage_deck(user, deck)
     flashcards = [card for card in cards if card.card_type == "basic"]
     mcqs = [card for card in cards if card.card_type == "mcq"]
-    tests_available = can_access_tests(user, deck) and deck_has_test_content(cards)
+    has_test_content = deck_has_test_content(cards)
+    tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
     return templates.TemplateResponse(
         template_name,
         {
@@ -239,6 +246,8 @@ def _deck_content_response(
             "can_edit": can_edit,
             "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
             "tests_available": tests_available,
+            "has_test_content": has_test_content,
+            "has_published_tests": has_published_tests,
             "active_section": active_section,
             "title": title,
             "import_error": import_error,
@@ -656,6 +665,7 @@ def deck_overview(
         raise HTTPException(status_code=404)
 
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
         user=user,
@@ -666,6 +676,7 @@ def deck_overview(
         active_section="overview",
         import_success=request.query_params.get("import_success"),
         update_success=request.query_params.get("update_success"),
+        has_published_tests=has_published_tests,
     )
 
 
@@ -681,6 +692,7 @@ def deck_flashcards(
         raise HTTPException(status_code=404)
 
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
         user=user,
@@ -693,6 +705,7 @@ def deck_flashcards(
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
+        has_published_tests=has_published_tests,
     )
 
 
@@ -708,6 +721,7 @@ def deck_mcqs(
         raise HTTPException(status_code=404)
 
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
         user=user,
@@ -720,6 +734,7 @@ def deck_mcqs(
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
+        has_published_tests=has_published_tests,
     )
 
 
@@ -737,6 +752,7 @@ def deck_ai_upload(
         raise HTTPException(status_code=404)
 
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
         user=user,
@@ -749,6 +765,7 @@ def deck_ai_upload(
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
+        has_published_tests=has_published_tests,
     )
 
 

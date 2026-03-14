@@ -76,6 +76,12 @@ def can_access_tests(user: Any, deck: Any) -> bool:
     return bool(getattr(user, "is_test_enabled", False)) and can_access_deck(user, deck)
 
 
+def can_open_test_center(user: Any, deck: Any, *, has_test_content: bool = False, has_published_tests: bool = False) -> bool:
+    if can_manage_tests(user, deck):
+        return can_access_deck(user, deck)
+    return can_access_tests(user, deck) and (has_test_content or has_published_tests)
+
+
 def deck_has_test_content(cards: list[Any]) -> bool:
     return any(
         getattr(card, "card_type", None) == "mcq"

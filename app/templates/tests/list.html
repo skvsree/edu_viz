@@ -9,11 +9,12 @@
   {% if can_edit %}
   <section class="card form-card">
     <p class="panel-label">Create test</p>
+    {% if not has_test_content %}<p class="muted">Add at least one MCQ in this deck first. Once MCQs exist, you can create a published deck test here.</p>{% endif %}
     <form method="post" action="/decks/{{ deck.id }}/tests" class="stack-md">
-      <div><label>Title</label><input name="title" required /></div>
-      <div><label>Description</label><textarea name="description" rows="4"></textarea></div>
-      <div><label>Question count</label><input type="number" name="question_count" min="1" max="100" value="10" /></div>
-      <button type="submit" class="button">Create published test</button>
+      <div><label>Title</label><input name="title" required {% if not has_test_content %}disabled{% endif %} /></div>
+      <div><label>Description</label><textarea name="description" rows="4" {% if not has_test_content %}disabled{% endif %}></textarea></div>
+      <div><label>Question count</label><input type="number" name="question_count" min="1" max="100" value="10" {% if not has_test_content %}disabled{% endif %} /></div>
+      <button type="submit" class="button" {% if not has_test_content %}disabled{% endif %}>Create published test</button>
     </form>
   </section>
   {% endif %}
