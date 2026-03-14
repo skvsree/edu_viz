@@ -40,7 +40,6 @@
         <nav class="topbar-nav" aria-label="Primary navigation">
           {% if user %}
             <a href="/dashboard">Workspace</a>
-            <a href="/review">Review</a>
             {% if user.role in ["admin", "system_admin"] %}
               <a href="/settings">Settings</a>
             {% endif %}
