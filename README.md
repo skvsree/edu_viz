@@ -24,9 +24,17 @@ If you already know the exact OpenID metadata endpoint for your Entra External I
 use `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL`. That is the least ambiguous option.
 
 Important: keep the authorize endpoint and token/metadata authority aligned. A broad
-Microsoft authorize authority like `https://login.microsoftonline.com/organizations`
-cannot safely be paired with a tenant-scoped metadata/token endpoint; Azure rejects the
-callback code exchange with `AADSTS700005` in that mixed setup.
+Microsoft authorize authority like `https://login.microsoftonline.com/common` or
+`https://login.microsoftonline.com/organizations` cannot safely be paired with a
+tenant-scoped metadata/token endpoint; Azure rejects the callback code exchange with
+`AADSTS700005` in that mixed setup.
+
+For true multi-tenant Microsoft login, use `common` consistently for discovery and
+authorization, for example:
+
+- `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORITY=https://login.microsoftonline.com/common/v2.0`
+- leave `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORIZE_AUTHORITY` empty unless you need an explicit override
+- leave `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL` empty unless you need an explicit override
 
 ### Legacy Azure AD B2C compatibility
 

@@ -13,7 +13,12 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.models import User
 from app.services.admin_bootstrap import bootstrap_system_admin_for_user
-from app.services.microsoft_identity import build_oauth, load_identity_config
+from app.services.microsoft_identity import (
+    build_claims_options,
+    build_oauth,
+    load_identity_config,
+    validate_userinfo_issuer,
+)
 from app.services.session import sign_session
 
 router = APIRouter(tags=["auth"])
@@ -34,8 +39,11 @@ async def login(request: Request, user: User | None = Depends(optional_current_u
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
     cfg = load_identity_config()
     oauth = build_oauth()
+    metadata = await oauth.microsoft.load_server_metadata()
+    claims_options = build_claims_options(metadata.get("issuer"))
+
     try:
-        token = await oauth.microsoft.authorize_access_token(request)
+        token = await oauth.microsoft.authorize_access_token(request, claims_options=claims_options)
     except OAuthError as exc:
         logger.warning("OIDC callback failed: %s (%s)", exc.error, exc.description)
         raise HTTPException(status_code=400, detail="login failed") from exc
@@ -46,6 +54,9 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 
     if not isinstance(userinfo, dict) or not userinfo.get(cfg.subject_claim):
         raise HTTPException(status_code=400, detail="invalid id token")
+
+    if not validate_userinfo_issuer(metadata.get("issuer"), userinfo):
+        raise HTTPException(status_code=400, detail="invalid issuer")
 
     sub = str(userinfo[cfg.subject_claim])
     email = userinfo.get("email")

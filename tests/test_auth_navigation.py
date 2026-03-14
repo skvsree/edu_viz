@@ -8,7 +8,12 @@ from uuid import uuid4
 from starlette.responses import RedirectResponse
 
 from app.api.routers import auth, pages
-from app.services.microsoft_identity import build_oauth, load_identity_config
+from app.services.microsoft_identity import (
+    build_claims_options,
+    build_oauth,
+    load_identity_config,
+    validate_userinfo_issuer,
+)
 from tests.test_dashboard_routes import make_request
 
 
@@ -131,3 +136,52 @@ def test_load_identity_config_ignores_broad_authorize_authority_when_metadata_is
 
     assert cfg.metadata_url == "https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration"
     assert cfg.authorize_url is None
+
+
+def test_load_identity_config_keeps_common_authority_aligned_for_authorize_and_metadata():
+    with patch(
+        "app.services.microsoft_identity.settings",
+        SimpleNamespace(
+            microsoft_entra_external_id_client_id="client-id",
+            microsoft_entra_external_id_client_secret="client-secret",
+            microsoft_entra_external_id_redirect_uri="https://callback.example.test",
+            microsoft_entra_external_id_scopes="openid profile email",
+            microsoft_entra_external_id_authority="https://login.microsoftonline.com/common/v2.0",
+            microsoft_entra_external_id_authorize_authority=None,
+            microsoft_entra_external_id_metadata_url=None,
+            azure_b2c_client_id=None,
+            azure_b2c_client_secret=None,
+            azure_b2c_redirect_uri=None,
+            azure_b2c_tenant_domain=None,
+            azure_b2c_tenant_name=None,
+            azure_b2c_policy=None,
+        ),
+    ):
+        cfg = load_identity_config()
+
+    assert cfg.metadata_url == "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+    assert cfg.authorize_url == "https://login.microsoftonline.com/common/v2.0/oauth2/v2.0/authorize"
+
+
+def test_build_claims_options_skips_literal_issuer_check_for_common_metadata():
+    assert build_claims_options("https://login.microsoftonline.com/{tenantid}/v2.0") == {}
+
+
+def test_validate_userinfo_issuer_accepts_common_metadata_template_with_tid():
+    assert validate_userinfo_issuer(
+        "https://login.microsoftonline.com/{tenantid}/v2.0",
+        {
+            "iss": "https://login.microsoftonline.com/96b2d897-3d2e-4432-b244-03ce5c7bedfa/v2.0",
+            "tid": "96b2d897-3d2e-4432-b244-03ce5c7bedfa",
+        },
+    )
+
+
+def test_validate_userinfo_issuer_rejects_mismatched_common_metadata_issuer():
+    assert not validate_userinfo_issuer(
+        "https://login.microsoftonline.com/{tenantid}/v2.0",
+        {
+            "iss": "https://login.microsoftonline.com/other-tenant/v2.0",
+            "tid": "96b2d897-3d2e-4432-b244-03ce5c7bedfa",
+        },
+    )

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -115,6 +117,56 @@ def _resolve_metadata_url(authority: str | None) -> tuple[str | None, str | None
     if authority:
         return f"{authority}/.well-known/openid-configuration", "authority"
     return None, None
+
+
+def _decode_jwt_claims_without_verification(id_token: str | None) -> dict[str, object]:
+    if not id_token:
+        return {}
+
+    parts = id_token.split(".")
+    if len(parts) < 2:
+        return {}
+
+    payload = parts[1]
+    padding = "=" * (-len(payload) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(payload + padding)
+        claims = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return {}
+
+    return claims if isinstance(claims, dict) else {}
+
+
+def build_claims_options(metadata_issuer: str | None) -> dict[str, dict[str, list[str]]] | None:
+    metadata_issuer = _normalize_url(metadata_issuer)
+    if not metadata_issuer:
+        return None
+
+    if "{tenantid}" in metadata_issuer:
+        return {}
+
+    return {"iss": {"values": [metadata_issuer]}}
+
+
+def validate_userinfo_issuer(metadata_issuer: str | None, userinfo: dict[str, object] | None) -> bool:
+    metadata_issuer = _normalize_url(metadata_issuer)
+    if not metadata_issuer or not isinstance(userinfo, dict):
+        return False
+
+    issuer = userinfo.get("iss")
+    if not isinstance(issuer, str):
+        return False
+
+    if "{tenantid}" not in metadata_issuer:
+        return issuer == metadata_issuer
+
+    tenant_id = userinfo.get("tid")
+    if not isinstance(tenant_id, str):
+        return False
+
+    expected_issuer = metadata_issuer.replace("{tenantid}", tenant_id)
+    return issuer == expected_issuer
 
 
 def get_identity_config_status() -> MicrosoftIdentityConfigStatus:
