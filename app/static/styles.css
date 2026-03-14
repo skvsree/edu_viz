@@ -381,6 +381,47 @@ body::after {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.bulk-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.bulk-actions__controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bulk-actions__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.bulk-actions__count {
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.study-card__select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
 .hero-stats article,
 .info-card,
 .metric-pill,

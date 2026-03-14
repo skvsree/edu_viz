@@ -51,18 +51,81 @@
       </div>
     </div>
     {% if flashcards %}
-      <div class="study-card-grid">
-        {% for c in flashcards %}
-          <article class="study-card">
-            <div class="study-card__label">Front</div>
-            <p>{{ c.front }}</p>
-            <div class="study-card__label">Back</div>
-            <p class="muted">{{ c.back }}</p>
-            {% if can_edit %}<a href="/decks/{{ deck.id }}/flashcards/{{ c.id }}/edit" class="button button-secondary button-small">Edit flashcard</a>{% endif %}
-          </article>
-        {% endfor %}
-      </div>
+      {% if can_edit %}
+        <form method="post" action="/decks/{{ deck.id }}/flashcards/bulk-delete" class="bulk-form" data-bulk-form data-confirm-message="Delete {count} flashcard(s)? This cannot be undone.">
+          <div class="bulk-actions">
+            <div class="bulk-actions__controls">
+              <label class="bulk-actions__toggle"><input type="checkbox" data-bulk-select-all />Select all</label>
+              <span class="bulk-actions__count"><strong data-bulk-count>0</strong> selected</span>
+            </div>
+            <button type="submit" class="button button-danger button-small" data-bulk-submit disabled>Delete selected</button>
+          </div>
+          <div class="study-card-grid">
+            {% for c in flashcards %}
+              <article class="study-card">
+                <label class="study-card__select"><input type="checkbox" name="card_ids" value="{{ c.id }}" data-bulk-item />Select</label>
+                <div class="study-card__label">Front</div>
+                <p>{{ c.front }}</p>
+                <div class="study-card__label">Back</div>
+                <p class="muted">{{ c.back }}</p>
+                <a href="/decks/{{ deck.id }}/flashcards/{{ c.id }}/edit" class="button button-secondary button-small">Edit flashcard</a>
+              </article>
+            {% endfor %}
+          </div>
+        </form>
+      {% else %}
+        <div class="study-card-grid">
+          {% for c in flashcards %}
+            <article class="study-card">
+              <div class="study-card__label">Front</div>
+              <p>{{ c.front }}</p>
+              <div class="study-card__label">Back</div>
+              <p class="muted">{{ c.back }}</p>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
     {% else %}<div class="empty-state"><h3>No flashcards yet</h3></div>{% endif %}
   </section>
 </section>
+<script>
+  (() => {
+    const form = document.querySelector("[data-bulk-form]");
+    if (!form) return;
+    const selectAll = form.querySelector("[data-bulk-select-all]");
+    const items = Array.from(form.querySelectorAll("[data-bulk-item]"));
+    const submit = form.querySelector("[data-bulk-submit]");
+    const count = form.querySelector("[data-bulk-count]");
+    const update = () => {
+      const selected = items.filter((item) => item.checked).length;
+      if (count) count.textContent = String(selected);
+      if (submit) submit.disabled = selected === 0;
+      if (selectAll) {
+        selectAll.checked = selected > 0 && selected === items.length;
+        selectAll.indeterminate = selected > 0 && selected < items.length;
+      }
+    };
+    if (selectAll) {
+      selectAll.addEventListener("change", () => {
+        items.forEach((item) => {
+          item.checked = selectAll.checked;
+        });
+        update();
+      });
+    }
+    items.forEach((item) => item.addEventListener("change", update));
+    form.addEventListener("submit", (event) => {
+      const selected = items.filter((item) => item.checked).length;
+      if (selected === 0) {
+        event.preventDefault();
+        return;
+      }
+      const message = form.getAttribute("data-confirm-message");
+      if (message && !window.confirm(message.replace("{count}", String(selected)))) {
+        event.preventDefault();
+      }
+    });
+    update();
+  })();
+</script>
 {% endblock %}

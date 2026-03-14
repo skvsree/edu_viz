@@ -7,7 +7,7 @@ from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import current_user
@@ -227,6 +227,56 @@ def edit_mcq(
     card.mcq_answer_index = answer_index
     db.commit()
     return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_success={quote_plus('MCQ updated')}", status_code=303)
+
+
+@router.post("/decks/{deck_id}/flashcards/bulk-delete")
+def bulk_delete_flashcards(
+    deck_id: str,
+    card_ids: list[str] = Form(default=[]),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    unique_ids = sorted({card_id for card_id in card_ids if card_id})
+    if not unique_ids:
+        return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_error={quote_plus('Select at least one flashcard to delete.')}", status_code=303)
+
+    cards = db.execute(select(Card.id, Card.deck_id, Card.card_type).where(Card.id.in_(unique_ids))).all()
+    if len(cards) != len(unique_ids) or any(card.deck_id != deck.id or card.card_type != "basic" for card in cards):
+        return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_error={quote_plus('Some selected flashcards are invalid for this deck.')}", status_code=303)
+
+    db.execute(delete(TestQuestion).where(TestQuestion.card_id.in_(unique_ids)))
+    db.execute(delete(Card).where(Card.id.in_(unique_ids)))
+    db.commit()
+    return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_success={quote_plus(f'Deleted {len(unique_ids)} flashcard(s)')}", status_code=303)
+
+
+@router.post("/decks/{deck_id}/mcqs/bulk-delete")
+def bulk_delete_mcqs(
+    deck_id: str,
+    card_ids: list[str] = Form(default=[]),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    unique_ids = sorted({card_id for card_id in card_ids if card_id})
+    if not unique_ids:
+        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_error={quote_plus('Select at least one MCQ to delete.')}", status_code=303)
+
+    cards = db.execute(select(Card.id, Card.deck_id, Card.card_type).where(Card.id.in_(unique_ids))).all()
+    if len(cards) != len(unique_ids) or any(card.deck_id != deck.id or card.card_type != "mcq" for card in cards):
+        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_error={quote_plus('Some selected MCQs are invalid for this deck.')}", status_code=303)
+
+    db.execute(delete(TestQuestion).where(TestQuestion.card_id.in_(unique_ids)))
+    db.execute(delete(Card).where(Card.id.in_(unique_ids)))
+    db.commit()
+    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_success={quote_plus(f'Deleted {len(unique_ids)} MCQ(s)')}", status_code=303)
 
 
 @router.get("/decks/{deck_id}/tests", response_class=HTMLResponse)
