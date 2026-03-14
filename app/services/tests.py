@@ -22,14 +22,12 @@ def create_test_from_deck(
     created_by_user_id,
     title: str,
     description: str | None,
-    question_count: int,
 ) -> Test:
     cards = (
         db.execute(
             select(Card)
             .where(Card.deck_id == deck_id, Card.card_type == "mcq")
             .order_by(Card.created_at.asc())
-            .limit(question_count)
         )
         .scalars()
         .all()
@@ -65,17 +63,23 @@ def list_accessible_tests(db: Session, *, deck_id):
     )
 
 
-def submit_attempt(db: Session, *, test: Test, user_id, answers: dict[str, int | None]) -> TestAttempt:
-    questions = (
-        db.execute(
-            select(TestQuestion)
-            .options(selectinload(TestQuestion.card))
-            .where(TestQuestion.test_id == test.id)
-            .order_by(TestQuestion.position.asc())
-        )
-        .scalars()
-        .all()
+def submit_attempt(
+    db: Session,
+    *,
+    test: Test,
+    user_id,
+    answers: dict[str, int | None],
+    question_ids: list[str] | None = None,
+) -> TestAttempt:
+    stmt = (
+        select(TestQuestion)
+        .options(selectinload(TestQuestion.card))
+        .where(TestQuestion.test_id == test.id)
+        .order_by(TestQuestion.position.asc())
     )
+    if question_ids:
+        stmt = stmt.where(TestQuestion.id.in_(question_ids))
+    questions = db.execute(stmt).scalars().all()
     attempt = TestAttempt(test_id=test.id, user_id=user_id, total_questions=len(questions), score=0)
     db.add(attempt)
     db.flush()

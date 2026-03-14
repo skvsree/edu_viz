@@ -860,9 +860,24 @@ def review_page(request: Request, user: User = Depends(current_user), db: Sessio
         if not deck or not can_access_deck(user, deck):
             raise HTTPException(status_code=404)
 
+    review_limit = None
+    raw_limit = request.query_params.get("count")
+    if raw_limit:
+        try:
+            review_limit = max(1, min(int(raw_limit), 100))
+        except ValueError:
+            review_limit = None
+
     return templates.TemplateResponse(
         "review/page.html",
-        {"request": request, "user": user, "title": "Review | edu selviz", "review_deck": deck},
+        {
+            "request": request,
+            "user": user,
+            "title": "Review | edu selviz",
+            "review_deck": deck,
+            "review_limit": review_limit,
+            "review_options": [10, 25, 50],
+        },
     )
 
 
@@ -879,13 +894,28 @@ def review_next(
         deck = db.get(Deck, deck_id)
         if not deck or not can_access_deck(user, deck):
             raise HTTPException(status_code=404)
+
+    remaining = None
+    raw_remaining = request.query_params.get("remaining")
+    if raw_remaining:
+        try:
+            remaining = max(0, int(raw_remaining))
+        except ValueError:
+            remaining = None
+
+    if remaining == 0:
+        return templates.TemplateResponse(
+            "review/empty.html",
+            {"request": request, "user": user, "review_deck": deck, "review_complete": True},
+        )
+
     card = svc.next_due_card(db, user=user, deck_id=deck.id if deck else None)
     if card is None:
-        return templates.TemplateResponse("review/empty.html", {"request": request, "user": user, "review_deck": deck})
+        return templates.TemplateResponse("review/empty.html", {"request": request, "user": user, "review_deck": deck, "review_complete": False})
 
     return templates.TemplateResponse(
         "review/card.html",
-        {"request": request, "user": user, "card": card, "review_deck": deck},
+        {"request": request, "user": user, "card": card, "review_deck": deck, "remaining": remaining},
     )
 
 
@@ -895,6 +925,7 @@ def review_rate(
     card_id: str = Form(...),
     rating: int = Form(...),
     deck_id: str = Form(default=""),
+    remaining: int | None = Form(default=None),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -909,6 +940,11 @@ def review_rate(
     svc.rate(db, card_id=card.id, rating=rating)
     db.commit()
 
-    query = f"?deck_id={deck_id}" if deck_id else ""
-    request.scope["query_string"] = query.lstrip("?").encode()
+    next_remaining = None if remaining is None else max(remaining - 1, 0)
+    query_pairs: list[tuple[str, str]] = []
+    if deck_id:
+        query_pairs.append(("deck_id", deck_id))
+    if next_remaining is not None:
+        query_pairs.append(("remaining", str(next_remaining)))
+    request.scope["query_string"] = urlencode(query_pairs).encode()
     return review_next(request=request, user=user, db=db)

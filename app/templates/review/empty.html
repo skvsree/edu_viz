@@ -1,6 +1,7 @@
 <article class="card empty-state review-empty-state">
-  <p class="review-empty-state__copy">Nothing due.</p>
+  <p class="review-empty-state__copy">{% if review_complete %}Review session complete.{% else %}Nothing due.{% endif %}</p>
   <div class="review-empty-state__actions">
     <a href="/dashboard" class="button button-secondary button-small">Return to workspace</a>
+    {% if review_deck %}<a href="/review?deck_id={{ review_deck.id }}" class="button button-secondary button-small">Choose another session size</a>{% else %}<a href="/review" class="button button-secondary button-small">Start another review</a>{% endif %}
   </div>
 </article>

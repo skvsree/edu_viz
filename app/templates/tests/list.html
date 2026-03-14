@@ -2,7 +2,7 @@
 {% block content %}
 <section class="stack-lg">
   <section class="card section-heading-card">
-    <div><p class="panel-label">Tests</p><h1 class="section-title">{{ deck.name }}</h1><p class="muted">Take multiple attempts and open analysis reports from here.</p></div>
+    <div><p class="panel-label">Tests</p><h1 class="section-title">{{ deck.name }}</h1><p class="muted">Create full deck tests once, then let each learner choose how many questions to take when launching.</p></div>
     <div class="deck-card__actions"><a href="/decks/{{ deck.id }}" class="button button-secondary">Overview</a><a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Flashcards</a><a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">MCQs</a></div>
   </section>
   {% if request.query_params.get('error') %}<section class="status-banner status-banner--error"><strong>Test creation failed.</strong><span>{{ request.query_params.get('error') }}</span></section>{% endif %}
@@ -13,7 +13,7 @@
     <form method="post" action="/decks/{{ deck.id }}/tests" class="stack-md">
       <div><label>Title</label><input name="title" required {% if not has_test_content %}disabled{% endif %} /></div>
       <div><label>Description</label><textarea name="description" rows="4" {% if not has_test_content %}disabled{% endif %}></textarea></div>
-      <div><label>Question count</label><input type="number" name="question_count" min="1" max="100" value="10" {% if not has_test_content %}disabled{% endif %} /></div>
+      <p class="muted compact-copy">Question count is no longer fixed here. A published test now includes the full MCQ bank for this deck, and the learner picks 10 / 25 / 50 / all when starting the test.</p>
       <button type="submit" class="button" {% if not has_test_content %}disabled{% endif %}>Create published test</button>
     </form>
   </section>
@@ -24,8 +24,8 @@
         <article class="study-card">
           <h3>{{ test.title }}</h3>
           <p class="muted">{{ test.description or 'Deck-linked MCQ test' }}</p>
-          <p class="muted">{{ test.question_count }} questions</p>
-          <a href="/tests/{{ test.id }}" class="button button-secondary button-small">Take test</a>
+          <p class="muted">{{ test.question_count }} questions available</p>
+          <a href="/tests/{{ test.id }}" class="button button-secondary button-small">Choose question count</a>
           {% set attempts = attempts_by_test.get(test.id|string, []) %}
           {% if attempts %}
             <div class="stack-md">

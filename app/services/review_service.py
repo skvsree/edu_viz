@@ -30,7 +30,7 @@ class ReviewService:
             select(Card)
             .join(Card.deck)
             .join(Card.state, isouter=True)
-            .where(accessible_deck_clause(user))
+            .where(accessible_deck_clause(user), Card.card_type == "basic")
         )
         if deck_id is not None:
             stmt = stmt.where(Card.deck_id == deck_id)

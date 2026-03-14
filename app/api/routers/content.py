@@ -51,8 +51,6 @@ def _require_mcq_json_access(user: User) -> None:
 def ai_import_deck_content(
     deck_id: str,
     source_file: UploadFile = File(...),
-    flashcard_count: int = Form(default=12),
-    mcq_count: int = Form(default=10),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -65,7 +63,7 @@ def ai_import_deck_content(
     source_file.file.close()
     try:
         text = extract_text(source_file.filename or "", payload)
-        pack = generate_study_pack(text, flashcard_count=flashcard_count, mcq_count=mcq_count)
+        pack = generate_study_pack(text)
     except (ContentExtractionError, AIGenerationError) as exc:
         message = quote_plus(str(exc))
         return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_error={message}", status_code=303)
@@ -257,12 +255,12 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
 
 
 @router.post("/decks/{deck_id}/tests")
-def create_test(deck_id: str, title: str = Form(...), description: str = Form(default=""), question_count: int = Form(default=10), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def create_test(deck_id: str, title: str = Form(...), description: str = Form(default=""), user: User = Depends(current_user), db: Session = Depends(get_db)):
     deck = db.get(Deck, deck_id)
     if not deck or not can_manage_tests(user, deck):
         raise HTTPException(status_code=404)
     try:
-        create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, title=title.strip(), description=description.strip() or None, question_count=max(1, min(question_count, 100)))
+        create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, title=title.strip(), description=description.strip() or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/decks/{deck.id}/tests?error={quote_plus(str(exc))}", status_code=303)
     db.commit()
@@ -274,7 +272,35 @@ def take_test_page(test_id: str, request: Request, user: User = Depends(current_
     test = db.execute(select(Test).options(selectinload(Test.questions).selectinload(TestQuestion.card), selectinload(Test.deck)).where(Test.id == test_id)).scalar_one_or_none()
     if not test or not can_access_tests(user, test.deck):
         raise HTTPException(status_code=404)
-    return templates.TemplateResponse("tests/take.html", {"request": request, "user": user, "test": test, "title": test.title})
+
+    questions = sorted(test.questions, key=lambda item: item.position)
+    total_available = len(questions)
+    selected_count = request.query_params.get("count")
+    chosen_count = None
+    if selected_count:
+        try:
+            chosen_count = max(1, min(int(selected_count), total_available))
+        except ValueError:
+            chosen_count = None
+
+    selected_questions = questions[:chosen_count] if chosen_count else []
+    launch_options = [option for option in (10, 25, 50) if option < total_available]
+    if total_available and total_available not in launch_options:
+        launch_options.append(total_available)
+
+    return templates.TemplateResponse(
+        "tests/take.html",
+        {
+            "request": request,
+            "user": user,
+            "test": test,
+            "questions": selected_questions,
+            "total_available": total_available,
+            "chosen_count": chosen_count,
+            "launch_options": launch_options,
+            "title": test.title,
+        },
+    )
 
 
 @router.post("/tests/{test_id}/submit")
@@ -284,10 +310,11 @@ async def submit_test(test_id: str, request: Request, user: User = Depends(curre
         raise HTTPException(status_code=404)
     answers: dict[str, int | None] = {}
     form = await request.form()
+    question_ids = [value for key, value in form.multi_items() if key == "question_ids" and value]
     for key, value in form.items():
         if key.startswith("question_"):
             answers[key.removeprefix("question_")] = int(value) if value != "" else None
-    attempt = submit_attempt(db, test=test, user_id=user.id, answers=answers)
+    attempt = submit_attempt(db, test=test, user_id=user.id, answers=answers, question_ids=question_ids or None)
     db.commit()
     return RedirectResponse(url=f"/attempts/{attempt.id}", status_code=303)
 

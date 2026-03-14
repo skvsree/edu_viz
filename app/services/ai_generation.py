@@ -32,20 +32,22 @@ class GeneratedStudyPack:
     mcqs: list[GeneratedMcq]
 
 
-def _build_prompt(text: str, flashcard_count: int, mcq_count: int) -> str:
+def _build_prompt(text: str) -> str:
     sample = text[:12000]
     return (
         "You are preparing study material for Indian medical entrance exam revision. "
         "Return strict JSON with keys flashcards and mcqs. "
         "flashcards: array of objects with front and back. "
         "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
-        f"Generate {flashcard_count} flashcards and {mcq_count} mcqs from this source text. "
+        "Generate a comprehensive, high-value study pack from this source text. "
+        "Include as many useful flashcards and MCQs as the material naturally supports without padding or repetition. "
+        "Cover key definitions, mechanisms, cause-effect links, comparisons, classifications, formulas, and exam-relevant traps. "
         "Make the MCQs NEET-style, concept-focused, and not trivial.\n\n"
         f"{sample}"
     )
 
 
-def generate_study_pack(text: str, *, flashcard_count: int = 12, mcq_count: int = 10) -> GeneratedStudyPack:
+def generate_study_pack(text: str) -> GeneratedStudyPack:
     if not settings.openai_generation_enabled:
         raise AIGenerationError("OpenAI generation is disabled by configuration.")
     if not settings.openai_api_key:
@@ -54,7 +56,7 @@ def generate_study_pack(text: str, *, flashcard_count: int = 12, mcq_count: int 
     client = OpenAI(api_key=settings.openai_api_key)
     response = client.responses.create(
         model=settings.openai_model,
-        input=_build_prompt(text, flashcard_count, mcq_count),
+        input=_build_prompt(text),
     )
     raw = response.output_text
     try:

@@ -2,16 +2,38 @@
 {% block content %}
 <section class="stack-lg">
   <section class="card section-heading-card"><div><p class="panel-label">Take test</p><h1 class="section-title">{{ test.title }}</h1><p class="muted">{{ test.description or 'Answer all questions and submit for detailed analysis.' }}</p></div><a href="/decks/{{ test.deck.id }}/tests" class="button button-secondary">Back to tests</a></section>
-  <form method="post" action="/tests/{{ test.id }}/submit" class="stack-lg">
-    {% for question in test.questions|sort(attribute='position') %}
-      <section class="card stack-md">
-        <h3>Q{{ loop.index }}. {{ question.card.front }}</h3>
-        {% for option in question.card.mcq_options or [] %}
-          <label class="checkbox-row"><input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required /><span>{{ option }}</span></label>
-        {% endfor %}
-      </section>
-    {% endfor %}
-    <button type="submit" class="button">Submit test</button>
-  </form>
+
+  {% if not chosen_count %}
+    <section class="card form-card stack-md">
+      <div>
+        <p class="panel-label">Launch test</p>
+        <h2 class="section-subtitle">Choose how many questions to take now</h2>
+        <p class="muted">This published test has {{ total_available }} questions available. Pick a session size for this attempt.</p>
+      </div>
+      <form method="get" action="/tests/{{ test.id }}" class="stack-md">
+        <div>
+          <label>Questions for this attempt</label>
+          <select name="count">
+            {% for option in launch_options %}<option value="{{ option }}">{{ option }} questions</option>{% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="button">Start test</button>
+      </form>
+    </section>
+  {% else %}
+    <section class="card info-card"><p class="muted">Showing {{ chosen_count }} of {{ total_available }} available questions for this attempt.</p></section>
+    <form method="post" action="/tests/{{ test.id }}/submit" class="stack-lg">
+      {% for question in questions %}
+        <input type="hidden" name="question_ids" value="{{ question.id }}" />
+        <section class="card stack-md">
+          <h3>Q{{ loop.index }}. {{ question.card.front }}</h3>
+          {% for option in question.card.mcq_options or [] %}
+            <label class="checkbox-row"><input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required /><span>{{ option }}</span></label>
+          {% endfor %}
+        </section>
+      {% endfor %}
+      <button type="submit" class="button">Submit test</button>
+    </form>
+  {% endif %}
 </section>
 {% endblock %}

@@ -78,7 +78,7 @@ def test_create_test_allows_admin_manager():
     db = FakeDB({str(deck.id): deck, deck.id: deck})
 
     with patch.object(content, "create_test_from_deck", lambda *args, **kwargs: None):
-        response = content.create_test(deck_id=str(deck.id), title="Quiz", description="", question_count=5, user=user, db=db)
+        response = content.create_test(deck_id=str(deck.id), title="Quiz", description="", user=user, db=db)
 
     assert isinstance(response, RedirectResponse)
     assert response.status_code == 303
@@ -92,11 +92,14 @@ def test_ai_upload_page_requires_existing_ai_access_rules():
 
     enabled = pages.deck_ai_upload(make_request(path=f"/decks/{deck.id}/ai-upload"), deck_id=str(deck.id), user=enabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
     enabled_body = render_body(enabled)
-    assert "AI study generation" in enabled_body
     assert enabled_body.count('aria-label="Deck sections"') == 1
     assert enabled_body.count(f'href="/decks/{deck.id}"') == 1
     assert enabled_body.count(f'href="/decks/{deck.id}/flashcards"') == 2
     assert enabled_body.count(f'href="/decks/{deck.id}/mcqs"') == 2
+    assert "Generate study pack" in enabled_body
+    assert "Counts are no longer chosen here" in enabled_body
+    assert 'name="flashcard_count"' not in enabled_body
+    assert 'name="mcq_count"' not in enabled_body
     assert can_manage_deck(enabled_user, deck) is True
     assert can_use_ai_generation(enabled_user) is True
 
