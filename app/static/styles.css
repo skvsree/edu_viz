@@ -791,17 +791,21 @@ body::after {
   background: #fffdfa;
   color: #111827;
   font-size: clamp(1.5rem, 3vw, 2.1rem);
-  line-height: 1.7;
+  font-weight: 650;
+  line-height: 1.68;
+  letter-spacing: -0.01em;
 }
 
 .review-card__text--prompt {
   min-height: 220px;
   display: grid;
   align-items: center;
+  font-weight: 700;
 }
 
 .review-card__text--answer {
   background: #f2efe8;
+  color: #0f172a;
 }
 
 .review-answer {
