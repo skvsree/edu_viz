@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -13,7 +14,15 @@ from app.api.deps import current_user
 from app.api.routers.pages import templates
 from app.core.db import get_db
 from app.models import Card, CardState, Deck, Test, TestQuestion, User
-from app.services.access import ROLE_SYSTEM_ADMIN, can_access_deck, can_manage_deck
+from app.services.access import (
+    ROLE_SYSTEM_ADMIN,
+    can_access_deck,
+    can_access_tests,
+    can_import_mcq_json,
+    can_manage_deck,
+    can_manage_tests,
+    can_use_ai_generation,
+)
 from app.services.ai_generation import AIGenerationError, generate_study_pack
 from app.services.content_extraction import ContentExtractionError, extract_text
 from app.services.mcq_import import McqImportError, parse_mcq_json
@@ -27,6 +36,16 @@ def _require_system_admin(user: User) -> None:
         raise HTTPException(status_code=403, detail="Only system admins can access this page.")
 
 
+def _require_ai_generation_access(user: User) -> None:
+    if not can_use_ai_generation(user):
+        raise HTTPException(status_code=403, detail="AI generation is not enabled for your account or organization.")
+
+
+def _require_mcq_json_access(user: User) -> None:
+    if not can_import_mcq_json(user):
+        raise HTTPException(status_code=403, detail="You do not have permission to import MCQ JSON.")
+
+
 @router.post("/decks/{deck_id}/ai-import")
 def ai_import_deck_content(
     deck_id: str,
@@ -36,7 +55,7 @@ def ai_import_deck_content(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    _require_system_admin(user)
+    _require_ai_generation_access(user)
     deck = db.get(Deck, deck_id)
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
@@ -79,7 +98,7 @@ def import_mcqs_json(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    _require_system_admin(user)
+    _require_mcq_json_access(user)
     deck = db.get(Deck, deck_id)
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
@@ -108,6 +127,31 @@ def import_mcqs_json(
     db.add_all([CardState(card_id=card.id) for card in cards])
     db.commit()
     return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_success={quote_plus(f'Imported {len(cards)} MCQs from JSON')}", status_code=303)
+
+
+@router.get("/sample-mcqs.json")
+def sample_mcq_json_download():
+    sample = {
+        "mcqs": [
+            {
+                "question": "Which planet is known as the Red Planet?",
+                "options": ["Earth", "Mars", "Venus", "Jupiter"],
+                "answer_index": 1,
+                "explanation": "Mars appears reddish because of iron oxide on its surface.",
+            },
+            {
+                "question": "What is the capital of Tamil Nadu?",
+                "options": ["Coimbatore", "Madurai", "Chennai", "Pollachi"],
+                "answer_index": 2,
+                "explanation": "Chennai is the capital city of Tamil Nadu.",
+            },
+        ]
+    }
+    return Response(
+        content=json.dumps(sample, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="sample-mcqs.json"'},
+    )
 
 
 @router.get("/decks/{deck_id}/anki-export.csv")
@@ -191,16 +235,28 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
     deck = db.get(Deck, deck_id)
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
+    if not can_access_tests(user, deck):
+        raise HTTPException(status_code=403, detail="Tests are not enabled for your account.")
     tests = list_accessible_tests(db, deck_id=deck.id)
     attempts_by_test = {str(test.id): user_attempts_for_test(db, test_id=test.id, user_id=user.id) for test in tests}
-    return templates.TemplateResponse("tests/list.html", {"request": request, "user": user, "deck": deck, "tests": tests, "attempts_by_test": attempts_by_test, "title": f"Tests | {deck.name}"})
+    return templates.TemplateResponse(
+        "tests/list.html",
+        {
+            "request": request,
+            "user": user,
+            "deck": deck,
+            "tests": tests,
+            "attempts_by_test": attempts_by_test,
+            "can_edit": can_manage_tests(user, deck),
+            "title": f"Tests | {deck.name}",
+        },
+    )
 
 
 @router.post("/decks/{deck_id}/tests")
 def create_test(deck_id: str, title: str = Form(...), description: str = Form(default=""), question_count: int = Form(default=10), user: User = Depends(current_user), db: Session = Depends(get_db)):
-    _require_system_admin(user)
     deck = db.get(Deck, deck_id)
-    if not deck or not can_manage_deck(user, deck):
+    if not deck or not can_manage_tests(user, deck):
         raise HTTPException(status_code=404)
     try:
         create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, title=title.strip(), description=description.strip() or None, question_count=max(1, min(question_count, 100)))
@@ -213,7 +269,7 @@ def create_test(deck_id: str, title: str = Form(...), description: str = Form(de
 @router.get("/tests/{test_id}", response_class=HTMLResponse)
 def take_test_page(test_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     test = db.execute(select(Test).options(selectinload(Test.questions).selectinload(TestQuestion.card), selectinload(Test.deck)).where(Test.id == test_id)).scalar_one_or_none()
-    if not test or not can_access_deck(user, test.deck):
+    if not test or not can_access_tests(user, test.deck):
         raise HTTPException(status_code=404)
     return templates.TemplateResponse("tests/take.html", {"request": request, "user": user, "test": test, "title": test.title})
 
@@ -221,7 +277,7 @@ def take_test_page(test_id: str, request: Request, user: User = Depends(current_
 @router.post("/tests/{test_id}/submit")
 async def submit_test(test_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     test = db.execute(select(Test).options(selectinload(Test.deck)).where(Test.id == test_id)).scalar_one_or_none()
-    if not test or not can_access_deck(user, test.deck):
+    if not test or not can_access_tests(user, test.deck):
         raise HTTPException(status_code=404)
     answers: dict[str, int | None] = {}
     form = await request.form()

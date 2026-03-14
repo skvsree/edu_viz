@@ -24,8 +24,11 @@ from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     ROLE_USER,
     can_access_deck,
+    can_access_tests,
     can_manage_deck,
     can_manage_decks,
+    can_use_ai_generation,
+    deck_has_test_content,
     normalize_deck_name,
 )
 from app.services.csv_import import CsvImportError, parse_cards_csv
@@ -120,8 +123,8 @@ def _organizations_response(
     organization_success: str | None = None,
     active_modal: str | None = None,
     modal_organization: Organization | None = None,
-    create_form: dict[str, str] | None = None,
-    edit_form: dict[str, str] | None = None,
+    create_form: dict[str, str | bool] | None = None,
+    edit_form: dict[str, str | bool] | None = None,
 ):
     _require_system_admin(user)
     organizations = db.execute(select(Organization).order_by(Organization.name.asc())).scalars().all()
@@ -147,8 +150,12 @@ def _organizations_response(
             "organization_success": organization_success if organization_success is not None else request.query_params.get("success"),
             "active_modal": active_modal or request.query_params.get("modal"),
             "modal_organization": modal_organization,
-            "create_form": create_form or {"name": ""},
-            "edit_form": edit_form or {"name": modal_organization.name if modal_organization else ""},
+            "create_form": create_form or {"name": "", "is_ai_enabled": False},
+            "edit_form": edit_form
+            or {
+                "name": modal_organization.name if modal_organization else "",
+                "is_ai_enabled": modal_organization.is_ai_enabled if modal_organization else False,
+            },
             "title": "Organizations | edu selviz",
         },
         status_code=status_code,
@@ -217,6 +224,7 @@ def _deck_content_response(
     can_edit = can_manage_deck(user, deck)
     flashcards = [card for card in cards if card.card_type == "basic"]
     mcqs = [card for card in cards if card.card_type == "mcq"]
+    tests_available = can_access_tests(user, deck) and deck_has_test_content(cards)
     return templates.TemplateResponse(
         template_name,
         {
@@ -229,6 +237,8 @@ def _deck_content_response(
             "flashcard_count": len(flashcards),
             "mcq_count": len(mcqs),
             "can_edit": can_edit,
+            "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
+            "tests_available": tests_available,
             "active_section": active_section,
             "title": title,
             "import_error": import_error,
@@ -333,6 +343,7 @@ def organizations_page(
 def create_organization(
     request: Request,
     name: str = Form(...),
+    is_ai_enabled: bool = Form(default=False),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -346,10 +357,10 @@ def create_organization(
             status_code=400,
             organization_error="Organization name is required.",
             active_modal="create",
-            create_form={"name": cleaned_name},
+            create_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
         )
 
-    organization = Organization(name=cleaned_name)
+    organization = Organization(name=cleaned_name, is_ai_enabled=is_ai_enabled)
     db.add(organization)
     try:
         db.commit()
@@ -362,7 +373,7 @@ def create_organization(
             status_code=400,
             organization_error="An organization with that name already exists.",
             active_modal="create",
-            create_form={"name": cleaned_name},
+            create_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
         )
 
     return RedirectResponse(url="/settings/organizations?success=Organization+created", status_code=303)
@@ -373,6 +384,7 @@ def update_organization(
     request: Request,
     organization_id: str,
     name: str = Form(...),
+    is_ai_enabled: bool = Form(default=False),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -391,10 +403,11 @@ def update_organization(
             organization_error="Organization name is required.",
             active_modal="edit",
             modal_organization=organization,
-            edit_form={"name": cleaned_name},
+            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
         )
 
     organization.name = cleaned_name
+    organization.is_ai_enabled = is_ai_enabled
     try:
         db.commit()
     except IntegrityError:
@@ -407,7 +420,7 @@ def update_organization(
             organization_error="Unable to update this organization right now.",
             active_modal="edit",
             modal_organization=organization,
-            edit_form={"name": cleaned_name},
+            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
         )
 
     return RedirectResponse(url="/settings/organizations?success=Organization+updated", status_code=303)
@@ -428,6 +441,7 @@ def update_user_settings(
     target_user_id: str,
     role: str = Form(...),
     organization_id: str = Form(default=""),
+    is_test_enabled: bool = Form(default=False),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -454,6 +468,8 @@ def update_user_settings(
         target.organization_id = UUID(organization_id) if organization_id else None
     elif user.role == ROLE_ADMIN:
         target.organization_id = user.organization_id
+
+    target.is_test_enabled = is_test_enabled
 
     db.commit()
     return RedirectResponse(url="/settings/users?success=User+updated", status_code=303)

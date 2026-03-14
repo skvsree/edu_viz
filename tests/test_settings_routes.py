@@ -49,7 +49,7 @@ def test_settings_home_visible_for_admin():
 
 
 def test_organizations_page_visible_for_system_admin():
-    org = SimpleNamespace(id=uuid4(), name="Northwind", users=[SimpleNamespace(id=uuid4())])
+    org = SimpleNamespace(id=uuid4(), name="Northwind", is_ai_enabled=True, users=[SimpleNamespace(id=uuid4())])
     user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=None, email="root@example.com", identity_sub="root-sub")
     db = SettingsDB(organizations=[org])
 
@@ -66,7 +66,7 @@ def test_organizations_page_visible_for_system_admin():
 
 
 def test_users_page_shows_org_assignment_for_system_admin():
-    org = SimpleNamespace(id=uuid4(), name="Northwind")
+    org = SimpleNamespace(id=uuid4(), name="Northwind", is_ai_enabled=True)
     member = SimpleNamespace(
         id=uuid4(),
         email="learner@example.com",
@@ -74,6 +74,7 @@ def test_users_page_shows_org_assignment_for_system_admin():
         role="user",
         organization_id=org.id,
         organization=org,
+        is_test_enabled=True,
     )
     user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=None, email="root@example.com", identity_sub="root-sub")
     db = SettingsDB(organizations=[org], users=[member], objects={member.id: member})

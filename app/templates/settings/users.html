@@ -15,9 +15,9 @@
         <h1 class="section-title">Users</h1>
         <p class="muted section-copy">
           {% if user.role == "system_admin" %}
-            Assign people to organizations and set their roles.
+            Assign people to organizations, set their roles, and enable test access per user.
           {% else %}
-            Review the users in your organization and update org-level roles.
+            Review the users in your organization, update roles, and control test access.
           {% endif %}
         </p>
       </div>
@@ -60,6 +60,17 @@
                   </select>
                 {% else %}
                   <input value="{{ member.organization.name if member.organization else 'Unassigned' }}" disabled />
+                {% endif %}
+              </div>
+              <div>
+                <label for="test-enabled-{{ member.id }}">Tests enabled</label>
+                {% if editable_roles.get(member.id|string) %}
+                  <label class="checkbox-row">
+                    <input id="test-enabled-{{ member.id }}" type="checkbox" name="is_test_enabled" value="true" {% if member.is_test_enabled %}checked{% endif %} />
+                    <span>Allow this user to see and take tests</span>
+                  </label>
+                {% else %}
+                  <input value="{{ 'Enabled' if member.is_test_enabled else 'Disabled' }}" disabled />
                 {% endif %}
               </div>
             </div>

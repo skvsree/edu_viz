@@ -55,6 +55,36 @@ def can_access_deck(user: Any, deck: Any) -> bool:
     return deck.organization_id is None and deck.user_id == user.id
 
 
+def can_use_ai_generation(user: Any) -> bool:
+    if is_system_admin(user):
+        return True
+    if user.role != ROLE_ADMIN:
+        return False
+    organization = getattr(user, "organization", None)
+    return bool(user.organization_id and organization and getattr(organization, "is_ai_enabled", False))
+
+
+def can_import_mcq_json(user: Any) -> bool:
+    return user.role in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}
+
+
+def can_manage_tests(user: Any, deck: Any) -> bool:
+    return can_manage_deck(user, deck)
+
+
+def can_access_tests(user: Any, deck: Any) -> bool:
+    return bool(getattr(user, "is_test_enabled", False)) and can_access_deck(user, deck)
+
+
+def deck_has_test_content(cards: list[Any]) -> bool:
+    return any(
+        getattr(card, "card_type", None) == "mcq"
+        and getattr(card, "mcq_options", None)
+        and getattr(card, "mcq_answer_index", None) in {0, 1, 2, 3}
+        for card in cards
+    )
+
+
 def accessible_deck_clause(user: "User") -> "ColumnElement[bool]":
     from sqlalchemy import or_
 

@@ -299,7 +299,7 @@ def test_flashcards_page_keeps_flashcard_management_together():
     assert "Edit MCQ" not in body
 
 
-def test_mcqs_page_keeps_system_admin_features_and_mcq_list():
+def test_mcqs_page_keeps_admin_features_and_mcq_list():
     org_id = uuid4()
     deck = SimpleNamespace(
         id=uuid4(),
@@ -312,7 +312,7 @@ def test_mcqs_page_keeps_system_admin_features_and_mcq_list():
     )
     flashcard = SimpleNamespace(id=uuid4(), card_type="basic", front="Front", back="Back")
     mcq = SimpleNamespace(id=uuid4(), card_type="mcq", front="Question", back="Answer", mcq_options=["A", "B", "C", "D"], mcq_answer_index=1)
-    user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=org_id)
+    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=True)
 
     response = pages.deck_mcqs(
         make_request(path=f"/decks/{deck.id}/mcqs"),
