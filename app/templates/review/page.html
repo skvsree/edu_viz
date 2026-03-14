@@ -1,17 +1,47 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="stack-lg">
-  <section class="card section-heading-card">
-    <div>
-      <p class="panel-label">Review session</p>
-      <h1 class="section-title">Stay in rhythm with edu selviz</h1>
-      <p class="muted section-copy">
-        Move through due cards with a clean, low-distraction review flow designed for consistent daily study.
-      </p>
-    </div>
-    <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
-  </section>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ title or 'Review | edu selviz' }}</title>
+    <meta
+      name="description"
+      content="Focused review mode in edu selviz for calm, distraction-reduced spaced repetition."
+    />
+    <meta name="theme-color" content="#f5efe2" />
+    <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/logo.jpg') }}" />
+    <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+  </head>
+  <body class="review-body">
+    <div class="review-shell">
+      <header class="review-topbar" aria-label="Review session controls">
+        <a href="/dashboard" class="review-topbar__back">Back to workspace</a>
+        <div class="review-topbar__meta">
+          <span class="review-topbar__eyebrow">Focused review</span>
+          <span class="review-topbar__user">{{ user.email or user.identity_sub }}</span>
+        </div>
+      </header>
 
-  <section id="review-area" hx-get="/review/next" hx-trigger="load" hx-swap="innerHTML"></section>
-</section>
-{% endblock %}
+      <main class="review-main">
+        <section class="review-hero" aria-labelledby="review-title">
+          <p class="review-hero__eyebrow">edu selviz review mode</p>
+          <h1 id="review-title">One card. One decision. Less noise.</h1>
+          <p class="review-hero__copy">
+            This review page is intentionally separate from the main workspace so you can stay with
+            the card in front of you and keep your concentration steady.
+          </p>
+        </section>
+
+        <section id="review-area" class="review-area" hx-get="/review/next" hx-trigger="load" hx-swap="innerHTML"></section>
+      </main>
+    </div>
+  </body>
+</html>

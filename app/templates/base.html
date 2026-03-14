@@ -13,8 +13,9 @@
     <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+    {% block extra_head %}{% endblock %}
   </head>
-  <body>
+  <body class="{% block body_class %}{% endblock %}">
     <div class="page-shell">
       <header class="topbar">
         <a href="/" class="brand-mark" aria-label="edu selviz home">

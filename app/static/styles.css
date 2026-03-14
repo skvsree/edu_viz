@@ -626,6 +626,186 @@ body::after {
   margin-top: 22px;
 }
 
+.review-body {
+  font-family: "Atkinson Hyperlegible Next", Inter, system-ui, sans-serif;
+  color: #1f2937;
+  background:
+    radial-gradient(circle at top, rgba(120, 113, 108, 0.1), transparent 36%),
+    linear-gradient(180deg, #f8f3e8 0%, #f3ede1 48%, #efe7d8 100%);
+}
+
+.review-body::before,
+.review-body::after {
+  display: none;
+}
+
+.review-shell {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+}
+
+.review-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 36px;
+}
+
+.review-topbar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 113, 108, 0.22);
+  background: rgba(255, 252, 247, 0.82);
+  color: #374151;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.review-topbar__back:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.review-topbar__meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  text-align: right;
+}
+
+.review-topbar__eyebrow {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #78716c;
+}
+
+.review-topbar__user {
+  color: #57534e;
+  font-size: 0.95rem;
+}
+
+.review-main {
+  display: grid;
+  gap: 24px;
+}
+
+.review-hero {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.review-hero__eyebrow {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #78716c;
+}
+
+.review-hero h1 {
+  max-width: 12ch;
+  margin: 0;
+  color: #111827;
+  font-size: clamp(2.3rem, 5vw, 4.4rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.review-hero__copy {
+  max-width: 50ch;
+  margin: 0;
+  color: #57534e;
+  font-size: 1.02rem;
+  line-height: 1.75;
+}
+
+.review-area {
+  display: grid;
+  justify-items: center;
+}
+
+.review-focus-card,
+.review-empty-state {
+  width: 100%;
+  max-width: 760px;
+  border-radius: 32px;
+  border: 1px solid rgba(120, 113, 108, 0.18);
+  background: rgba(255, 251, 245, 0.88);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 30px 70px rgba(120, 113, 108, 0.12);
+}
+
+.review-card__header--focus {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.review-card__helper {
+  max-width: 22ch;
+  margin: 0;
+  color: #78716c;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  text-align: right;
+}
+
+.review-focus-card .panel-label,
+.review-empty-state .panel-label,
+.review-focus-card .study-card__label {
+  color: #78716c;
+}
+
+.review-focus-card .section-subtitle,
+.review-empty-state .section-subtitle {
+  color: #111827;
+}
+
+.review-focus-card .muted,
+.review-empty-state .muted {
+  color: #57534e;
+}
+
+.review-card__text {
+  border-color: rgba(120, 113, 108, 0.14);
+  background: #fffdfa;
+  color: #111827;
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+  line-height: 1.85;
+}
+
+.review-card__text--prompt {
+  min-height: 150px;
+}
+
+.review-card__text--answer {
+  background: #f2efe8;
+}
+
+.review-answer {
+  background: #f7f2e8;
+  border-color: rgba(120, 113, 108, 0.16);
+}
+
+.review-answer summary {
+  color: #1f2937;
+}
+
+.review-answer[open] summary {
+  margin-bottom: 14px;
+}
+
 .button-rating {
   flex: 1 1 140px;
   box-shadow: none;
@@ -728,7 +908,8 @@ ul {
   .dashboard-grid,
   .dashboard-hero,
   .section-heading,
-  .section-heading-card {
+  .section-heading-card,
+  .review-card__header--focus {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: flex-start;
@@ -758,6 +939,10 @@ ul {
     padding-inline: 14px;
   }
 
+  .review-shell {
+    padding: 18px 14px 32px;
+  }
+
   .topbar,
   .hero-copy,
   .hero-panel,
@@ -783,6 +968,27 @@ ul {
 
   .topbar {
     padding: 14px;
+  }
+
+  .review-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-bottom: 28px;
+  }
+
+  .review-topbar__meta {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .review-hero h1 {
+    max-width: 10ch;
+    font-size: 2.6rem;
+  }
+
+  .review-focus-card,
+  .review-empty-state {
+    border-radius: 24px;
   }
 
   .topbar-nav {
