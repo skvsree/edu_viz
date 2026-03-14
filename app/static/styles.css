@@ -659,6 +659,7 @@ body::after {
   padding: 0;
   border: 0;
   background: transparent;
+  position: relative;
 }
 
 .modal::backdrop {
@@ -666,20 +667,19 @@ body::after {
   backdrop-filter: blur(4px);
 }
 
-.modal__backdrop {
-  display: contents;
-}
-
 .modal__backdrop-dismiss {
   position: fixed;
   inset: 0;
   border: 0;
+  padding: 0;
   background: transparent;
   cursor: default;
 }
 
 .modal__surface {
   position: relative;
+  z-index: 1;
+  display: grid;
   gap: 18px;
   padding: 26px;
   border: 1px solid var(--border);

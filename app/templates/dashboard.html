@@ -160,10 +160,8 @@
       class="modal"
       {% if active_modal == "create" %}data-open-on-load="true"{% endif %}
     >
-      <form method="dialog" class="modal__backdrop">
-        <button type="submit" class="modal__backdrop-dismiss" aria-label="Close add deck dialog"></button>
-      </form>
-      <div class="modal__surface">
+      <button type="button" class="modal__backdrop-dismiss" data-modal-close="create-deck-modal" aria-label="Close add deck dialog"></button>
+      <div class="modal__surface" role="document">
         <div class="section-heading">
           <div>
             <p class="panel-label">Add deck</p>
@@ -202,10 +200,8 @@
       data-default-action="{% if modal_deck %}/decks/{{ modal_deck.id }}/update{% endif %}"
       {% if active_modal == "edit" and modal_deck %}data-open-on-load="true"{% endif %}
     >
-      <form method="dialog" class="modal__backdrop">
-        <button type="submit" class="modal__backdrop-dismiss" aria-label="Close edit deck dialog"></button>
-      </form>
-      <div class="modal__surface">
+      <button type="button" class="modal__backdrop-dismiss" data-modal-close="edit-deck-modal" aria-label="Close edit deck dialog"></button>
+      <div class="modal__surface" role="document">
         <div class="section-heading">
           <div>
             <p class="panel-label">Edit deck</p>
@@ -232,12 +228,47 @@
 {% if can_manage_decks %}
   <script>
     (() => {
+      const dialogs = Array.from(document.querySelectorAll(".modal"));
+
+      const syncModalState = () => {
+        const hasOpenDialog = dialogs.some((dialog) => dialog.open);
+        document.documentElement.classList.toggle("has-modal-open", hasOpenDialog);
+        document.body.classList.toggle("has-modal-open", hasOpenDialog);
+      };
+
+      const closeModal = (id) => {
+        const dialog = document.getElementById(id);
+        if (dialog?.open) {
+          dialog.close();
+        }
+        syncModalState();
+      };
+
       const openModal = (id) => {
         const dialog = document.getElementById(id);
-        if (dialog && typeof dialog.showModal === "function" && !dialog.open) {
+        if (!dialog || typeof dialog.showModal !== "function") {
+          return;
+        }
+
+        dialogs.forEach((item) => {
+          if (item !== dialog && item.open) {
+            item.close();
+          }
+        });
+
+        if (!dialog.open) {
           dialog.showModal();
         }
+
+        syncModalState();
       };
+
+      dialogs.forEach((dialog) => {
+        dialog.addEventListener("close", syncModalState);
+        dialog.addEventListener("cancel", () => {
+          window.requestAnimationFrame(syncModalState);
+        });
+      });
 
       document.querySelectorAll("[data-modal-open]").forEach((trigger) => {
         trigger.addEventListener("click", () => {
@@ -267,13 +298,15 @@
 
       document.querySelectorAll("[data-modal-close]").forEach((trigger) => {
         trigger.addEventListener("click", () => {
-          document.getElementById(trigger.dataset.modalClose)?.close();
+          closeModal(trigger.dataset.modalClose);
         });
       });
 
       document.querySelectorAll(".modal[data-open-on-load='true']").forEach((dialog) => {
         openModal(dialog.id);
       });
+
+      syncModalState();
     })();
   </script>
 {% endif %}
