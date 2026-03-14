@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  {% if settings_error %}
+    <section class="status-banner status-banner--error"><strong>Settings update failed.</strong> <span>{{ settings_error }}</span></section>
+  {% endif %}
+  {% if settings_success %}
+    <section class="status-banner status-banner--success"><strong>Settings updated.</strong> <span>{{ settings_success }}</span></section>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Administration</p>
+        <h1 class="section-title">Settings</h1>
+        <p class="muted section-copy">Manage organizations, user roles, and account-to-organization assignments.</p>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      {% if user.role == "system_admin" %}
+        <article class="deck-card deck-card--dashboard">
+          <div class="deck-card__content">
+            <p class="deck-card__eyebrow">Global</p>
+            <h3 class="deck-card__title">Organizations</h3>
+            <p class="muted">Create and rename organizations used across the workspace.</p>
+          </div>
+          <div class="deck-card__stats"><span class="deck-card__meta">Organizations {{ organization_count }}</span></div>
+          <div class="deck-card__actions"><a href="/settings/organizations" class="button button-small">Manage organizations</a></div>
+        </article>
+      {% endif %}
+
+      <article class="deck-card deck-card--dashboard">
+        <div class="deck-card__content">
+          <p class="deck-card__eyebrow">Access</p>
+          <h3 class="deck-card__title">Users</h3>
+          <p class="muted">Update roles and {% if user.role == "system_admin" %}organization assignments{% else %}your org team access{% endif %}.</p>
+        </div>
+        <div class="deck-card__stats"><span class="deck-card__meta">Visible users {{ visible_user_count }}</span></div>
+        <div class="deck-card__actions"><a href="/settings/users" class="button button-small">Manage users</a></div>
+      </article>
+    </div>
+  </section>
+</section>
+{% endblock %}

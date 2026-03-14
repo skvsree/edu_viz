@@ -38,13 +38,13 @@
         </div>
         <a href="/review" class="button button-secondary button-small">Start review</a>
         {% if can_manage_decks %}
-          <button
-            type="button"
+          <a
+            href="/dashboard?modal=create"
             class="button button-small"
             data-modal-open="create-deck-modal"
           >
             Add deck
-          </button>
+          </a>
         {% endif %}
       </div>
     </div>
@@ -94,10 +94,11 @@
               </span>
             </div>
             <div class="deck-card__actions">
-              <a href="/decks/{{ item.deck.id }}" class="button button-secondary button-small">Review</a>
+              <a href="/review?deck_id={{ item.deck.id }}" class="button button-secondary button-small">Review</a>
+              <a href="/decks/{{ item.deck.id }}" class="button button-secondary button-small">Open deck</a>
               {% if can_manage_deck(user, item.deck) %}
-                <button
-                  type="button"
+                <a
+                  href="/dashboard?modal=edit&edit_deck={{ item.deck.id }}"
                   class="button button-secondary button-small"
                   data-modal-open="edit-deck-modal"
                   data-deck-id="{{ item.deck.id }}"
@@ -106,7 +107,7 @@
                   data-deck-update-action="/decks/{{ item.deck.id }}/update"
                 >
                   Edit
-                </button>
+                </a>
                 <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('Delete this deck?');">
                   <button type="submit" class="button button-secondary button-small button-danger">Delete</button>
                 </form>
@@ -153,6 +154,62 @@
       </ul>
     </article>
   </section>
+
+  {% if can_manage_decks and active_modal == "create" %}
+    <article class="card form-card" id="deck-create-fallback">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Add deck</p>
+          <h2 class="section-subtitle">Create a new study space</h2>
+        </div>
+      </div>
+      <form method="post" action="/decks" class="stack-md">
+        <div>
+          <label for="create-deck-name-inline">Deck name</label>
+          <input id="create-deck-name-inline" name="name" value="{{ create_form.name }}" placeholder="e.g. Biology fundamentals" maxlength="255" required />
+        </div>
+        <div>
+          <label for="create-deck-description-inline">Description</label>
+          <textarea id="create-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ create_form.description }}</textarea>
+        </div>
+        {% if user.role == "system_admin" %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_global" value="true" {% if create_form.is_global %}checked{% endif %} />
+            <span>Make this a global deck</span>
+          </label>
+        {% endif %}
+        <div class="deck-card__actions">
+          <button type="submit" class="button">Create deck</button>
+          <a href="/dashboard" class="button button-secondary">Cancel</a>
+        </div>
+      </form>
+    </article>
+  {% endif %}
+
+  {% if can_manage_decks and active_modal == "edit" and modal_deck %}
+    <article class="card form-card" id="deck-edit-fallback">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Edit deck</p>
+          <h2 class="section-subtitle">{{ modal_deck.name }}</h2>
+        </div>
+      </div>
+      <form method="post" action="/decks/{{ modal_deck.id }}/update" class="stack-md">
+        <div>
+          <label for="edit-deck-name-inline">Deck name</label>
+          <input id="edit-deck-name-inline" name="name" value="{{ edit_form.name }}" maxlength="255" required />
+        </div>
+        <div>
+          <label for="edit-deck-description-inline">Description</label>
+          <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
+        </div>
+        <div class="deck-card__actions">
+          <button type="submit" class="button">Save deck</button>
+          <a href="/dashboard" class="button button-secondary">Cancel</a>
+        </div>
+      </form>
+    </article>
+  {% endif %}
 
   {% if can_manage_decks %}
     <dialog

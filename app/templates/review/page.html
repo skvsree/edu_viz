@@ -28,7 +28,14 @@
       </header>
 
       <main class="review-main">
-        <section id="review-area" class="review-area" hx-get="/review/next" hx-trigger="load" hx-swap="innerHTML"></section>
+        {% if review_deck %}
+          <section class="card info-card">
+            <p class="panel-label">Deck review</p>
+            <h2 class="section-subtitle">{{ review_deck.name }}</h2>
+            <p class="muted">You are reviewing cards only from this deck.</p>
+          </section>
+        {% endif %}
+        <section id="review-area" class="review-area" hx-get="/review/next{% if review_deck %}?deck_id={{ review_deck.id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></section>
       </main>
 
       <footer class="site-footer site-footer--review">

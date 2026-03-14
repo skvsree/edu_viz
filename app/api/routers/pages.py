@@ -5,20 +5,29 @@ from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import quote_plus
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, User
+from app.models import Card, Deck, Organization, User
 from app.models.card_state import CardState
-from app.services.access import can_access_deck, can_manage_deck, can_manage_decks, normalize_deck_name
+from app.services.access import (
+    ROLE_ADMIN,
+    ROLE_SYSTEM_ADMIN,
+    ROLE_USER,
+    can_access_deck,
+    can_manage_deck,
+    can_manage_decks,
+    normalize_deck_name,
+)
 from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
 from app.services.review_service import ReviewService
@@ -53,6 +62,143 @@ templates.env.globals["static_asset_url"] = static_asset_url
 templates.env.globals["footer_copyright_text"] = settings.footer_copyright_text
 
 
+def _require_settings_access(user: User) -> None:
+    if user.role not in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}:
+        raise HTTPException(status_code=403, detail="You do not have access to settings.")
+
+
+
+def _require_system_admin(user: User) -> None:
+    if user.role != ROLE_SYSTEM_ADMIN:
+        raise HTTPException(status_code=403, detail="Only system admins can access this page.")
+
+
+
+def _visible_users_stmt(user: User):
+    stmt = select(User).options(selectinload(User.organization)).order_by(User.created_at.desc())
+    if user.role == ROLE_SYSTEM_ADMIN:
+        return stmt
+    return stmt.where(User.organization_id == user.organization_id)
+
+
+
+def _settings_home_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    settings_error: str | None = None,
+    settings_success: str | None = None,
+):
+    _require_settings_access(user)
+
+    organization_count = db.execute(select(Organization)).scalars().all() if user.role == ROLE_SYSTEM_ADMIN else []
+    visible_users = db.execute(_visible_users_stmt(user)).scalars().all()
+
+    return templates.TemplateResponse(
+        "settings/index.html",
+        {
+            "request": request,
+            "user": user,
+            "organization_count": len(organization_count) if user.role == ROLE_SYSTEM_ADMIN else (1 if user.organization_id else 0),
+            "visible_user_count": len(visible_users),
+            "settings_error": settings_error if settings_error is not None else request.query_params.get("error"),
+            "settings_success": settings_success if settings_success is not None else request.query_params.get("success"),
+            "title": "Settings | edu selviz",
+        },
+    )
+
+
+
+def _organizations_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    status_code: int = 200,
+    organization_error: str | None = None,
+    organization_success: str | None = None,
+    active_modal: str | None = None,
+    modal_organization: Organization | None = None,
+    create_form: dict[str, str] | None = None,
+    edit_form: dict[str, str] | None = None,
+):
+    _require_system_admin(user)
+    organizations = db.execute(select(Organization).order_by(Organization.name.asc())).scalars().all()
+    requested_org_id = request.query_params.get("edit_org")
+    if modal_organization is None and requested_org_id:
+        modal_organization = db.get(Organization, requested_org_id)
+        if modal_organization and active_modal is None:
+            active_modal = "edit"
+
+    org_user_counts = {
+        str(org.id): len(org.users or [])
+        for org in organizations
+    }
+
+    return templates.TemplateResponse(
+        "settings/organizations.html",
+        {
+            "request": request,
+            "user": user,
+            "organizations": organizations,
+            "org_user_counts": org_user_counts,
+            "organization_error": organization_error if organization_error is not None else request.query_params.get("error"),
+            "organization_success": organization_success if organization_success is not None else request.query_params.get("success"),
+            "active_modal": active_modal or request.query_params.get("modal"),
+            "modal_organization": modal_organization,
+            "create_form": create_form or {"name": ""},
+            "edit_form": edit_form or {"name": modal_organization.name if modal_organization else ""},
+            "title": "Organizations | edu selviz",
+        },
+        status_code=status_code,
+    )
+
+
+
+def _allowed_role_options(editor: User, target: User) -> list[str]:
+    if editor.role == ROLE_SYSTEM_ADMIN:
+        return [ROLE_USER, ROLE_ADMIN, ROLE_SYSTEM_ADMIN]
+    if editor.role == ROLE_ADMIN and target.organization_id == editor.organization_id:
+        return [ROLE_USER, ROLE_ADMIN]
+    return []
+
+
+
+def _users_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    status_code: int = 200,
+    user_error: str | None = None,
+    user_success: str | None = None,
+):
+    _require_settings_access(user)
+    users = db.execute(_visible_users_stmt(user)).scalars().all()
+    organizations = []
+    if user.role == ROLE_SYSTEM_ADMIN:
+        organizations = db.execute(select(Organization).order_by(Organization.name.asc())).scalars().all()
+
+    editable_roles = {str(item.id): _allowed_role_options(user, item) for item in users}
+
+    return templates.TemplateResponse(
+        "settings/users.html",
+        {
+            "request": request,
+            "user": user,
+            "users": users,
+            "organizations": organizations,
+            "editable_roles": editable_roles,
+            "user_error": user_error if user_error is not None else request.query_params.get("error"),
+            "user_success": user_success if user_success is not None else request.query_params.get("success"),
+            "title": "Users | edu selviz",
+        },
+        status_code=status_code,
+    )
+
+
+
 def _deck_cards_response(
     request: Request,
     *,
@@ -83,6 +229,7 @@ def _deck_cards_response(
         },
         status_code=status_code,
     )
+
 
 
 def _dashboard_response(
@@ -155,6 +302,154 @@ def dashboard(
     return _dashboard_response(request, user=user, db=db)
 
 
+@router.get("/settings", response_class=HTMLResponse)
+def settings_home(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return _settings_home_response(request, user=user, db=db)
+
+
+@router.get("/settings/organizations", response_class=HTMLResponse)
+def organizations_page(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return _organizations_response(request, user=user, db=db)
+
+
+@router.post("/settings/organizations")
+def create_organization(
+    request: Request,
+    name: str = Form(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_system_admin(user)
+    cleaned_name = name.strip()
+    if not cleaned_name:
+        return _organizations_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            organization_error="Organization name is required.",
+            active_modal="create",
+            create_form={"name": cleaned_name},
+        )
+
+    organization = Organization(name=cleaned_name)
+    db.add(organization)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return _organizations_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            organization_error="An organization with that name already exists.",
+            active_modal="create",
+            create_form={"name": cleaned_name},
+        )
+
+    return RedirectResponse(url="/settings/organizations?success=Organization+created", status_code=303)
+
+
+@router.post("/settings/organizations/{organization_id}/update")
+def update_organization(
+    request: Request,
+    organization_id: str,
+    name: str = Form(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_system_admin(user)
+    organization = db.get(Organization, organization_id)
+    if not organization:
+        raise HTTPException(status_code=404)
+
+    cleaned_name = name.strip()
+    if not cleaned_name:
+        return _organizations_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            organization_error="Organization name is required.",
+            active_modal="edit",
+            modal_organization=organization,
+            edit_form={"name": cleaned_name},
+        )
+
+    organization.name = cleaned_name
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        return _organizations_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            organization_error="Unable to update this organization right now.",
+            active_modal="edit",
+            modal_organization=organization,
+            edit_form={"name": cleaned_name},
+        )
+
+    return RedirectResponse(url="/settings/organizations?success=Organization+updated", status_code=303)
+
+
+@router.get("/settings/users", response_class=HTMLResponse)
+def users_page(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return _users_response(request, user=user, db=db)
+
+
+@router.post("/settings/users/{target_user_id}/update")
+def update_user_settings(
+    request: Request,
+    target_user_id: str,
+    role: str = Form(...),
+    organization_id: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_settings_access(user)
+    target = db.get(User, target_user_id)
+    if not target:
+        raise HTTPException(status_code=404)
+
+    editable_roles = _allowed_role_options(user, target)
+    if role not in editable_roles:
+        return _users_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            user_error="You cannot assign that role for this user.",
+        )
+
+    if user.role == ROLE_ADMIN and target.organization_id != user.organization_id:
+        raise HTTPException(status_code=404)
+
+    target.role = role
+    if user.role == ROLE_SYSTEM_ADMIN:
+        target.organization_id = UUID(organization_id) if organization_id else None
+    elif user.role == ROLE_ADMIN:
+        target.organization_id = user.organization_id
+
+    db.commit()
+    return RedirectResponse(url="/settings/users?success=User+updated", status_code=303)
+
+
 @router.post("/decks")
 def create_deck(
     request: Request,
@@ -191,7 +486,7 @@ def create_deck(
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
-    if is_global and user.role != "system_admin":
+    if is_global and user.role != ROLE_SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Only system admins can create global decks.")
 
     organization_id = None if is_global else user.organization_id
@@ -415,10 +710,17 @@ def import_cards_csv(
 
 
 @router.get("/review", response_class=HTMLResponse)
-def review_page(request: Request, user: User = Depends(current_user)):
+def review_page(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    deck_id = request.query_params.get("deck_id")
+    deck = None
+    if deck_id:
+        deck = db.get(Deck, deck_id)
+        if not deck or not can_access_deck(user, deck):
+            raise HTTPException(status_code=404)
+
     return templates.TemplateResponse(
         "review/page.html",
-        {"request": request, "user": user, "title": "Review | edu selviz"},
+        {"request": request, "user": user, "title": "Review | edu selviz", "review_deck": deck},
     )
 
 
@@ -429,13 +731,19 @@ def review_next(
     db: Session = Depends(get_db),
 ):
     svc = ReviewService()
-    card = svc.next_due_card(db, user=user)
+    deck_id = request.query_params.get("deck_id")
+    deck = None
+    if deck_id:
+        deck = db.get(Deck, deck_id)
+        if not deck or not can_access_deck(user, deck):
+            raise HTTPException(status_code=404)
+    card = svc.next_due_card(db, user=user, deck_id=deck.id if deck else None)
     if card is None:
-        return templates.TemplateResponse("review/empty.html", {"request": request, "user": user})
+        return templates.TemplateResponse("review/empty.html", {"request": request, "user": user, "review_deck": deck})
 
     return templates.TemplateResponse(
         "review/card.html",
-        {"request": request, "user": user, "card": card},
+        {"request": request, "user": user, "card": card, "review_deck": deck},
     )
 
 
@@ -444,6 +752,7 @@ def review_rate(
     request: Request,
     card_id: str = Form(...),
     rating: int = Form(...),
+    deck_id: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -458,4 +767,6 @@ def review_rate(
     svc.rate(db, card_id=card.id, rating=rating)
     db.commit()
 
+    query = f"?deck_id={deck_id}" if deck_id else ""
+    request.scope["query_string"] = query.lstrip("?").encode()
     return review_next(request=request, user=user, db=db)

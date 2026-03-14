@@ -88,6 +88,8 @@ def test_dashboard_shows_deck_actions_for_manageable_deck():
     assert "Add deck" in body
     assert 'id="create-deck-modal"' in body
     assert "Review" in body
+    assert f"/review?deck_id={deck.id}" in body
+    assert "Open deck" in body
     assert "Edit" in body
     assert "Delete" in body
     assert f"/decks/{deck.id}/delete" in body

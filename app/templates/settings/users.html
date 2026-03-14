@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  {% if user_error %}
+    <section class="status-banner status-banner--error"><strong>User update failed.</strong> <span>{{ user_error }}</span></section>
+  {% endif %}
+  {% if user_success %}
+    <section class="status-banner status-banner--success"><strong>User updated.</strong> <span>{{ user_success }}</span></section>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-heading dashboard-decks__heading">
+      <div>
+        <p class="panel-label">Access management</p>
+        <h1 class="section-title">Users</h1>
+        <p class="muted section-copy">
+          {% if user.role == "system_admin" %}
+            Assign people to organizations and set their roles.
+          {% else %}
+            Review the users in your organization and update org-level roles.
+          {% endif %}
+        </p>
+      </div>
+      <div class="dashboard-actions">
+        <a href="/settings" class="button button-secondary button-small">Back to settings</a>
+      </div>
+    </div>
+
+    <div class="stack-md">
+      {% for member in users %}
+        <article class="card form-card">
+          <form method="post" action="/settings/users/{{ member.id }}/update" class="stack-md">
+            <div class="section-heading">
+              <div>
+                <p class="panel-label">User</p>
+                <h2 class="section-subtitle">{{ member.email or member.identity_sub }}</h2>
+              </div>
+            </div>
+            <div class="dashboard-grid">
+              <div>
+                <label>Email / identity</label>
+                <input value="{{ member.email or member.identity_sub }}" disabled />
+              </div>
+              <div>
+                <label for="role-{{ member.id }}">Role</label>
+                <select id="role-{{ member.id }}" name="role" {% if not editable_roles.get(member.id|string) %}disabled{% endif %}>
+                  {% for option in editable_roles.get(member.id|string, []) %}
+                    <option value="{{ option }}" {% if member.role == option %}selected{% endif %}>{{ option }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="organization-{{ member.id }}">Organization</label>
+                {% if user.role == "system_admin" %}
+                  <select id="organization-{{ member.id }}" name="organization_id">
+                    <option value="">Unassigned</option>
+                    {% for organization in organizations %}
+                      <option value="{{ organization.id }}" {% if member.organization_id == organization.id %}selected{% endif %}>{{ organization.name }}</option>
+                    {% endfor %}
+                  </select>
+                {% else %}
+                  <input value="{{ member.organization.name if member.organization else 'Unassigned' }}" disabled />
+                {% endif %}
+              </div>
+            </div>
+            {% if editable_roles.get(member.id|string) %}
+              <div class="deck-card__actions"><button type="submit" class="button button-small">Save user</button></div>
+            {% else %}
+              <p class="muted">This account cannot be edited from your current role.</p>
+            {% endif %}
+          </form>
+        </article>
+      {% else %}
+        <article class="card empty-state"><p class="muted">No users available in this scope yet.</p></article>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}

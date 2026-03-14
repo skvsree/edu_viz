@@ -35,6 +35,9 @@
           {% if user %}
             <a href="/dashboard">Workspace</a>
             <a href="/review">Review</a>
+            {% if user.role in ["admin", "system_admin"] %}
+              <a href="/settings">Settings</a>
+            {% endif %}
             <form action="/logout" method="post">
               <button type="submit" class="button button-secondary button-small">Logout</button>
             </form>

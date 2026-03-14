@@ -23,7 +23,7 @@ class ReviewService:
             db.flush()
         return state
 
-    def next_due_card(self, db: Session, *, user: User) -> Card | None:
+    def next_due_card(self, db: Session, *, user: User, deck_id: uuid.UUID | None = None) -> Card | None:
         # Pick the earliest due card from the decks visible to this user.
         now = datetime.now(timezone.utc)
         stmt = (
@@ -31,9 +31,10 @@ class ReviewService:
             .join(Card.deck)
             .join(Card.state, isouter=True)
             .where(accessible_deck_clause(user))
-            .order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc())
-            .limit(1)
         )
+        if deck_id is not None:
+            stmt = stmt.where(Card.deck_id == deck_id)
+        stmt = stmt.order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc()).limit(1)
         card = db.execute(stmt).scalars().first()
         if card is None:
             return None

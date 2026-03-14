@@ -10,6 +10,7 @@
 
   <form hx-post="/review/rate" hx-target="#review-area" hx-swap="innerHTML" class="review-rating-row">
     <input type="hidden" name="card_id" value="{{ card.id }}" />
+    {% if review_deck %}<input type="hidden" name="deck_id" value="{{ review_deck.id }}" />{% endif %}
     <button class="button button-rating button-rating--muted" name="rating" value="1">Again</button>
     <button class="button button-rating button-rating--warm" name="rating" value="2">Hard</button>
     <button class="button button-rating button-rating--cool" name="rating" value="3">Good</button>
