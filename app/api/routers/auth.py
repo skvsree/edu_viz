@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+
+from authlib.integrations.base_client.errors import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -11,6 +14,7 @@ from app.services.microsoft_identity import build_oauth, load_identity_config
 from app.services.session import sign_session
 
 router = APIRouter(tags=["auth"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/login")
@@ -24,7 +28,11 @@ async def login(request: Request):
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
     cfg = load_identity_config()
     oauth = build_oauth()
-    token = await oauth.microsoft.authorize_access_token(request)
+    try:
+        token = await oauth.microsoft.authorize_access_token(request)
+    except OAuthError as exc:
+        logger.warning("OIDC callback failed: %s (%s)", exc.error, exc.description)
+        raise HTTPException(status_code=400, detail="login failed") from exc
 
     userinfo = token.get("userinfo")
     if not userinfo:
