@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -22,8 +23,30 @@ app.add_middleware(
     max_age=settings.oidc_state_session_max_age_seconds,
 )
 
+STATIC_DIR = BASE_DIR / "static"
+
 # Serve static assets reliably regardless of the process working directory.
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/assets/{version}/{asset_path:path}")
+def versioned_static_asset(version: str, asset_path: str):
+    static_root = STATIC_DIR.resolve()
+    candidate = (STATIC_DIR / asset_path).resolve()
+    try:
+        candidate.relative_to(static_root)
+    except ValueError:
+        raise HTTPException(status_code=404)
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404)
+
+    return FileResponse(
+        candidate,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )
+
 
 @app.on_event("startup")
 def promote_bootstrap_system_admin() -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
 from urllib.parse import quote_plus
 
@@ -28,13 +30,22 @@ STATIC_DIR = APP_DIR / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def static_asset_url(path: str) -> str:
-    asset_path = STATIC_DIR / path.lstrip("/")
-    if not asset_path.exists():
-        return f"/static/{path.lstrip('/')}"
+@lru_cache(maxsize=256)
+def _asset_version(path: str, mtime_ns: int, size: int) -> str:
+    asset_path = STATIC_DIR / path
+    digest = sha256(asset_path.read_bytes()).hexdigest()[:12]
+    return digest
 
-    version = asset_path.stat().st_mtime_ns
-    return f"/static/{path.lstrip('/')}?v={version}"
+
+def static_asset_url(path: str) -> str:
+    normalized_path = path.lstrip("/")
+    asset_path = STATIC_DIR / normalized_path
+    if not asset_path.exists() or not asset_path.is_file():
+        return f"/static/{normalized_path}"
+
+    stat = asset_path.stat()
+    version = _asset_version(normalized_path, stat.st_mtime_ns, stat.st_size)
+    return f"/assets/{version}/{normalized_path}"
 
 
 templates.env.globals["static_asset_url"] = static_asset_url
