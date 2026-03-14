@@ -107,7 +107,14 @@ def _resolve_authorize_authority(authority: str | None, metadata_url: str | None
 def _resolve_authorize_url(authorize_authority: str | None) -> str | None:
     if not authorize_authority:
         return None
-    return f"{authorize_authority}/oauth2/v2.0/authorize"
+
+    parsed = urlparse(authorize_authority)
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if segments and segments[-1].lower() == "v2.0":
+        segments = segments[:-1]
+
+    authorize_path = "/" + "/".join(segments + ["oauth2", "v2.0", "authorize"])
+    return parsed._replace(path=authorize_path).geturl().rstrip("/")
 
 
 def _resolve_metadata_url(authority: str | None) -> tuple[str | None, str | None]:

@@ -160,7 +160,7 @@ def test_load_identity_config_keeps_common_authority_aligned_for_authorize_and_m
         cfg = load_identity_config()
 
     assert cfg.metadata_url == "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
-    assert cfg.authorize_url == "https://login.microsoftonline.com/common/v2.0/oauth2/v2.0/authorize"
+    assert cfg.authorize_url == "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
 
 
 def test_build_claims_options_skips_literal_issuer_check_for_common_metadata():
