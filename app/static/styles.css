@@ -536,7 +536,6 @@ body::after {
 .dashboard-actions,
 .deck-card__actions,
 .deck-card__stats,
-.modal,
 .modal__surface {
   display: grid;
 }
@@ -656,10 +655,15 @@ body::after {
 
 .modal {
   width: min(100%, 680px);
+  max-width: calc(100vw - 24px);
   padding: 0;
   border: 0;
   background: transparent;
-  position: relative;
+}
+
+.modal[open] {
+  display: grid;
+  place-items: center;
 }
 
 .modal::backdrop {
@@ -667,20 +671,12 @@ body::after {
   backdrop-filter: blur(4px);
 }
 
-.modal__backdrop-dismiss {
-  position: fixed;
-  inset: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
-  cursor: default;
-}
-
 .modal__surface {
   position: relative;
   z-index: 1;
   display: grid;
   gap: 18px;
+  width: min(100%, 680px);
   padding: 26px;
   border: 1px solid var(--border);
   border-radius: 28px;

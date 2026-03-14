@@ -217,7 +217,6 @@
       class="modal"
       {% if active_modal == "create" %}data-open-on-load="true"{% endif %}
     >
-      <button type="button" class="modal__backdrop-dismiss" data-modal-close="create-deck-modal" aria-label="Close add deck dialog"></button>
       <div class="modal__surface" role="document">
         <div class="section-heading">
           <div>
@@ -257,7 +256,6 @@
       data-default-action="{% if modal_deck %}/decks/{{ modal_deck.id }}/update{% endif %}"
       {% if active_modal == "edit" and modal_deck %}data-open-on-load="true"{% endif %}
     >
-      <button type="button" class="modal__backdrop-dismiss" data-modal-close="edit-deck-modal" aria-label="Close edit deck dialog"></button>
       <div class="modal__surface" role="document">
         <div class="section-heading">
           <div>
@@ -286,6 +284,7 @@
   <script>
     (() => {
       const dialogs = Array.from(document.querySelectorAll(".modal"));
+      const supportsModalDialog = typeof HTMLDialogElement !== "undefined" && typeof HTMLDialogElement.prototype.showModal === "function";
 
       const syncModalState = () => {
         const hasOpenDialog = dialogs.some((dialog) => dialog.open);
@@ -303,7 +302,7 @@
 
       const openModal = (id) => {
         const dialog = document.getElementById(id);
-        if (!dialog || typeof dialog.showModal !== "function") {
+        if (!dialog || !supportsModalDialog) {
           return;
         }
 
@@ -325,10 +324,21 @@
         dialog.addEventListener("cancel", () => {
           window.requestAnimationFrame(syncModalState);
         });
+        dialog.addEventListener("click", (event) => {
+          const surface = dialog.querySelector(".modal__surface");
+          if (surface && !surface.contains(event.target)) {
+            closeModal(dialog.id);
+          }
+        });
       });
 
       document.querySelectorAll("[data-modal-open]").forEach((trigger) => {
-        trigger.addEventListener("click", () => {
+        trigger.addEventListener("click", (event) => {
+          if (!supportsModalDialog) {
+            return;
+          }
+
+          event.preventDefault();
           const modalId = trigger.dataset.modalOpen;
           if (modalId === "edit-deck-modal") {
             const dialog = document.getElementById(modalId);

@@ -80,7 +80,6 @@
   </section>
 
   <dialog id="create-organization-modal" class="modal" {% if active_modal == "create" %}data-open-on-load="true"{% endif %}>
-    <button type="button" class="modal__backdrop-dismiss" data-modal-close="create-organization-modal" aria-label="Close add organization dialog"></button>
     <div class="modal__surface" role="document">
       <div class="section-heading"><div><p class="panel-label">Add organization</p><h2 class="section-subtitle">Create a new organization</h2></div><button type="button" class="button button-secondary button-small" data-modal-close="create-organization-modal">Close</button></div>
       <form method="post" action="/settings/organizations" class="stack-md">
@@ -91,7 +90,6 @@
   </dialog>
 
   <dialog id="edit-organization-modal" class="modal" data-default-action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% endif %}" {% if active_modal == "edit" and modal_organization %}data-open-on-load="true"{% endif %}>
-    <button type="button" class="modal__backdrop-dismiss" data-modal-close="edit-organization-modal" aria-label="Close edit organization dialog"></button>
     <div class="modal__surface" role="document">
       <div class="section-heading"><div><p class="panel-label">Edit organization</p><h2 class="section-subtitle">{{ modal_organization.name if modal_organization else 'Update organization' }}</h2></div><button type="button" class="button button-secondary button-small" data-modal-close="edit-organization-modal">Close</button></div>
       <form method="post" action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% else %}#{% endif %}" class="stack-md" data-edit-form>
@@ -119,6 +117,15 @@
       dialog.close();
     }
   };
+
+  dialogs.forEach((dialog) => {
+    dialog.addEventListener('click', (event) => {
+      const surface = dialog.querySelector('.modal__surface');
+      if (surface && !surface.contains(event.target)) {
+        closeModal(dialog.id);
+      }
+    });
+  });
 
   document.querySelectorAll('[data-modal-open]').forEach((trigger) => {
     trigger.addEventListener('click', (event) => {
