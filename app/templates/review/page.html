@@ -24,14 +24,12 @@
     <div class="review-shell">
       <header class="review-topbar" aria-label="Review page header">
         <h1 class="review-topbar__title">edu selviz</h1>
+        {% if review_deck %}
+          <p class="review-topbar__deck-name">{{ review_deck.name }}</p>
+        {% endif %}
       </header>
 
       <main class="review-main">
-        {% if review_deck %}
-          <section class="card info-card">
-            <h2 class="section-subtitle">{{ review_deck.name }}</h2>
-          </section>
-        {% endif %}
         <section id="review-area" class="review-area" hx-get="/review/next{% if review_deck %}?deck_id={{ review_deck.id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></section>
       </main>
 

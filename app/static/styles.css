@@ -764,6 +764,14 @@ body::after {
   letter-spacing: -0.02em;
 }
 
+.review-topbar__deck-name {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 1.15rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
 .review-main {
   display: block;
 }
