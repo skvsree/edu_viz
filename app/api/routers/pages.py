@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -84,6 +85,52 @@ def _deck_cards_response(
     )
 
 
+def _dashboard_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    status_code: int = 200,
+    dashboard_error: str | None = None,
+    dashboard_success: str | None = None,
+    active_modal: str | None = None,
+    modal_deck: Deck | None = None,
+    create_form: dict[str, str | bool] | None = None,
+    edit_form: dict[str, str] | None = None,
+):
+    deck_stats = list_accessible_deck_stats(db, user=user)
+    requested_edit_deck_id = request.query_params.get("edit_deck")
+    if modal_deck is None and requested_edit_deck_id:
+        requested_deck = db.get(Deck, requested_edit_deck_id)
+        if requested_deck and can_manage_deck(user, requested_deck):
+            modal_deck = requested_deck
+            if active_modal is None:
+                active_modal = "edit"
+
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "user": user,
+            "deck_stats": deck_stats,
+            "can_manage_decks": can_manage_decks(user),
+            "can_manage_deck": can_manage_deck,
+            "dashboard_error": dashboard_error if dashboard_error is not None else request.query_params.get("error"),
+            "dashboard_success": dashboard_success if dashboard_success is not None else request.query_params.get("success"),
+            "active_modal": active_modal or request.query_params.get("modal"),
+            "modal_deck": modal_deck,
+            "create_form": create_form or {"name": "", "description": "", "is_global": False},
+            "edit_form": edit_form
+            or {
+                "name": modal_deck.name if modal_deck else "",
+                "description": (modal_deck.description or "") if modal_deck else "",
+            },
+            "title": "Workspace | edu selviz",
+        },
+        status_code=status_code,
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(
@@ -98,23 +145,12 @@ def dashboard(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    deck_stats = list_accessible_deck_stats(db, user=user)
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "user": user,
-            "deck_stats": deck_stats,
-            "can_manage_decks": can_manage_decks(user),
-            "dashboard_error": request.query_params.get("error"),
-            "dashboard_success": request.query_params.get("success"),
-            "title": "Workspace | edu selviz",
-        },
-    )
+    return _dashboard_response(request, user=user, db=db)
 
 
 @router.post("/decks")
 def create_deck(
+    request: Request,
     name: str = Form(...),
     description: str = Form(default=""),
     is_global: bool = Form(default=False),
@@ -127,18 +163,41 @@ def create_deck(
     cleaned_name = name.strip()
     cleaned_description = description.strip()
     if not cleaned_name:
-        raise HTTPException(status_code=400, detail="Deck name is required.")
+        return _dashboard_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            dashboard_error="Deck name is required.",
+            active_modal="create",
+            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+        )
     normalized_name = normalize_deck_name(cleaned_name)
     if not normalized_name:
-        raise HTTPException(status_code=400, detail="Deck name must include letters or numbers.")
+        return _dashboard_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            dashboard_error="Deck name must include letters or numbers.",
+            active_modal="create",
+            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+        )
 
     if is_global and user.role != "system_admin":
         raise HTTPException(status_code=403, detail="Only system admins can create global decks.")
 
     organization_id = None if is_global else user.organization_id
     if not is_global and organization_id is None:
-        error_message = quote_plus("Assign this admin to an organization before creating organization decks.")
-        return RedirectResponse(url=f"/dashboard?error={error_message}", status_code=303)
+        return _dashboard_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            dashboard_error="Assign this admin to an organization before creating organization decks.",
+            active_modal="create",
+            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+        )
 
     deck = Deck(
         user_id=user.id,
@@ -153,8 +212,15 @@ def create_deck(
         db.commit()
     except IntegrityError:
         db.rollback()
-        error_message = quote_plus("An active deck with that normalized name already exists in this scope.")
-        return RedirectResponse(url=f"/dashboard?error={error_message}", status_code=303)
+        return _dashboard_response(
+            request,
+            user=user,
+            db=db,
+            status_code=400,
+            dashboard_error="An active deck with that normalized name already exists in this scope.",
+            active_modal="create",
+            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+        )
 
     success_message = quote_plus("Deck created")
     return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
@@ -176,27 +242,27 @@ def update_deck(
     cleaned_name = name.strip()
     cleaned_description = description.strip()
     if not cleaned_name:
-        cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
-        return _deck_cards_response(
+        return _dashboard_response(
             request,
             user=user,
-            deck=deck,
-            cards=cards,
-            title=f"{deck.name} | edu selviz",
+            db=db,
             status_code=400,
-            update_error="Deck name cannot be empty.",
+            dashboard_error="Deck name cannot be empty.",
+            active_modal="edit",
+            modal_deck=deck,
+            edit_form={"name": cleaned_name, "description": cleaned_description},
         )
     normalized_name = normalize_deck_name(cleaned_name)
     if not normalized_name:
-        cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
-        return _deck_cards_response(
+        return _dashboard_response(
             request,
             user=user,
-            deck=deck,
-            cards=cards,
-            title=f"{deck.name} | edu selviz",
+            db=db,
             status_code=400,
-            update_error="Deck name must include letters or numbers.",
+            dashboard_error="Deck name must include letters or numbers.",
+            active_modal="edit",
+            modal_deck=deck,
+            edit_form={"name": cleaned_name, "description": cleaned_description},
         )
 
     deck.name = cleaned_name
@@ -207,19 +273,37 @@ def update_deck(
         db.commit()
     except IntegrityError:
         db.rollback()
-        cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
-        return _deck_cards_response(
+        return _dashboard_response(
             request,
             user=user,
-            deck=deck,
-            cards=cards,
-            title=f"{deck.name} | edu selviz",
+            db=db,
             status_code=400,
-            update_error="Unable to update this deck right now. Please try again.",
+            dashboard_error="Unable to update this deck right now. Please try again.",
+            active_modal="edit",
+            modal_deck=deck,
+            edit_form={"name": cleaned_name, "description": cleaned_description},
         )
 
     success_message = quote_plus("Deck details updated")
-    return RedirectResponse(url=f"/decks/{deck.id}?update_success={success_message}", status_code=303)
+    return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
+
+
+@router.post("/decks/{deck_id}/delete")
+def delete_deck(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    deck.is_deleted = True
+    deck.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+
+    success_message = quote_plus("Deck deleted")
+    return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
 
 
 @router.get("/decks/{deck_id}", response_class=HTMLResponse)

@@ -25,13 +25,6 @@
     <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
   </section>
 
-  {% if update_error %}
-    <section class="status-banner status-banner--error">
-      <strong>Deck update failed.</strong>
-      <span>{{ update_error }}</span>
-    </section>
-  {% endif %}
-
   {% if update_success %}
     <section class="status-banner status-banner--success">
       <strong>Deck updated.</strong>
@@ -55,20 +48,13 @@
 
   <section class="dashboard-grid dashboard-grid--triple">
     {% if can_edit %}
-      <article class="card form-card">
-        <p class="panel-label">Edit deck</p>
-        <h2 class="section-subtitle deck-name-highlight">Update name and notes</h2>
-        <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md">
-          <div>
-            <label for="deck-name">Deck name</label>
-            <input id="deck-name" name="name" value="{{ deck.name }}" maxlength="255" required />
-          </div>
-          <div>
-            <label for="deck-description">Description</label>
-            <textarea id="deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
-          </div>
-          <button type="submit" class="button">Save deck</button>
-        </form>
+      <article class="card info-card dashboard-note">
+        <p class="panel-label">Deck actions</p>
+        <h2 class="section-subtitle deck-name-highlight">Manage this deck from the workspace</h2>
+        <p class="muted">
+          Deck add and edit now open in dashboard dialogs so the list stays visible while admins work.
+        </p>
+        <a href="/dashboard?edit_deck={{ deck.id }}" class="button">Edit on dashboard</a>
       </article>
 
       <article class="card form-card">
