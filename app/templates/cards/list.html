@@ -6,6 +6,21 @@
       <p class="panel-label">Deck workspace</p>
       <h1 class="section-title">{{ deck.name }}</h1>
       <p class="muted section-copy">{{ deck.description or 'Manage cards, refine prompts, and keep this deck ready for review.' }}</p>
+      <p class="muted compact-copy">
+        {% if deck.is_global %}
+          Global deck
+        {% elif deck.organization %}
+          Organization deck for {{ deck.organization.name }}
+        {% else %}
+          Legacy deck
+        {% endif %}
+        {% if deck.tags %}
+          |
+          {% for tag in deck.tags %}
+            #{{ tag.name }}{% if not loop.last %} {% endif %}
+          {% endfor %}
+        {% endif %}
+      </p>
     </div>
     <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
   </section>
@@ -39,53 +54,63 @@
   {% endif %}
 
   <section class="dashboard-grid dashboard-grid--triple">
-    <article class="card form-card">
-      <p class="panel-label">Edit deck</p>
-      <h2 class="section-subtitle deck-name-highlight">Update name and notes</h2>
-      <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md">
-        <div>
-          <label for="deck-name">Deck name</label>
-          <input id="deck-name" name="name" value="{{ deck.name }}" maxlength="255" required />
-        </div>
-        <div>
-          <label for="deck-description">Description</label>
-          <textarea id="deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
-        </div>
-        <button type="submit" class="button">Save deck</button>
-      </form>
-    </article>
+    {% if can_edit %}
+      <article class="card form-card">
+        <p class="panel-label">Edit deck</p>
+        <h2 class="section-subtitle deck-name-highlight">Update name and notes</h2>
+        <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md">
+          <div>
+            <label for="deck-name">Deck name</label>
+            <input id="deck-name" name="name" value="{{ deck.name }}" maxlength="255" required />
+          </div>
+          <div>
+            <label for="deck-description">Description</label>
+            <textarea id="deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
+          </div>
+          <button type="submit" class="button">Save deck</button>
+        </form>
+      </article>
 
-    <article class="card form-card">
-      <p class="panel-label">Add a card</p>
-      <h2 class="section-subtitle">Create focused prompts</h2>
-      <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
-        <div>
-          <label for="card-front">Front</label>
-          <textarea id="card-front" name="front" rows="4" placeholder="Question, prompt, or cue" required></textarea>
-        </div>
-        <div>
-          <label for="card-back">Back</label>
-          <textarea id="card-back" name="back" rows="4" placeholder="Answer, explanation, or key points" required></textarea>
-        </div>
-        <button type="submit" class="button">Add card</button>
-      </form>
-    </article>
+      <article class="card form-card">
+        <p class="panel-label">Add a card</p>
+        <h2 class="section-subtitle">Create focused prompts</h2>
+        <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
+          <div>
+            <label for="card-front">Front</label>
+            <textarea id="card-front" name="front" rows="4" placeholder="Question, prompt, or cue" required></textarea>
+          </div>
+          <div>
+            <label for="card-back">Back</label>
+            <textarea id="card-back" name="back" rows="4" placeholder="Answer, explanation, or key points" required></textarea>
+          </div>
+          <button type="submit" class="button">Add card</button>
+        </form>
+      </article>
 
-    <article class="card form-card csv-form-card">
-      <p class="panel-label csv-highlight">Import from CSV</p>
-      <h2 class="section-subtitle csv-highlight">Bulk add cards</h2>
-      <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
-        <div>
-          <label for="card-csv-file">CSV file</label>
-          <input id="card-csv-file" type="file" name="csv_file" accept=".csv,text/csv" required />
-        </div>
-        <div class="muted compact-copy">
-          Use headers like <strong>question,answer</strong>, <strong>front,back</strong>, or
-          <strong>prompt,response</strong>. Quoted commas, escaped quotes, and multi-line fields are supported.
-        </div>
-        <button type="submit" class="button">Import CSV</button>
-      </form>
-    </article>
+      <article class="card form-card csv-form-card">
+        <p class="panel-label csv-highlight">Import from CSV</p>
+        <h2 class="section-subtitle csv-highlight">Bulk add cards</h2>
+        <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
+          <div>
+            <label for="card-csv-file">CSV file</label>
+            <input id="card-csv-file" type="file" name="csv_file" accept=".csv,text/csv" required />
+          </div>
+          <div class="muted compact-copy">
+            Use headers like <strong>question,answer</strong>, <strong>front,back</strong>, or
+            <strong>prompt,response</strong>. Quoted commas, escaped quotes, and multi-line fields are supported.
+          </div>
+          <button type="submit" class="button">Import CSV</button>
+        </form>
+      </article>
+    {% else %}
+      <article class="card info-card dashboard-note">
+        <p class="panel-label">Deck access</p>
+        <h2 class="section-subtitle">Read and review only</h2>
+        <p class="muted">
+          Only admins can edit deck details, add cards, or import CSV content.
+        </p>
+      </article>
+    {% endif %}
 
     <article class="card info-card dashboard-note">
       <p class="panel-label">Card quality</p>

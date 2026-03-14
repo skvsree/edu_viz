@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Card, CardState, Review
+from app.models import Card, CardState, Review, User
 from app.fsrs.scheduler import FsrsCard, FsrsScheduler
+from app.services.access import accessible_deck_clause
 
 
 class ReviewService:
@@ -22,15 +23,14 @@ class ReviewService:
             db.flush()
         return state
 
-    def next_due_card(self, db: Session, *, user_id: uuid.UUID) -> Card | None:
-        # Pick the earliest due card for this user.
-        # (Join cards->decks to enforce ownership.)
+    def next_due_card(self, db: Session, *, user: User) -> Card | None:
+        # Pick the earliest due card from the decks visible to this user.
         now = datetime.now(timezone.utc)
         stmt = (
             select(Card)
             .join(Card.deck)
             .join(Card.state, isouter=True)
-            .where(Card.deck.has(user_id=user_id))
+            .where(accessible_deck_clause(user))
             .order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc())
             .limit(1)
         )

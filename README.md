@@ -68,6 +68,24 @@ uvicorn app.main:app --reload
 - Cards
 - Review flow: `/review` → HTMX loads `/review/next` → rate via `/review/rate`
 
+## Phase 2 foundation
+
+This branch starts the move from personal decks to organization-aware access:
+
+- `users.role` now distinguishes `user`, `admin`, and `system_admin`
+- `users.organization_id` links users to exactly one organization when assigned
+- `decks` now support organization scope, global scope, soft delete metadata, and normalized names for scope-aware uniqueness
+- `tags` are organization-scoped and attached to decks through `deck_tags`
+- dashboard deck listings now use accessible deck rules and expose basic progress signals:
+  `Cards Reviewed`, `Cards Due`, `Accuracy`, and `Last Reviewed`
+
+Current implementation notes:
+
+- existing users are backfilled to one personal organization each and promoted to `admin` during migration so pre-Phase-2 data keeps working
+- newly created users still auto-register on first OIDC login, but default to the `user` role and have no organization until a system admin assigns one
+- deck create/edit/import remains available only to `admin` and `system_admin`
+- accuracy is currently calculated as the share of reviews rated `3` or `4`
+
 ## Migrations (Alembic)
 
 This project uses Alembic for schema migrations.
