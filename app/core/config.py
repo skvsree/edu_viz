@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://srs:srs@localhost:5432/srs"
     secret_key: str = "dev-secret"
+    app_session_cookie_name: str = "eduviz_session"
 
     # Microsoft Entra External ID / generic OIDC configuration.
     # Prefer the MICROSOFT_ENTRA_EXTERNAL_ID_* env vars for new deployments.

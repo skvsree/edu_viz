@@ -3,13 +3,14 @@ import uuid
 from fastapi import Cookie, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.models import User
 from app.services.session import unsign_session
 
 
 def current_user(
-    session: str | None = Cookie(default=None),
+    session: str | None = Cookie(default=None, alias=settings.app_session_cookie_name),
     db: Session = Depends(get_db),
 ) -> User:
     if not session:

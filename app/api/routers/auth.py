@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.db import get_db
 from app.models import User
 from app.services.microsoft_identity import build_oauth, load_identity_config
@@ -58,7 +59,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 
     resp = RedirectResponse(url="/dashboard", status_code=303)
     resp.set_cookie(
-        "session",
+        settings.app_session_cookie_name,
         sign_session(user_id=user.id, claims=userinfo),
         httponly=True,
         samesite="lax",
@@ -69,5 +70,5 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
 @router.post("/logout")
 def logout():
     resp = RedirectResponse(url="/", status_code=303)
-    resp.delete_cookie("session")
+    resp.delete_cookie(settings.app_session_cookie_name)
     return resp
