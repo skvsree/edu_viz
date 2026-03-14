@@ -67,7 +67,7 @@ def ai_import_deck_content(
         pack = generate_study_pack(text, flashcard_count=flashcard_count, mcq_count=mcq_count)
     except (ContentExtractionError, AIGenerationError) as exc:
         message = quote_plus(str(exc))
-        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_error={message}", status_code=303)
+        return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_error={message}", status_code=303)
 
     new_cards: list[Card] = []
     for item in pack.flashcards:
@@ -88,7 +88,7 @@ def ai_import_deck_content(
     db.flush()
     db.add_all([CardState(card_id=card.id) for card in new_cards])
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_success={quote_plus(f'Generated {len(pack.flashcards)} flashcards and {len(pack.mcqs)} MCQs')}", status_code=303)
+    return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_success={quote_plus(f'Generated {len(pack.flashcards)} flashcards and {len(pack.mcqs)} MCQs')}", status_code=303)
 
 
 @router.post("/decks/{deck_id}/mcqs/import-json")

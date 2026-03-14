@@ -10,6 +10,7 @@
     <div class="deck-card__actions">
       <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">Overview</a>
       <a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Flashcards</a>
+      {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
       {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Tests</a>{% endif %}
     </div>
   </section>
@@ -18,6 +19,7 @@
     <a href="/decks/{{ deck.id }}" class="deck-section-nav__link{% if active_section == 'overview' %} is-active{% endif %}">Overview</a>
     <a href="/decks/{{ deck.id }}/flashcards" class="deck-section-nav__link{% if active_section == 'flashcards' %} is-active{% endif %}">Flashcards</a>
     <a href="/decks/{{ deck.id }}/mcqs" class="deck-section-nav__link{% if active_section == 'mcqs' %} is-active{% endif %}">MCQs</a>
+    {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="deck-section-nav__link{% if active_section == 'ai-upload' %} is-active{% endif %}">AI Upload</a>{% endif %}
     {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="deck-section-nav__link">Tests</a>{% endif %}
   </section>
 
@@ -28,19 +30,6 @@
 
   {% if can_edit %}
     <section class="dashboard-grid">
-      {% if can_use_ai_generation %}
-        <article class="card form-card">
-          <p class="panel-label">AI study generation</p>
-          <form method="post" action="/decks/{{ deck.id }}/ai-import" enctype="multipart/form-data" class="stack-md">
-            <div><label>PDF or DOCX</label><input type="file" name="source_file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required /></div>
-            <div><label>Flashcards</label><input type="number" name="flashcard_count" min="1" max="50" value="12" /></div>
-            <div><label>MCQs</label><input type="number" name="mcq_count" min="1" max="50" value="10" /></div>
-            <p class="muted compact-copy">Generates both flashcards and MCQs. New flashcards appear on the flashcards page after the import completes.</p>
-            <button type="submit" class="button">Generate from file</button>
-          </form>
-        </article>
-      {% endif %}
-
       <article class="card form-card">
         <p class="panel-label">MCQ JSON import</p>
         <form method="post" action="/decks/{{ deck.id }}/mcqs/import-json" enctype="multipart/form-data" class="stack-md">

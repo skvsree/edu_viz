@@ -7,7 +7,7 @@ from uuid import uuid4
 from starlette.responses import RedirectResponse
 
 from app.api.routers import content, pages
-from app.services.access import can_access_tests, can_import_mcq_json, can_use_ai_generation, deck_has_test_content
+from app.services.access import can_access_tests, can_import_mcq_json, can_manage_deck, can_use_ai_generation, deck_has_test_content
 from tests.test_dashboard_routes import FakeDB, make_request, render_body
 
 
@@ -37,8 +37,8 @@ def test_deck_overview_shows_test_action_only_for_enabled_users_with_mcqs():
     enabled = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=enabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards))
     disabled = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=disabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards))
 
-    assert ">Test<" in render_body(enabled)
-    assert ">Test<" not in render_body(disabled)
+    assert ">Tests<" in render_body(enabled)
+    assert ">Tests<" not in render_body(disabled)
 
 
 def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_when_org_ai_disabled():
@@ -51,6 +51,7 @@ def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_wh
     body = render_body(response)
     assert "MCQ JSON import" in body
     assert "Download sample JSON" in body
+    assert f"/decks/{deck.id}/ai-upload" not in body
     assert "AI study generation" not in body
 
 
@@ -65,6 +66,26 @@ def test_create_test_allows_admin_manager():
 
     assert isinstance(response, RedirectResponse)
     assert response.status_code == 303
+
+
+def test_ai_upload_page_requires_existing_ai_access_rules():
+    org_id = uuid4()
+    deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description=None)
+    enabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=True)
+    disabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=False), is_test_enabled=True)
+
+    enabled = pages.deck_ai_upload(make_request(path=f"/decks/{deck.id}/ai-upload"), deck_id=str(deck.id), user=enabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
+    enabled_body = render_body(enabled)
+    assert "AI study generation" in enabled_body
+    assert can_manage_deck(enabled_user, deck) is True
+    assert can_use_ai_generation(enabled_user) is True
+
+    try:
+        pages.deck_ai_upload(make_request(path=f"/decks/{deck.id}/ai-upload"), deck_id=str(deck.id), user=disabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
+        assert False, "Expected AI-disabled user to be blocked"
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 404
+
 
 
 def test_sample_mcq_json_download_is_available():

@@ -10,6 +10,7 @@
     <div class="deck-card__actions">
       <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">Overview</a>
       <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">MCQs</a>
+      {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
       {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Tests</a>{% endif %}
     </div>
   </section>
@@ -18,6 +19,7 @@
     <a href="/decks/{{ deck.id }}" class="deck-section-nav__link{% if active_section == 'overview' %} is-active{% endif %}">Overview</a>
     <a href="/decks/{{ deck.id }}/flashcards" class="deck-section-nav__link{% if active_section == 'flashcards' %} is-active{% endif %}">Flashcards</a>
     <a href="/decks/{{ deck.id }}/mcqs" class="deck-section-nav__link{% if active_section == 'mcqs' %} is-active{% endif %}">MCQs</a>
+    {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="deck-section-nav__link{% if active_section == 'ai-upload' %} is-active{% endif %}">AI Upload</a>{% endif %}
     {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="deck-section-nav__link">Tests</a>{% endif %}
   </section>
 

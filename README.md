@@ -69,7 +69,7 @@ uvicorn app.main:app --reload
 - Cards
 - Review flow: `/review` → HTMX loads `/review/next` → rate via `/review/rate`
 - AI-assisted PDF/DOCX ingestion into flashcards + MCQs using OpenAI
-- Separate per-deck flashcard and MCQ management pages, including MCQ JSON import and item editing
+- Separate per-deck flashcard, MCQ, and AI upload pages, including MCQ JSON import and item editing
 - Deck-level Anki CSV export
 - System-admin-created tests with multiple user attempts and analysis reports
 

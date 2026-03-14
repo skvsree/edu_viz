@@ -571,7 +571,7 @@ def update_deck(
     cleaned_name = name.strip()
     cleaned_description = description.strip()
 
-    redirect_target = (next_url or "").strip()
+    redirect_target = next_url.strip() if isinstance(next_url, str) else ""
     if not redirect_target.startswith("/"):
         redirect_target = "/dashboard"
 
@@ -716,6 +716,35 @@ def deck_mcqs(
         title=f"MCQs | {deck.name}",
         template_name="cards/mcqs.html",
         active_section="mcqs",
+        import_error=request.query_params.get("import_error"),
+        import_success=request.query_params.get("import_success"),
+        update_error=request.query_params.get("update_error"),
+        update_success=request.query_params.get("update_success"),
+    )
+
+
+@router.get("/decks/{deck_id}/ai-upload", response_class=HTMLResponse)
+def deck_ai_upload(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_use_ai_generation(user) or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    return _deck_content_response(
+        request,
+        user=user,
+        deck=deck,
+        cards=cards,
+        title=f"AI Upload | {deck.name}",
+        template_name="cards/ai_upload.html",
+        active_section="ai-upload",
         import_error=request.query_params.get("import_error"),
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),

@@ -247,7 +247,7 @@ def test_deck_overview_links_to_split_management_pages():
         name="Biology",
         description="Cells and tissues",
     )
-    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id)
+    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=False)
     cards = [
         SimpleNamespace(card_type="basic"),
         SimpleNamespace(card_type="basic"),
@@ -262,9 +262,10 @@ def test_deck_overview_links_to_split_management_pages():
     )
 
     body = render_body(response)
-    assert "Deck overview" in body
+    assert "Open deck" in body
     assert f"/decks/{deck.id}/flashcards" in body
     assert f"/decks/{deck.id}/mcqs" in body
+    assert f"/decks/{deck.id}/ai-upload" in body
     assert "2 ready for review" in body
     assert "1 in question bank" in body
 
@@ -323,8 +324,9 @@ def test_mcqs_page_keeps_admin_features_and_mcq_list():
 
     body = render_body(response)
     assert "MCQ management" in body
-    assert "AI study generation" in body
     assert "MCQ JSON import" in body
+    assert "AI study generation" not in body
+    assert f"/decks/{deck.id}/ai-upload" in body
     assert "Edit MCQ" in body
     assert "Edit flashcard" not in body
 

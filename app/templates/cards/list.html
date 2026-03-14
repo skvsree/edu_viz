@@ -15,7 +15,8 @@
       <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
       <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">Manage MCQs</a>
       <a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Manage Flash Cards</a>
-      {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">AI Upload</a>{% endif %}
+      {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
+      {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Tests</a>{% endif %}
     </div>
   </section>
 
@@ -37,7 +38,7 @@
           <h2 class="section-subtitle">{{ mcq_count }} in question bank</h2>
         </div>
       </div>
-      <p class="muted">Open the MCQ manager to edit question banks, import JSON, and use AI tools when enabled.</p>
+      <p class="muted">Open the MCQ manager to edit question banks and import JSON for this deck.</p>
     </article>
   </section>
 
