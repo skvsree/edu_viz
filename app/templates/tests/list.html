@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card section-heading-card">
+    <div><p class="panel-label">Tests</p><h1 class="section-title">{{ deck.name }}</h1><p class="muted">Take multiple attempts and open analysis reports from here.</p></div>
+    <a href="/decks/{{ deck.id }}" class="button button-secondary">Back to deck</a>
+  </section>
+  {% if request.query_params.get('error') %}<section class="status-banner status-banner--error"><strong>Test creation failed.</strong><span>{{ request.query_params.get('error') }}</span></section>{% endif %}
+  {% if user.role == 'system_admin' %}
+  <section class="card form-card">
+    <p class="panel-label">Create test</p>
+    <form method="post" action="/decks/{{ deck.id }}/tests" class="stack-md">
+      <div><label>Title</label><input name="title" required /></div>
+      <div><label>Description</label><textarea name="description" rows="4"></textarea></div>
+      <div><label>Question count</label><input type="number" name="question_count" min="1" max="100" value="10" /></div>
+      <button type="submit" class="button">Create published test</button>
+    </form>
+  </section>
+  {% endif %}
+  <section class="card">
+    <div class="study-card-grid">
+      {% for test in tests %}
+        <article class="study-card">
+          <h3>{{ test.title }}</h3>
+          <p class="muted">{{ test.description or 'Deck-linked MCQ test' }}</p>
+          <p class="muted">{{ test.question_count }} questions</p>
+          <a href="/tests/{{ test.id }}" class="button button-secondary button-small">Take test</a>
+          {% set attempts = attempts_by_test.get(test.id|string, []) %}
+          {% if attempts %}
+            <div class="stack-md">
+              <p class="study-card__label">Your attempts</p>
+              {% for attempt in attempts[:5] %}
+                <a href="/attempts/{{ attempt.id }}" class="button button-secondary button-small">Attempt {{ loop.index }}: {{ attempt.score }}/{{ attempt.total_questions }}</a>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </article>
+      {% else %}
+        <div class="empty-state"><h3>No tests yet</h3><p class="muted">A system admin can create tests from the MCQs in this deck.</p></div>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}

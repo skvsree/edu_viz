@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card section-heading-card"><div><p class="panel-label">Take test</p><h1 class="section-title">{{ test.title }}</h1><p class="muted">{{ test.description or 'Answer all questions and submit for detailed analysis.' }}</p></div><a href="/decks/{{ test.deck.id }}/tests" class="button button-secondary">Back to tests</a></section>
+  <form method="post" action="/tests/{{ test.id }}/submit" class="stack-lg">
+    {% for question in test.questions|sort(attribute='position') %}
+      <section class="card stack-md">
+        <h3>Q{{ loop.index }}. {{ question.card.front }}</h3>
+        {% for option in question.card.mcq_options or [] %}
+          <label class="checkbox-row"><input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required /><span>{{ option }}</span></label>
+        {% endfor %}
+      </section>
+    {% endfor %}
+    <button type="submit" class="button">Submit test</button>
+  </form>
+</section>
+{% endblock %}

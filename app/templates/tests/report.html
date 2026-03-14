@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card section-heading-card">
+    <div>
+      <p class="panel-label">Analysis report</p>
+      <h1 class="section-title">{{ attempt.test.title }}</h1>
+      <p class="muted">Score {{ attempt.score }}/{{ attempt.total_questions }} | Attempts {{ summary.total_attempts }} | Best {{ summary.best_score if summary.best_score is not none else 'N/A' }}</p>
+    </div>
+    <a href="/decks/{{ attempt.test.deck_id }}/tests" class="button button-secondary">Back to tests</a>
+  </section>
+  <section class="dashboard-grid dashboard-grid--triple">
+    <article class="card info-card"><p class="panel-label">Accuracy</p><h2 class="section-subtitle">{{ ((attempt.score / attempt.total_questions) * 100) | round(0) | int if attempt.total_questions else 0 }}%</h2></article>
+    <article class="card info-card"><p class="panel-label">Latest score</p><h2 class="section-subtitle">{{ summary.latest_score if summary.latest_score is not none else 'N/A' }}</h2></article>
+    <article class="card info-card"><p class="panel-label">Completed</p><h2 class="section-subtitle">{{ attempt.completed_at.strftime('%d %b %Y %H:%M') }}</h2></article>
+  </section>
+  <section class="card">
+    <div class="study-card-grid">
+      {% for answer in attempt.answers %}
+        <article class="study-card">
+          <p class="study-card__label">{{ 'Correct' if answer.is_correct else 'Incorrect' }}</p>
+          <h3>{{ answer.question.card.front }}</h3>
+          <ol>
+            {% for option in answer.question.card.mcq_options or [] %}
+              <li{% if loop.index0 == answer.question.card.mcq_answer_index %} class="study-card__label"{% endif %}>{{ option }}{% if answer.selected_option_index == loop.index0 %} — your answer{% endif %}</li>
+            {% endfor %}
+          </ol>
+          <p class="muted">{{ answer.notes or answer.question.card.back }}</p>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+</section>
+{% endblock %}

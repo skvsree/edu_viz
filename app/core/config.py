@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     system_admin_bootstrap_email: str = "skv.sree@outlook.com"
     footer_copyright_text: str = "SelViz Software Solutions"
 
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4.1-mini"
+    openai_generation_enabled: bool = True
+
     # Microsoft Entra External ID / generic OIDC configuration.
     # Prefer the MICROSOFT_ENTRA_EXTERNAL_ID_* env vars for new deployments.
     # Legacy AZURE_B2C_* env vars are still accepted as fallbacks to ease migration.

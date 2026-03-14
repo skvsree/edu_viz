@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routers import auth, pages
+from app.api.routers.content import router as content_router
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.services.admin_bootstrap import bootstrap_system_admin_by_email
@@ -57,3 +58,4 @@ def promote_bootstrap_system_admin() -> None:
 # Routers (controllers)
 app.include_router(auth.router)
 app.include_router(pages.router)
+app.include_router(content_router)
