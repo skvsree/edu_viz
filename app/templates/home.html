@@ -2,7 +2,19 @@
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
-    <span class="eyebrow">Modern spaced repetition for serious learners</span>
+    <div class="hero-brand">
+      <div class="hero-brand__media">
+        <img
+          src="{{ static_asset_url('brand/logo.jpg') }}"
+          alt="edu selviz logo"
+          class="hero-brand__image"
+        />
+      </div>
+      <div class="hero-brand__copy">
+        <span class="eyebrow">Modern spaced repetition for serious learners</span>
+        <p class="hero-brand__caption">A study system with a clear visual identity and calmer daily flow.</p>
+      </div>
+    </div>
     <h1>Meet <span>edu selviz</span>, your clean daily study workspace.</h1>
     <p class="hero-text">
       Bring structure to revision with focused decks, fast review sessions, and a learning flow
@@ -32,6 +44,13 @@
 
   <div class="hero-panel card hero-panel--accent">
     <div class="hero-panel__glow"></div>
+    <div class="hero-panel__brand">
+      <img
+        src="{{ static_asset_url('brand/logo.jpg') }}"
+        alt="edu selviz emblem"
+        class="hero-panel__image"
+      />
+    </div>
     <p class="panel-label">Inside edu selviz</p>
     <h2>A sharper study routine with less friction.</h2>
     <ul class="feature-list">

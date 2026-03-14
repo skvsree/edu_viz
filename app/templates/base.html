@@ -8,6 +8,9 @@
       name="description"
       content="edu selviz is a focused study workspace for spaced repetition, deck management, and calm daily review."
     />
+    <meta name="theme-color" content="#07111f" />
+    <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/logo.jpg') }}" />
+    <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
   </head>
@@ -15,8 +18,14 @@
     <div class="page-shell">
       <header class="topbar">
         <a href="/" class="brand-mark" aria-label="edu selviz home">
-          <span class="brand-mark__badge">ES</span>
-          <span>
+          <span class="brand-mark__media">
+            <img
+              src="{{ static_asset_url('brand/logo.jpg') }}"
+              alt="edu selviz logo"
+              class="brand-mark__image"
+            />
+          </span>
+          <span class="brand-mark__copy">
             <strong>edu selviz</strong>
             <small>Professional study workflow</small>
           </span>
