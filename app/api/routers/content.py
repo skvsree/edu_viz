@@ -381,7 +381,7 @@ async def submit_test(test_id: str, request: Request, user: User = Depends(curre
     form = await request.form()
     question_ids = [value for key, value in form.multi_items() if key == "question_ids" and value]
     for key, value in form.items():
-        if key.startswith("question_"):
+        if key.startswith("question_") and key != "question_ids":
             answers[key.removeprefix("question_")] = int(value) if value != "" else None
     attempt = submit_attempt(db, test=test, user_id=user.id, answers=answers, question_ids=question_ids or None)
     db.commit()
