@@ -1,38 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="stack-lg">
+  {% if update_success %}<section class="status-banner status-banner--success"><strong>Updated.</strong><span>{{ update_success }}</span></section>{% endif %}
+  {% if update_error %}<section class="status-banner status-banner--error"><strong>Update failed.</strong><span>{{ update_error }}</span></section>{% endif %}
+
   <section class="card section-heading-card">
     <div>
-      <p class="panel-label">Deck overview</p>
+      <p class="panel-label">Open deck</p>
       <h1 class="section-title">{{ deck.name }}</h1>
-      <p class="muted section-copy">{{ deck.description or 'Organize flashcards, MCQs, and tests with a clearer per-deck workflow.' }}</p>
+      <p class="muted section-copy">{{ deck.description or 'Manage this deck from one clean workspace.' }}</p>
     </div>
     <div class="deck-card__actions">
-      <a href="/dashboard" class="button button-secondary button-small">Back</a>
-      <a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Flashcards</a>
-      <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">MCQs</a>
-      {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Test</a>{% endif %}
-      <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export Anki CSV</a>
+      <a href="/dashboard" class="button button-secondary button-small">Back to workspace</a>
+      <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
+      <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">Manage MCQs</a>
+      <a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Manage Flash Cards</a>
+      {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">AI Upload</a>{% endif %}
     </div>
-  </section>
-
-  <section class="deck-section-nav" aria-label="Deck sections">
-    <a href="/decks/{{ deck.id }}" class="deck-section-nav__link{% if active_section == 'overview' %} is-active{% endif %}">Overview</a>
-    <a href="/decks/{{ deck.id }}/flashcards" class="deck-section-nav__link{% if active_section == 'flashcards' %} is-active{% endif %}">Flashcards</a>
-    <a href="/decks/{{ deck.id }}/mcqs" class="deck-section-nav__link{% if active_section == 'mcqs' %} is-active{% endif %}">MCQs</a>
-    {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="deck-section-nav__link">Tests</a>{% endif %}
   </section>
 
   <section class="dashboard-grid">
     <article class="card">
       <div class="section-heading">
         <div>
-          <p class="panel-label">Flashcards</p>
+          <p class="panel-label">Flash cards</p>
           <h2 class="section-subtitle">{{ flashcard_count }} ready for review</h2>
         </div>
-        <a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Manage flashcards</a>
       </div>
-      <p class="muted">Create cards manually, import CSV sets, and edit the deck’s review prompts from a dedicated page.</p>
+      <p class="muted">Open the flash card manager to add, import, and edit review cards for this deck.</p>
     </article>
 
     <article class="card">
@@ -41,33 +36,34 @@
           <p class="panel-label">MCQs</p>
           <h2 class="section-subtitle">{{ mcq_count }} in question bank</h2>
         </div>
-        <a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">Manage MCQs</a>
       </div>
-      <p class="muted">Keep question-bank editing, JSON import, and AI generation grouped in one place with org-aware access.</p>
+      <p class="muted">Open the MCQ manager to edit question banks, import JSON, and use AI tools when enabled.</p>
     </article>
   </section>
 
-  <section class="card">
-    <div class="section-heading">
-      <div>
-        <p class="panel-label">Workflow</p>
-        <h2 class="section-subtitle">Per-deck content is now split by study type</h2>
+  {% if can_edit %}
+    <article class="card form-card">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Edit deck</p>
+          <h2 class="section-subtitle">Update deck details here</h2>
+        </div>
       </div>
-    </div>
-    <div class="study-card-grid">
-      <article class="study-card">
-        <div class="study-card__label">Overview</div>
-        <p>Use this page for counts, exports, and navigation across deck tasks.</p>
-      </article>
-      <article class="study-card">
-        <div class="study-card__label">Flashcards page</div>
-        <p>Add, import, browse, and edit review cards without MCQ controls mixed in.</p>
-      </article>
-      <article class="study-card">
-        <div class="study-card__label">MCQ page</div>
-        <p>Work on question banks, JSON uploads, and AI generation separately without mixing them into flashcard editing.</p>
-      </article>
-    </div>
-  </section>
+      <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md">
+        <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
+        <div>
+          <label for="edit-deck-name-inline">Deck name</label>
+          <input id="edit-deck-name-inline" name="name" value="{{ deck.name }}" maxlength="255" required />
+        </div>
+        <div>
+          <label for="edit-deck-description-inline">Description</label>
+          <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
+        </div>
+        <div class="deck-card__actions">
+          <button type="submit" class="button">Save deck</button>
+        </div>
+      </form>
+    </article>
+  {% endif %}
 </section>
 {% endblock %}

@@ -96,17 +96,6 @@
               <a href="/review?deck_id={{ item.deck.id }}" class="button button-secondary button-small">Review</a>
               <a href="/decks/{{ item.deck.id }}" class="button button-secondary button-small">Open deck</a>
               {% if can_manage_deck(user, item.deck) %}
-                <a
-                  href="/dashboard?modal=edit&edit_deck={{ item.deck.id }}"
-                  class="button button-secondary button-small"
-                  data-modal-open="edit-deck-modal"
-                  data-deck-id="{{ item.deck.id }}"
-                  data-deck-name="{{ item.deck.name }}"
-                  data-deck-description="{{ item.deck.description or '' }}"
-                  data-deck-update-action="/decks/{{ item.deck.id }}/update"
-                >
-                  Edit
-                </a>
                 <form method="post" action="/decks/{{ item.deck.id }}/delete" onsubmit="return confirm('Delete this deck?');">
                   <button type="submit" class="button button-secondary button-small button-danger">Delete</button>
                 </form>

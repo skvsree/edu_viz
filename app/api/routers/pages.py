@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -559,6 +559,7 @@ def update_deck(
     deck_id: str,
     name: str = Form(...),
     description: str = Form(default=""),
+    next_url: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -566,31 +567,49 @@ def update_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
+    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
     cleaned_name = name.strip()
     cleaned_description = description.strip()
-    if not cleaned_name:
+
+    redirect_target = (next_url or "").strip()
+    if not redirect_target.startswith("/"):
+        redirect_target = "/dashboard"
+
+    def _append_message_param(url: str, key: str, message: str) -> str:
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query[key] = message
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+    def _deck_update_error_response(message: str):
+        if redirect_target.startswith(f"/decks/{deck.id}"):
+            return _deck_content_response(
+                request,
+                user=user,
+                deck=deck,
+                cards=cards,
+                title=f"{deck.name} | edu selviz",
+                template_name="cards/list.html",
+                active_section="overview",
+                update_error=message,
+                status_code=400,
+            )
         return _dashboard_response(
             request,
             user=user,
             db=db,
             status_code=400,
-            dashboard_error="Deck name cannot be empty.",
+            dashboard_error=message,
             active_modal="edit",
             modal_deck=deck,
             edit_form={"name": cleaned_name, "description": cleaned_description},
         )
+
+    if not cleaned_name:
+        return _deck_update_error_response("Deck name cannot be empty.")
     normalized_name = normalize_deck_name(cleaned_name)
     if not normalized_name:
-        return _dashboard_response(
-            request,
-            user=user,
-            db=db,
-            status_code=400,
-            dashboard_error="Deck name must include letters or numbers.",
-            active_modal="edit",
-            modal_deck=deck,
-            edit_form={"name": cleaned_name, "description": cleaned_description},
-        )
+        return _deck_update_error_response("Deck name must include letters or numbers.")
 
     deck.name = cleaned_name
     deck.normalized_name = normalized_name
@@ -600,19 +619,11 @@ def update_deck(
         db.commit()
     except IntegrityError:
         db.rollback()
-        return _dashboard_response(
-            request,
-            user=user,
-            db=db,
-            status_code=400,
-            dashboard_error="Unable to update this deck right now. Please try again.",
-            active_modal="edit",
-            modal_deck=deck,
-            edit_form={"name": cleaned_name, "description": cleaned_description},
-        )
+        return _deck_update_error_response("Unable to update this deck right now. Please try again.")
 
-    success_message = quote_plus("Deck details updated")
-    return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
+    if redirect_target.startswith(f"/decks/{deck.id}"):
+        return RedirectResponse(url=_append_message_param(redirect_target, "update_success", "Deck details updated"), status_code=303)
+    return RedirectResponse(url=_append_message_param(redirect_target, "success", "Deck details updated"), status_code=303)
 
 
 @router.post("/decks/{deck_id}/delete")
