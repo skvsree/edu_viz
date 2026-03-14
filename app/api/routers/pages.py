@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user
+from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.models import Card, Deck, User
@@ -132,10 +132,17 @@ def _dashboard_response(
 
 
 @router.get("/", response_class=HTMLResponse)
-def home(request: Request):
+def home(request: Request, user: User | None = Depends(optional_current_user)):
+    if user is not None:
+        return RedirectResponse(url="/dashboard", status_code=303)
+
     return templates.TemplateResponse(
         "home.html",
-        {"request": request, "title": "edu selviz | Professional study workflow"},
+        {
+            "request": request,
+            "user": user,
+            "title": "edu selviz | Professional study workflow",
+        },
     )
 
 

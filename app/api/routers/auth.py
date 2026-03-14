@@ -8,6 +8,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.deps import optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.models import User
@@ -20,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/login")
-async def login(request: Request):
+async def login(request: Request, user: User | None = Depends(optional_current_user)):
+    if user is not None:
+        return RedirectResponse(url="/dashboard", status_code=303)
+
     cfg = load_identity_config()
     oauth = build_oauth()
     return await oauth.microsoft.authorize_redirect(request, cfg.redirect_uri)

@@ -32,13 +32,16 @@
           </span>
         </a>
         <nav class="topbar-nav" aria-label="Primary navigation">
-          <a href="/">Home</a>
-          <a href="/dashboard">Workspace</a>
-          <a href="/review">Review</a>
-          <a href="/login">Sign in</a>
-          <form action="/logout" method="post">
-            <button type="submit" class="button button-secondary button-small">Logout</button>
-          </form>
+          {% if user %}
+            <a href="/dashboard">Workspace</a>
+            <a href="/review">Review</a>
+            <form action="/logout" method="post">
+              <button type="submit" class="button button-secondary button-small">Logout</button>
+            </form>
+          {% else %}
+            <a href="/">Home</a>
+            <a href="/login">Sign in</a>
+          {% endif %}
         </nav>
       </header>
 
