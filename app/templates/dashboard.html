@@ -191,6 +191,12 @@
           <label for="edit-deck-description-inline">Description</label>
           <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
         </div>
+        {% if user.role == "system_admin" %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_global" value="true" {% if edit_form.is_global %}checked{% endif %} />
+            <span>Make this a global deck</span>
+          </label>
+        {% endif %}
         <div class="deck-card__actions">
           <button type="submit" class="button">Save deck</button>
           <a href="/dashboard" class="button button-secondary">Cancel</a>
@@ -261,6 +267,12 @@
             <label for="edit-deck-description">Description</label>
             <textarea id="edit-deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
           </div>
+          {% if user.role == "system_admin" %}
+            <label class="checkbox-row">
+              <input id="edit-deck-is-global" type="checkbox" name="is_global" value="true" {% if edit_form.is_global %}checked{% endif %} />
+              <span>Make this a global deck</span>
+            </label>
+          {% endif %}
           <button type="submit" class="button">Save deck</button>
         </form>
       </div>
@@ -340,11 +352,15 @@
             }
             const nameInput = dialog?.querySelector("#edit-deck-name");
             const descriptionInput = dialog?.querySelector("#edit-deck-description");
+            const isGlobalInput = dialog?.querySelector("#edit-deck-is-global");
             if (nameInput) {
               nameInput.value = trigger.dataset.deckName || "";
             }
             if (descriptionInput) {
               descriptionInput.value = trigger.dataset.deckDescription || "";
+            }
+            if (isGlobalInput) {
+              isGlobalInput.checked = trigger.dataset.deckIsGlobal === "true";
             }
           }
           openModal(modalId);

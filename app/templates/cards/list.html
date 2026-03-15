@@ -60,6 +60,12 @@
           <label for="edit-deck-description-inline">Description</label>
           <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
         </div>
+        {% if user.role == "system_admin" %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_global" value="true" {% if deck.is_global %}checked{% endif %} />
+            <span>Make this a global deck</span>
+          </label>
+        {% endif %}
         <div class="deck-card__actions">
           <button type="submit" class="button">Save deck</button>
         </div>

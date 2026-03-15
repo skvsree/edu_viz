@@ -271,7 +271,7 @@ def _dashboard_response(
     active_modal: str | None = None,
     modal_deck: Deck | None = None,
     create_form: dict[str, str | bool] | None = None,
-    edit_form: dict[str, str] | None = None,
+    edit_form: dict[str, str | bool] | None = None,
 ):
     deck_stats = list_accessible_deck_stats(db, user=user)
     requested_edit_deck_id = request.query_params.get("edit_deck")
@@ -299,6 +299,7 @@ def _dashboard_response(
             or {
                 "name": modal_deck.name if modal_deck else "",
                 "description": (modal_deck.description or "") if modal_deck else "",
+                "is_global": modal_deck.is_global if modal_deck else False,
             },
             "title": "Workspace | edu selviz",
         },
@@ -568,6 +569,7 @@ def update_deck(
     deck_id: str,
     name: str = Form(...),
     description: str = Form(default=""),
+    is_global: bool = Form(default=False),
     next_url: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -611,7 +613,7 @@ def update_deck(
             dashboard_error=message,
             active_modal="edit",
             modal_deck=deck,
-            edit_form={"name": cleaned_name, "description": cleaned_description},
+            edit_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
     if not cleaned_name:
@@ -620,9 +622,18 @@ def update_deck(
     if not normalized_name:
         return _deck_update_error_response("Deck name must include letters or numbers.")
 
+    if is_global and user.role != ROLE_SYSTEM_ADMIN:
+        raise HTTPException(status_code=403, detail="Only system admins can make a deck global.")
+
+    organization_id = None if is_global else user.organization_id
+    if not is_global and organization_id is None:
+        return _deck_update_error_response("Assign this admin to an organization before saving organization decks.")
+
     deck.name = cleaned_name
     deck.normalized_name = normalized_name
     deck.description = cleaned_description or None
+    deck.is_global = is_global
+    deck.organization_id = organization_id
 
     try:
         db.commit()

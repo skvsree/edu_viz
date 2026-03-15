@@ -343,3 +343,106 @@ def test_create_card_redirects_to_flashcards_page():
     assert response.status_code == 303
     assert response.headers["location"] == f"/decks/{deck.id}/flashcards?import_success=Flashcard+added"
     assert db.committed is True
+
+
+def test_system_admin_can_make_deck_global_from_dashboard_edit():
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="sysadmin@example.com",
+        identity_sub="sysadmin-sub",
+        organization=None,
+    )
+    org = SimpleNamespace(name="Northwind Academy")
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=False,
+        organization_id=uuid4(),
+        organization=org,
+        user_id=uuid4(),
+        name="Chemistry",
+        description="Atoms and bonds",
+        tags=[],
+    )
+    db = FakeDB({str(deck.id): deck, deck.id: deck})
+
+    response = pages.update_deck(
+        make_request(),
+        deck_id=str(deck.id),
+        name="Chemistry",
+        description="Shared reference deck",
+        is_global=True,
+        user=user,
+        db=db,
+    )
+
+    assert isinstance(response, RedirectResponse)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/dashboard?success=Deck+details+updated"
+    assert deck.is_global is True
+    assert deck.organization_id is None
+    assert deck.description == "Shared reference deck"
+    assert db.committed is True
+
+
+def test_system_admin_edit_validation_error_preserves_global_toggle_state():
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="sysadmin@example.com",
+        identity_sub="sysadmin-sub",
+        organization=None,
+    )
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=False,
+        organization_id=uuid4(),
+        organization=SimpleNamespace(name="Northwind Academy"),
+        user_id=uuid4(),
+        name="Chemistry",
+        description="Atoms and bonds",
+        tags=[],
+    )
+    with patch.object(pages, "list_accessible_deck_stats", lambda db, *, user: []):
+        response = pages.update_deck(
+            make_request(),
+            deck_id=str(deck.id),
+            name="   ",
+            description="Shared reference deck",
+            is_global=True,
+            user=user,
+            db=FakeDB({str(deck.id): deck, deck.id: deck}),
+        )
+
+    body = render_body(response)
+    assert response.status_code == 400
+    assert 'name="is_global" value="true" checked' in body
+    assert "Make this a global deck" in body
+
+
+def test_deck_overview_edit_form_shows_global_toggle_for_system_admin():
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=True,
+        organization_id=None,
+        user_id=uuid4(),
+        name="Biology",
+        description="Cells and tissues",
+    )
+    user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=None, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=False)
+
+    response = pages.deck_overview(
+        make_request(path=f"/decks/{deck.id}"),
+        deck_id=str(deck.id),
+        user=user,
+        db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]),
+    )
+
+    body = render_body(response)
+    assert "Make this a global deck" in body
+    assert 'name="is_global" value="true" checked' in body
