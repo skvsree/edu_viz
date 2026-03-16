@@ -90,22 +90,114 @@
 - Main files: `app/templates/review/page.html`, `app/templates/review/card.html`, `app/templates/review/empty.html`, `app/static/styles.css`.
 - Keep the review page centered, lightweight, and readable.
 - Do not accidentally pull in the full app topbar/navigation unless explicitly requested.
+- Review page has its own branded logo — do not replace with the main app logo without checking.
+
+### Bulk delete
+- Flashcard bulk delete: `POST /decks/{id}/flashcards/bulk-delete`
+- MCQ bulk delete: `POST /decks/{id}/mcqs/bulk-delete`
+- Both clean up card state dependencies before deleting; keep tests aligned if changing logic.
+
+### Tests
+- Test center lives at `/decks/{id}/tests` and is accessible to managers (admin/system_admin).
+- Test creation, taking, submission, and attempt reports are in `app/api/routers/content.py`.
+- Templates: `app/templates/tests/list.html`, `take.html`, `report.html`.
+- Question payload parsing was recently fixed — be careful with card type discrimination when changing test submission logic.
 
 ### Static assets
 - Current logo asset: `app/static/brand/logo.jpg`.
 - Reference assets through `static_asset_url(...)` so cache-busting keeps working.
 
+## Feature summary (current state)
+
+### Content management
+- Decks: create, edit, delete (soft delete), global/org scope toggle in edit flow
+- Flashcards: CRUD per deck, bulk delete
+- MCQs: CRUD per deck, bulk delete, JSON import
+- AI upload: dedicated per-deck page (`/decks/{id}/ai-upload`) for PDF/DOCX ingestion via OpenAI
+- Anki CSV export per deck (`/decks/{id}/anki-export.csv`)
+
+### Review
+- FSRS-style review flow at `/review`
+- HTMX-powered: loads `/review/next`, posts ratings to `/review/rate`
+- Review page is intentionally branded (`edu selviz` logo) and styled separately from the main app shell — keep it distraction-light
+- Study counts moved to review launch and test launch pages
+
+### Tests
+- Deck-level test center (`/decks/{id}/tests`) — accessible to managers (admin/system_admin)
+- Test creation, test-taking (`/tests/{id}`), submission, attempt reports (`/attempts/{id}`)
+- Multiple user attempts per test with analysis reports
+
+### Settings (admin)
+- Organizations management (`/settings/organizations`) — create, rename, assign users
+- Users management (`/settings/users`) — update role, assign organization
+- Global deck toggle in deck edit flow (marks deck as globally accessible)
+
+### Routes reference
+
+**Pages router** (`app/api/routers/pages.py`):
+- `GET /` — home
+- `GET /dashboard` — dashboard with accessible decks and progress metrics
+- `GET /settings`, `/settings/organizations`, `/settings/users` — admin settings
+- `POST /decks`, `POST /decks/{id}/update`, `POST /decks/{id}/delete` — deck CRUD
+- `GET /decks/{id}` — deck detail
+- `GET /decks/{id}/flashcards`, `GET /decks/{id}/mcqs`, `GET /decks/{id}/ai-upload` — content pages
+- `POST /decks/{id}/cards`, `POST /decks/{id}/cards/import` — card creation/import
+- `GET /review`, `GET /review/next`, `POST /review/rate` — review flow
+
+**Content router** (`app/api/routers/content.py`):
+- `POST /decks/{id}/ai-import` — AI PDF/DOCX ingestion
+- `POST /decks/{id}/mcqs/import-json` — MCQ JSON import
+- `GET /decks/{id}/flashcards/{card_id}/edit`, `POST ...` — flashcard edit
+- `GET /decks/{id}/mcqs/{card_id}/edit`, `POST ...` — MCQ edit
+- `POST /decks/{id}/flashcards/bulk-delete`, `POST /decks/{id}/mcqs/bulk-delete` — bulk delete
+- `GET /decks/{id}/tests`, `POST /decks/{id}/tests` — test center
+- `GET /tests/{id}`, `POST /tests/{id}/submit` — take test
+- `GET /attempts/{id}` — attempt report
+- `GET /decks/{id}/anki-export.csv` — Anki export
+
+### Templates structure
+```
+app/templates/
+├── base.html
+├── home.html
+├── dashboard.html
+├── cards/
+│   ├── list.html          # flashcard + MCQ listing per deck
+│   ├── ai_upload.html     # AI PDF/DOCX upload
+│   ├── edit_flashcard.html
+│   ├── edit_mcq.html
+│   ├── flashcards.html
+│   └── mcqs.html
+├── review/
+│   ├── page.html
+│   ├── card.html
+│   └── empty.html
+├── settings/
+│   ├── index.html
+│   ├── organizations.html
+│   └── users.html
+└── tests/
+    ├── list.html
+    ├── take.html
+    └── report.html
+```
+
 ## Useful files to inspect first
 - `README.md`
 - `app/api/routers/pages.py`
+- `app/api/routers/content.py`
 - `app/services/access.py`
 - `app/services/microsoft_identity.py`
 - `app/templates/base.html`
 - `app/templates/dashboard.html`
 - `app/templates/review/page.html`
+- `app/templates/tests/list.html`
 - `app/static/styles.css`
 
 ## Working rule for future agents
 - Keep changes practical and small.
-- Don’t leak secrets into docs, code, commits, or screenshots.
+- Don't leak secrets into docs, code, commits, or screenshots.
 - If you deploy UI changes, verify the live page after the container restarts.
+- Review page styling is separate from the main shell — do not pull in the full topbar/nav into review mode.
+- Modal flows in dashboard/settings depend on query params + client-side dialog wiring; test both direct page loads and click-open interactions.
+- Static assets use `static_asset_url()` for cache-busting; always reference CSS/images/icons through this helper.
