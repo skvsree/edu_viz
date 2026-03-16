@@ -1,39 +1,180 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="stack-lg">
-  <section class="card section-heading-card"><div><p class="panel-label">Take test</p><h1 class="section-title">{{ test.title }}</h1><p class="muted">{{ test.description or 'Answer all questions and submit for detailed analysis.' }}</p></div><a href="/decks/{{ test.deck.id }}/tests" class="button button-secondary">Back to tests</a></section>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ test.title }} | edu selviz</title>
+    <meta name="description" content="Take test in edu selviz" />
+    <meta name="theme-color" content="#f5efe2" />
+    <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
+    <link rel="apple-touch-icon" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+  </head>
+  <body class="review-body">
+    <div class="review-shell">
+      <header class="review-topbar" aria-label="Test page header">
+        <a href="/dashboard" class="review-brand brand-mark" aria-label="edu selviz workspace">
+          <span class="review-brand__media brand-mark__media">
+            <img
+              src="{{ static_asset_url('brand/review-logo.jpg') }}"
+              alt="edu selviz logo"
+              class="review-brand__image brand-mark__image"
+            />
+          </span>
+          <span class="review-brand__copy brand-mark__copy">
+            <strong>edu selviz</strong>
+            <small>Professional study workflow</small>
+          </span>
+        </a>
+      </header>
 
-  {% if not chosen_count %}
-    <section class="card form-card stack-md">
-      <div>
-        <p class="panel-label">Launch test</p>
-        <h2 class="section-subtitle">Choose how many questions to take now</h2>
-        <p class="muted">This published test has {{ total_available }} questions available. Pick a session size for this attempt.</p>
-      </div>
-      <form method="get" action="/tests/{{ test.id }}" class="stack-md">
-        <div>
-          <label>Questions for this attempt</label>
-          <select name="count">
-            {% for option in launch_options %}<option value="{{ option }}">{{ option }} questions</option>{% endfor %}
-          </select>
-        </div>
-        <button type="submit" class="button">Start test</button>
-      </form>
-    </section>
-  {% else %}
-    <section class="card info-card"><p class="muted">Showing {{ chosen_count }} of {{ total_available }} available questions for this attempt.</p></section>
-    <form method="post" action="/tests/{{ test.id }}/submit" class="stack-lg">
-      {% for question in questions %}
-        <input type="hidden" name="question_ids" value="{{ question.id }}" />
-        <section class="card stack-md">
-          <h3>Q{{ loop.index }}. {{ question.card.front }}</h3>
-          {% for option in question.card.mcq_options or [] %}
-            <label class="checkbox-row"><input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required /><span>{{ option }}</span></label>
-          {% endfor %}
-        </section>
-      {% endfor %}
-      <button type="submit" class="button">Submit test</button>
-    </form>
-  {% endif %}
-</section>
-{% endblock %}
+      <main class="review-main">
+        {% if not chosen_count %}
+          <section class="review-area">
+            <article class="card review-focus-card stack-md review-launch-card">
+              <div>
+                <p class="panel-label">Launch test</p>
+                <h1 class="section-title">{{ test.title }}</h1>
+                <p class="muted">{{ test.description or 'Answer all questions and submit for detailed analysis.' }}</p>
+                <p class="muted">This published test has {{ total_available }} questions available. Pick a session size for this attempt.</p>
+              </div>
+              <form method="get" action="/tests/{{ test.id }}" class="stack-md">
+                <div>
+                  <label>Questions for this attempt</label>
+                  <select name="count">
+                    {% for option in launch_options %}<option value="{{ option }}">{{ option }} questions</option>{% endfor %}
+                  </select>
+                </div>
+                <button type="submit" class="button">Start test</button>
+              </form>
+            </article>
+          </section>
+        {% else %}
+          <section class="review-area">
+            <article class="card review-focus-card stack-md test-question-card">
+              <div class="test-header">
+                <p class="panel-label">Test in progress</p>
+                <div class="test-counter">
+                  <span id="question-counter">1 of {{ chosen_count }}</span>
+                </div>
+              </div>
+              
+              <form id="test-form" method="post" action="/tests/{{ test.id }}/submit">
+                {% for question in questions %}
+                <input type="hidden" name="question_ids" value="{{ question.id }}" />
+                {% endfor %}
+                
+                <div id="question-container">
+                  {% for question in questions %}
+                    <div class="test-question-slide" data-question-index="{{ loop.index0 }}" data-question-id="{{ question.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
+                      <h2 class="test-question-text">Q{{ loop.index }}. {{ question.card.front }}</h2>
+                      <div class="test-options">
+                        {% for option in question.card.mcq_options or [] %}
+                          <label class="test-option">
+                            <input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required />
+                            <span class="test-option-text">{{ option }}</span>
+                          </label>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+
+                <div class="test-nav">
+                  <button type="button" id="prev-btn" class="button button-secondary" style="visibility: hidden;">Previous</button>
+                  <button type="button" id="next-btn" class="button">Next</button>
+                  <button type="submit" id="submit-btn" class="button" style="display: none;">Submit</button>
+                </div>
+              </form>
+            </article>
+          </section>
+        {% endif %}
+      </main>
+
+      <footer class="site-footer site-footer--review">
+        <small>{{ footer_copyright_text }}</small>
+      </footer>
+    </div>
+
+    {% if chosen_count %}
+    <script>
+      (function() {
+        const questions = {{ questions | map(attribute='id') | map('string') | list | tojson }};
+        const totalQuestions = questions.length;
+        let currentIndex = 0;
+        const answers = {};
+
+        const questionContainer = document.getElementById('question-container');
+        const slides = questionContainer.querySelectorAll('.test-question-slide');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const counterEl = document.getElementById('question-counter');
+
+        function updateSlide() {
+          slides.forEach((slide, index) => {
+            slide.style.display = index === currentIndex ? 'block' : 'none';
+          });
+          
+          counterEl.textContent = `${currentIndex + 1} of ${totalQuestions}`;
+          
+          prevBtn.style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+          
+          if (currentIndex === totalQuestions - 1) {
+            nextBtn.style.display = 'none';
+            submitBtn.style.display = 'inline-flex';
+          } else {
+            nextBtn.style.display = 'inline-flex';
+            submitBtn.style.display = 'none';
+          }
+        }
+
+        function saveCurrentAnswer() {
+          const currentSlide = slides[currentIndex];
+          const questionId = currentSlide.dataset.questionId;
+          const selected = currentSlide.querySelector('input[type="radio"]:checked');
+          if (selected) {
+            answers[questionId] = selected.value;
+          }
+        }
+
+        prevBtn.addEventListener('click', () => {
+          saveCurrentAnswer();
+          if (currentIndex > 0) {
+            currentIndex--;
+            updateSlide();
+          }
+        });
+
+        nextBtn.addEventListener('click', () => {
+          saveCurrentAnswer();
+          if (currentIndex < totalQuestions - 1) {
+            currentIndex++;
+            updateSlide();
+          }
+        });
+
+        document.getElementById('test-form').addEventListener('submit', function() {
+          saveCurrentAnswer();
+          
+          questions.forEach(function(questionId) {
+            var hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'question_' + questionId;
+            hiddenInput.value = answers[questionId] !== undefined ? answers[questionId] : '';
+            document.getElementById('test-form').appendChild(hiddenInput);
+          });
+        });
+
+        updateSlide();
+      })();
+    </script>
+    {% endif %}
+  </body>
+</html>

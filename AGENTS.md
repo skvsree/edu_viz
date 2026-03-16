@@ -71,10 +71,13 @@
 
 ## Known pitfalls / regressions already seen
 - Auth naming drift: codebase moved from Azure AD B2C wording to Microsoft Entra External ID. Compatibility shim remains; do not remove old env support casually or you may break current deployments.
+- **Starlette query_params caching**: `request.query_params` is cached. Modifying `request.scope["query_string"]` after the fact has no effect. If you need to pass modified params between internal function calls, pass them as explicit arguments instead.
 - Review page styling is intentionally separate from the dark shell used elsewhere. Reusing generic topbar styles blindly can make review mode feel heavy.
 - Modal flows in dashboard/settings depend on query params + client-side dialog wiring. It is easy to break edit/create reopen behavior if IDs/data attributes drift.
 - Static asset changes may appear stale only if you bypass `static_asset_url()`; always use the helper in templates for CSS/images/icons.
 - Organization/admin logic is sensitive: visibility and management permissions are not the same thing. Check `app/services/access.py` before changing deck/user behavior.
+- **Jinja2 UUID serialization**: `tojson` filter cannot serialize UUID objects. Use `| map('string') | list | tojson` when passing UUIDs to JavaScript.
+- **Auth callback user lookup**: Users are matched first by `identity_sub`, then by `email` as fallback. If a user exists with a different `identity_sub` (e.g., from a previous auth provider), the email fallback updates their `identity_sub`.
 
 ## Be careful when editing
 ### Auth
@@ -101,7 +104,10 @@
 - Test center lives at `/decks/{id}/tests` and is accessible to managers (admin/system_admin).
 - Test creation, taking, submission, and attempt reports are in `app/api/routers/content.py`.
 - Templates: `app/templates/tests/list.html`, `take.html`, `report.html`.
+- `take.html` and `report.html` are standalone pages (not extending base.html), matching review page style.
 - Question payload parsing was recently fixed — be careful with card type discrimination when changing test submission logic.
+- When submitting answers via form POST, `question_ids` must be individual hidden fields per question, not comma-separated.
+- Do NOT use `request.scope["query_string"]` hack to pass params between functions — Starlette caches `query_params`.
 
 ### Static assets
 - Current logo asset: `app/static/brand/logo.jpg`.
@@ -121,11 +127,20 @@
 - HTMX-powered: loads `/review/next`, posts ratings to `/review/rate`
 - Review page is intentionally branded (`edu selviz` logo) and styled separately from the main app shell — keep it distraction-light
 - Study counts moved to review launch and test launch pages
+- Review deck isolation: `review_rate` calls `_review_next_inner()` directly (passing deck_id and remaining as explicit params) instead of hacking `request.scope["query_string"]` which is cached by Starlette
+- Launch options: 10, 25, 50, 100, 200 cards
 
 ### Tests
 - Deck-level test center (`/decks/{id}/tests`) — accessible to managers (admin/system_admin)
 - Test creation, test-taking (`/tests/{id}`), submission, attempt reports (`/attempts/{id}`)
 - Multiple user attempts per test with analysis reports
+- Test take page (`take.html`) is standalone (not extending base.html), matches review page style
+- One question at a time with Previous/Next navigation, answers stored in JS until submit
+- Question IDs are sent as individual hidden fields (name=`question_ids`), NOT comma-separated
+- Questions are randomized before selection (shuffle full pool, then slice chosen count)
+- Launch options: 10, 25, 50, 100, 200 questions
+- Test report page (`report.html`) is standalone, slideshow-style with green/red color coding
+- UUID values in templates must be converted to string before `tojson` filter
 
 ### Settings (admin)
 - Organizations management (`/settings/organizations`) — create, rename, assign users

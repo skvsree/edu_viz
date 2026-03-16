@@ -352,8 +352,10 @@ def take_test_page(test_id: str, request: Request, user: User = Depends(current_
         except ValueError:
             chosen_count = None
 
+    import random
+    random.shuffle(questions)
     selected_questions = questions[:chosen_count] if chosen_count else []
-    launch_options = [option for option in (10, 25, 50) if option < total_available]
+    launch_options = [option for option in (10, 25, 50, 100, 200) if option < total_available]
     if total_available and total_available not in launch_options:
         launch_options.append(total_available)
 
