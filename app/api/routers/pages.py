@@ -887,32 +887,18 @@ def review_page(request: Request, user: User = Depends(current_user), db: Sessio
             "title": "Review | edu selviz",
             "review_deck": deck,
             "review_limit": review_limit,
-            "review_options": [10, 25, 50],
+            "review_options": [10, 25, 50, 100, 200],
         },
     )
 
 
-@router.get("/review/next", response_class=HTMLResponse)
-def review_next(
-    request: Request,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
+def _review_next_inner(request, user, db, deck_id=None, remaining=None):
     svc = ReviewService()
-    deck_id = request.query_params.get("deck_id")
     deck = None
     if deck_id:
         deck = db.get(Deck, deck_id)
         if not deck or not can_access_deck(user, deck):
             raise HTTPException(status_code=404)
-
-    remaining = None
-    raw_remaining = request.query_params.get("remaining")
-    if raw_remaining:
-        try:
-            remaining = max(0, int(raw_remaining))
-        except ValueError:
-            remaining = None
 
     if remaining == 0:
         return templates.TemplateResponse(
@@ -928,6 +914,25 @@ def review_next(
         "review/card.html",
         {"request": request, "user": user, "card": card, "review_deck": deck, "remaining": remaining},
     )
+
+
+@router.get("/review/next", response_class=HTMLResponse)
+def review_next(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck_id = request.query_params.get("deck_id")
+
+    remaining = None
+    raw_remaining = request.query_params.get("remaining")
+    if raw_remaining:
+        try:
+            remaining = max(0, int(raw_remaining))
+        except ValueError:
+            remaining = None
+
+    return _review_next_inner(request, user, db, deck_id=deck_id, remaining=remaining)
 
 
 @router.post("/review/rate", response_class=HTMLResponse)
@@ -952,10 +957,5 @@ def review_rate(
     db.commit()
 
     next_remaining = None if remaining is None else max(remaining - 1, 0)
-    query_pairs: list[tuple[str, str]] = []
-    if deck_id:
-        query_pairs.append(("deck_id", deck_id))
-    if next_remaining is not None:
-        query_pairs.append(("remaining", str(next_remaining)))
-    request.scope["query_string"] = urlencode(query_pairs).encode()
-    return review_next(request=request, user=user, db=db)
+    effective_deck_id = deck_id or (str(deck.id) if deck else None)
+    return _review_next_inner(request, user, db, deck_id=effective_deck_id, remaining=next_remaining)

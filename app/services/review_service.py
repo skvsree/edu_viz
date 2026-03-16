@@ -35,9 +35,11 @@ class ReviewService:
         if deck_id is not None:
             stmt = stmt.where(Card.deck_id == deck_id)
         stmt = stmt.order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc()).limit(1)
-        card = db.execute(stmt).scalars().first()
-        if card is None:
-            return None
+        result = db.execute(stmt).scalars().first()
+        if result:
+            import sys
+            print(f"REVIEW_DEBUG: requested_deck={deck_id} returned_deck={result.deck_id} card={result.id}", file=sys.stderr, flush=True)
+        return result
 
         # If state exists and due is in future, allow it only if there are no due cards?
         # For MVP, we still show the earliest card even if not due.

@@ -64,6 +64,11 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         email = userinfo["emails"][0]
 
     user = db.execute(select(User).where(User.identity_sub == sub)).scalars().first()
+    if user is None and email:
+        user = db.execute(select(User).where(User.email == email)).scalars().first()
+        if user is not None:
+            user.identity_sub = sub
+            db.commit()
     if user is None:
         user = User(identity_sub=sub, email=email)
         db.add(user)
