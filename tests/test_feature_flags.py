@@ -59,7 +59,7 @@ def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_wh
     assert "AI study generation" not in body
 
 
-def test_deck_tests_page_allows_manager_without_personal_test_flag_and_guides_when_mcqs_missing():
+def test_deck_tests_page_shows_empty_state_when_mcqs_missing():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description=None)
     user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=False)
@@ -67,8 +67,8 @@ def test_deck_tests_page_allows_manager_without_personal_test_flag_and_guides_wh
     response = content.deck_tests_page(str(deck.id), make_request(path=f"/decks/{deck.id}/tests"), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
 
     body = render_body(response)
-    assert "Create test" in body
-    assert "Add at least one MCQ in this deck first" in body
+    assert "Add MCQs to this deck to enable tests" in body
+    assert "Create test" not in body
 
 
 def test_create_test_allows_admin_manager():
@@ -77,11 +77,13 @@ def test_create_test_allows_admin_manager():
     user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True)
     db = FakeDB({str(deck.id): deck, deck.id: deck})
 
-    with patch.object(content, "create_test_from_deck", lambda *args, **kwargs: None):
-        response = content.create_test(deck_id=str(deck.id), title="Quiz", description="", user=user, db=db)
+    fake_test = SimpleNamespace(id=uuid4())
+    with patch.object(content, "create_test_from_deck", return_value=fake_test):
+        response = content.create_test(deck_id=str(deck.id), count=10, user=user, db=db)
 
     assert isinstance(response, RedirectResponse)
     assert response.status_code == 303
+    assert f"/tests/{fake_test.id}" in response.headers["location"]
 
 
 def test_ai_upload_page_requires_existing_ai_access_rules():

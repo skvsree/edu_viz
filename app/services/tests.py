@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -15,13 +16,17 @@ class TestReportSummary:
     latest_score: int | None
 
 
+def _auto_test_title() -> str:
+    now = datetime.now()
+    return f"Test taken @ {now.strftime('%Y-%m-%d %H:%M')}"
+
+
 def create_test_from_deck(
     db: Session,
     *,
     deck_id,
     created_by_user_id,
-    title: str,
-    description: str | None,
+    question_count: int | None = None,
 ) -> Test:
     cards = (
         db.execute(
@@ -35,17 +40,21 @@ def create_test_from_deck(
     if not cards:
         raise ValueError("This deck has no MCQs yet.")
 
+    import random
+    random.shuffle(cards)
+    selected = cards[:question_count] if question_count else cards
+
     test = Test(
         deck_id=deck_id,
         created_by_user_id=created_by_user_id,
-        title=title,
-        description=description,
-        question_count=len(cards),
+        title=_auto_test_title(),
+        description=None,
+        question_count=len(selected),
         is_published=True,
     )
     db.add(test)
     db.flush()
-    for pos, card in enumerate(cards, start=1):
+    for pos, card in enumerate(selected, start=1):
         db.add(TestQuestion(test_id=test.id, card_id=card.id, position=pos))
     return test
 

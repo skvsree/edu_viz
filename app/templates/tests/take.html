@@ -35,66 +35,44 @@
       </header>
 
       <main class="review-main">
-        {% if not chosen_count %}
-          <section class="review-area">
-            <article class="card review-focus-card stack-md review-launch-card">
-              <div>
-                <p class="panel-label">Launch test</p>
-                <h1 class="section-title">{{ test.title }}</h1>
-                <p class="muted">{{ test.description or 'Answer all questions and submit for detailed analysis.' }}</p>
-                <p class="muted">This published test has {{ total_available }} questions available. Pick a session size for this attempt.</p>
+        <section class="review-area">
+          <article class="card review-focus-card stack-md test-question-card">
+            <div class="test-header">
+              <p class="panel-label">Test in progress</p>
+              <div class="test-counter">
+                <span id="question-counter">1 of {{ questions | length }}</span>
               </div>
-              <form method="get" action="/tests/{{ test.id }}" class="stack-md">
-                <div>
-                  <label>Questions for this attempt</label>
-                  <select name="count">
-                    {% for option in launch_options %}<option value="{{ option }}">{{ option }} questions</option>{% endfor %}
-                  </select>
-                </div>
-                <button type="submit" class="button">Start test</button>
-              </form>
-            </article>
-          </section>
-        {% else %}
-          <section class="review-area">
-            <article class="card review-focus-card stack-md test-question-card">
-              <div class="test-header">
-                <p class="panel-label">Test in progress</p>
-                <div class="test-counter">
-                  <span id="question-counter">1 of {{ chosen_count }}</span>
-                </div>
-              </div>
+            </div>
+            
+            <form id="test-form" method="post" action="/tests/{{ test.id }}/submit">
+              {% for question in questions %}
+              <input type="hidden" name="question_ids" value="{{ question.id }}" />
+              {% endfor %}
               
-              <form id="test-form" method="post" action="/tests/{{ test.id }}/submit">
+              <div id="question-container">
                 {% for question in questions %}
-                <input type="hidden" name="question_ids" value="{{ question.id }}" />
-                {% endfor %}
-                
-                <div id="question-container">
-                  {% for question in questions %}
-                    <div class="test-question-slide" data-question-index="{{ loop.index0 }}" data-question-id="{{ question.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
-                      <h2 class="test-question-text">Q{{ loop.index }}. {{ question.card.front }}</h2>
-                      <div class="test-options">
-                        {% for option in question.card.mcq_options or [] %}
-                          <label class="test-option">
-                            <input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required />
-                            <span class="test-option-text">{{ option }}</span>
-                          </label>
-                        {% endfor %}
-                      </div>
+                  <div class="test-question-slide" data-question-index="{{ loop.index0 }}" data-question-id="{{ question.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
+                    <h2 class="test-question-text">Q{{ loop.index }}. {{ question.card.front }}</h2>
+                    <div class="test-options">
+                      {% for option in question.card.mcq_options or [] %}
+                        <label class="test-option">
+                          <input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required />
+                          <span class="test-option-text">{{ option }}</span>
+                        </label>
+                      {% endfor %}
                     </div>
-                  {% endfor %}
-                </div>
+                  </div>
+                {% endfor %}
+              </div>
 
-                <div class="test-nav">
-                  <button type="button" id="prev-btn" class="button button-secondary" style="visibility: hidden;">Previous</button>
-                  <button type="button" id="next-btn" class="button" disabled>Next</button>
-                  <button type="submit" id="submit-btn" class="button" style="display: none;" disabled>Submit</button>
-                </div>
-              </form>
-            </article>
-          </section>
-        {% endif %}
+              <div class="test-nav">
+                <button type="button" id="prev-btn" class="button button-secondary" style="visibility: hidden;">Previous</button>
+                <button type="button" id="next-btn" class="button" disabled>Next</button>
+                <button type="submit" id="submit-btn" class="button" style="display: none;" disabled>Submit</button>
+              </div>
+            </form>
+          </article>
+        </section>
       </main>
 
       <footer class="site-footer site-footer--review">
@@ -102,7 +80,6 @@
       </footer>
     </div>
 
-    {% if chosen_count %}
     <script>
       (function() {
         const questions = {{ questions | map(attribute='id') | map('string') | list | tojson }};
@@ -197,6 +174,5 @@
         updateSlide();
       })();
     </script>
-    {% endif %}
   </body>
 </html>

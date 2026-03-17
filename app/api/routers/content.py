@@ -324,16 +324,16 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
 
 
 @router.post("/decks/{deck_id}/tests")
-def create_test(deck_id: str, title: str = Form(...), description: str = Form(default=""), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def create_test(deck_id: str, count: int = Form(default=0), user: User = Depends(current_user), db: Session = Depends(get_db)):
     deck = db.get(Deck, deck_id)
     if not deck or not can_manage_tests(user, deck):
         raise HTTPException(status_code=404)
     try:
-        create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, title=title.strip(), description=description.strip() or None)
+        test = create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, question_count=count or None)
     except ValueError as exc:
         return RedirectResponse(url=f"/decks/{deck.id}/tests?error={quote_plus(str(exc))}", status_code=303)
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}/tests", status_code=303)
+    return RedirectResponse(url=f"/tests/{test.id}", status_code=303)
 
 
 @router.get("/tests/{test_id}", response_class=HTMLResponse)
@@ -343,21 +343,8 @@ def take_test_page(test_id: str, request: Request, user: User = Depends(current_
         raise HTTPException(status_code=404)
 
     questions = sorted(test.questions, key=lambda item: item.position)
-    total_available = len(questions)
-    selected_count = request.query_params.get("count")
-    chosen_count = None
-    if selected_count:
-        try:
-            chosen_count = max(1, min(int(selected_count), total_available))
-        except ValueError:
-            chosen_count = None
-
     import random
     random.shuffle(questions)
-    selected_questions = questions[:chosen_count] if chosen_count else []
-    launch_options = [option for option in (10, 25, 50, 100, 200) if option < total_available]
-    if total_available and total_available not in launch_options:
-        launch_options.append(total_available)
 
     return templates.TemplateResponse(
         "tests/take.html",
@@ -365,10 +352,7 @@ def take_test_page(test_id: str, request: Request, user: User = Depends(current_
             "request": request,
             "user": user,
             "test": test,
-            "questions": selected_questions,
-            "total_available": total_available,
-            "chosen_count": chosen_count,
-            "launch_options": launch_options,
+            "questions": questions,
             "title": test.title,
         },
     )

@@ -37,14 +37,14 @@ def test_review_page_autoloads_session_when_count_is_selected():
     assert "remaining=25" in body
 
 
-def test_take_test_page_shows_launch_picker_before_questions():
+def test_take_test_page_renders_all_questions_directly():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
     questions = [
         SimpleNamespace(id=uuid4(), position=i, card=SimpleNamespace(front=f"Q{i}", mcq_options=["A", "B", "C", "D"]))
         for i in range(1, 13)
     ]
-    test = SimpleNamespace(id=uuid4(), title="Quiz", description="", deck=deck, questions=questions)
+    test = SimpleNamespace(id=uuid4(), title="Test taken @ 2026-03-17 18:30", description=None, deck=deck, questions=questions)
     user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True)
     db = FakeDB()
 
@@ -56,50 +56,27 @@ def test_take_test_page_shows_launch_picker_before_questions():
     response = content.take_test_page(str(test.id), make_request(path=f"/tests/{test.id}"), user=user, db=db)
 
     body = render_body(response)
-    assert "Choose how many questions to take now" in body
-    assert 'name="count"' in body
-    assert "12 questions available" in body
+    assert "Test in progress" in body
+    assert body.count('name="question_ids"') == 12
+    assert "1 of 12" in body
 
 
-def test_take_test_page_renders_selected_number_of_questions():
-    org_id = uuid4()
-    deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
-    questions = [
-        SimpleNamespace(id=uuid4(), position=i, card=SimpleNamespace(front=f"Q{i}", mcq_options=["A", "B", "C", "D"]))
-        for i in range(1, 13)
-    ]
-    test = SimpleNamespace(id=uuid4(), title="Quiz", description="", deck=deck, questions=questions)
-    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True)
-    db = FakeDB()
-
-    class Result:
-        def scalar_one_or_none(self):
-            return test
-
-    db.execute = lambda stmt: Result()
-    response = content.take_test_page(str(test.id), make_request(path=f"/tests/{test.id}", query_string=b"count=10"), user=user, db=db)
-
-    body = render_body(response)
-    assert "Showing 10 of 12 available questions" in body
-    assert body.count('name="question_ids"') == 10
-    assert "Q10. Q10" in body
-    assert "Q11. Q11" not in body
-
-
-def test_create_test_builds_full_bank_without_question_count():
+def test_create_test_auto_generates_title_and_redirects():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
     user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True)
     db = FakeDB({str(deck.id): deck, deck.id: deck})
 
-    with patch.object(content, "create_test_from_deck") as create_mock:
-        response = content.create_test(deck_id=str(deck.id), title="Quiz", description="Full bank", user=user, db=db)
+    fake_test = SimpleNamespace(id=uuid4())
+    with patch.object(content, "create_test_from_deck", return_value=fake_test) as create_mock:
+        from starlette.datastructures import FormData
+        response = content.create_test(deck_id=str(deck.id), count=25, user=user, db=db)
 
     assert response.status_code == 303
+    assert f"/tests/{fake_test.id}" in response.headers["location"]
     kwargs = create_mock.call_args.kwargs
-    assert kwargs["title"] == "Quiz"
-    assert kwargs["description"] == "Full bank"
-    assert "question_count" not in kwargs
+    assert kwargs["question_count"] == 25
+    assert "title" not in kwargs
 
 
 def test_submit_test_ignores_question_ids_hidden_inputs_when_parsing_answers():

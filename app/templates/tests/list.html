@@ -12,25 +12,13 @@
       <p class="muted">Your test history for this deck.</p>
     </div>
     <div>
-      {% if tests %}
+      {% if has_test_content %}
       <button type="button" class="button" id="take-test-btn">Take Test</button>
       {% endif %}
     </div>
   </section>
 
   {% if request.query_params.get('error') %}<section class="status-banner status-banner--error"><strong>Test creation failed.</strong><span>{{ request.query_params.get('error') }}</span></section>{% endif %}
-
-  {% if can_edit %}
-  <section class="card form-card">
-    <p class="panel-label">Create test</p>
-    {% if not has_test_content %}<p class="muted">Add at least one MCQ in this deck first. Once MCQs exist, you can create a published deck test here.</p>{% endif %}
-    <form method="post" action="/decks/{{ deck.id }}/tests" class="stack-md">
-      <div><label>Title</label><input name="title" required {% if not has_test_content %}disabled{% endif %} /></div>
-      <div><label>Description</label><textarea name="description" rows="4" {% if not has_test_content %}disabled{% endif %}></textarea></div>
-      <button type="submit" class="button" {% if not has_test_content %}disabled{% endif %}>Create published test</button>
-    </form>
-  </section>
-  {% endif %}
 
   <section class="card">
     {% set all_attempts = [] %}
@@ -61,13 +49,13 @@
     {% else %}
       <div class="empty-state">
         <h3>No tests taken yet</h3>
-        <p class="muted">{% if tests %}Click "Take Test" above to start your first test.{% else %}An admin can create tests from the MCQs in this deck.{% endif %}</p>
+        <p class="muted">{% if has_test_content %}Click "Take Test" above to start your first test.{% else %}Add MCQs to this deck to enable tests.{% endif %}</p>
       </div>
     {% endif %}
   </section>
 </section>
 
-{% if tests %}
+{% if has_test_content %}
 {# Question count modal #}
 <div class="modal" id="count-modal" aria-hidden="true">
   <div class="modal__surface">
@@ -75,16 +63,14 @@
       <p class="panel-label">Start test</p>
       <h2 class="section-subtitle">How many questions?</h2>
     </div>
-    <div class="modal-count-grid">
-      {% set first_test = tests[0] %}
-      {% set max_q = first_test.question_count %}
-      {% for opt in [10, 25, 50] %}
-        {% if opt <= max_q %}
-        <a href="/tests/{{ first_test.id }}?count={{ opt }}" class="button button-secondary modal-count-btn">{{ opt }}</a>
-        {% endif %}
-      {% endfor %}
-      <a href="/tests/{{ first_test.id }}?count={{ max_q }}" class="button button-secondary modal-count-btn">All ({{ max_q }})</a>
-    </div>
+    <form method="post" action="/decks/{{ deck.id }}/tests" id="take-test-form">
+      <div class="modal-count-grid">
+        {% for opt in [10, 25, 50, 100, 200] %}
+        <button type="submit" name="count" value="{{ opt }}" class="button button-secondary modal-count-btn">{{ opt }}</button>
+        {% endfor %}
+        <button type="submit" name="count" value="0" class="button button-secondary modal-count-btn">All</button>
+      </div>
+    </form>
     <button type="button" class="button button-secondary" id="modal-cancel-btn">Cancel</button>
   </div>
 </div>
