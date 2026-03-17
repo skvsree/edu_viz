@@ -7,9 +7,10 @@
 
 ## Branch strategy
 - `main`: safer/stable line.
-- `phase-2`: active branch for organization-aware access, settings, review/dashboard polish, and the current deployment work.
-- Unless told otherwise, new work for the ongoing multi-tenant/admin rollout should happen on `phase-2`.
-- Keep `phase-2`, `origin/phase-2`, and `/opt/edu_viz` aligned when deploying.
+- `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
+- `phase-3`: active branch — deck overview navigation, simplified test flow, UI streamlining.
+- Unless told otherwise, new work should happen on `phase-3`.
+- Keep `phase-3`, `origin/phase-3`, and deployment aligned when deploying.
 
 ## Stack / architecture
 - Python 3.12
@@ -115,6 +116,18 @@
 
 ## Feature summary (current state)
 
+### Dashboard
+- Home page shows simplified deck cards with deck name + Review (green outline) and Test (purple outline) buttons
+- Clicking the deck card opens the deck overview page
+- Real-time deck search with case-insensitive filtering by deck name
+
+### Deck Overview
+- New hub page at `/decks/{id}` — entry point when user clicks a deck from dashboard
+- Nav card with icons + text: Home, MCQs (count), Flash Cards (count), Tests (count)
+- Action card with color-coded buttons: Review (green), Test (purple)
+- Edit deck form at bottom (for editors/admins)
+- Sub-pages (MCQs, Flash Cards, Tests) have only a "Back to Overview" button — no other nav clutter
+
 ### Content management
 - Decks: create, edit, delete (soft delete), global/org scope toggle in edit flow
 - Flashcards: CRUD per deck, bulk delete
@@ -126,21 +139,22 @@
 - FSRS-style review flow at `/review`
 - HTMX-powered: loads `/review/next`, posts ratings to `/review/rate`
 - Review page is intentionally branded (`edu selviz` logo) and styled separately from the main app shell — keep it distraction-light
-- Study counts moved to review launch and test launch pages
+- Review starts immediately — no count selection required (count can optionally be passed as URL param `remaining=N`)
 - Review deck isolation: `review_rate` calls `_review_next_inner()` directly (passing deck_id and remaining as explicit params) instead of hacking `request.scope["query_string"]` which is cached by Starlette
-- Launch options: 10, 25, 50, 100, 200 cards
 
 ### Tests
-- Deck-level test center (`/decks/{id}/tests`) — accessible to managers (admin/system_admin)
-- Test creation, test-taking (`/tests/{id}`), submission, attempt reports (`/attempts/{id}`)
-- Multiple user attempts per test with analysis reports
-- Test take page (`take.html`) is standalone (not extending base.html), matches review page style
-- One question at a time with Previous/Next navigation, answers stored in JS until submit
-- Question IDs are sent as individual hidden fields (name=`question_ids`), NOT comma-separated
-- Questions are randomized before selection (shuffle full pool, then slice chosen count)
-- Launch options: 10, 25, 50, 100, 200 questions
-- Test report page (`report.html`) is standalone, slideshow-style with green/red color coding
-- UUID values in templates must be converted to string before `tojson` filter
+- Tests are for user self-evaluation — no manual test creation or metadata (title/description) required.
+- Test titles are auto-generated as `Test taken @ {datetime}` (e.g., "Test taken @ 2026-03-17 18:30").
+- Each test attempt is a standalone test — there's no separate "test attempt" concept.
+- Flow: User clicks "Take Test" → question count modal (10/25/50/All) → test auto-created → questions appear immediately.
+- Deck-level test center (`/decks/{id}/tests`) lists all past tests with scores and links to reports.
+- Test take page blocks navigation until question is answered (Next/Submit disabled until answer selected).
+- Test report has "All" / "Incorrect only" filter toggle.
+- Templates: `app/templates/tests/list.html`, `take.html`, `report.html`.
+- `take.html` and `report.html` are standalone pages (not extending base.html), matching review page style.
+- One question at a time with Previous/Next navigation, answers stored in JS until submit.
+- Question IDs are sent as individual hidden fields (name=`question_ids`), NOT comma-separated.
+- UUID values in templates must be converted to string before `tojson` filter.
 
 ### Settings (admin)
 - Organizations management (`/settings/organizations`) — create, rename, assign users
@@ -154,8 +168,8 @@
 - `GET /dashboard` — dashboard with accessible decks and progress metrics
 - `GET /settings`, `/settings/organizations`, `/settings/users` — admin settings
 - `POST /decks`, `POST /decks/{id}/update`, `POST /decks/{id}/delete` — deck CRUD
-- `GET /decks/{id}` — deck detail
-- `GET /decks/{id}/flashcards`, `GET /decks/{id}/mcqs`, `GET /decks/{id}/ai-upload` — content pages
+- `GET /decks/{id}` — deck overview (nav + action cards)
+- `GET /decks/{id}/flashcards`, `GET /decks/{id}/mcqs`, `GET /decks/{id}/ai-upload` — content pages (Back to Overview link)
 - `POST /decks/{id}/cards`, `POST /decks/{id}/cards/import` — card creation/import
 - `GET /review`, `GET /review/next`, `POST /review/rate` — review flow
 
@@ -176,6 +190,8 @@ app/templates/
 ├── base.html
 ├── home.html
 ├── dashboard.html
+├── decks/
+│   └── overview.html       # deck hub page with nav + action cards
 ├── cards/
 │   ├── list.html          # flashcard + MCQ listing per deck
 │   ├── ai_upload.html     # AI PDF/DOCX upload
@@ -206,6 +222,7 @@ app/templates/
 - `app/templates/base.html`
 - `app/templates/dashboard.html`
 - `app/templates/review/page.html`
+- `app/templates/decks/overview.html`
 - `app/templates/tests/list.html`
 - `app/static/styles.css`
 
