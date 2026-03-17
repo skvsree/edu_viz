@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -15,7 +15,20 @@ from app.services.admin_bootstrap import bootstrap_system_admin_by_email
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# Paths that are served as HTML pages (not API endpoints).
+# An unauthenticated request to any of these should redirect to home.
+_PAGE_PREFIXES = ("/dashboard", "/decks", "/review", "/tests", "/attempts", "/settings")
+
 app = FastAPI(title="edu selviz")
+
+
+@app.exception_handler(HTTPException)
+async def redirect_unauthenticated_to_home(request: Request, exc: HTTPException):
+    if exc.status_code == 401 and request.url.path.startswith(_PAGE_PREFIXES):
+        return RedirectResponse(url="/", status_code=302)
+    # Fall back to the default HTTPException handler for everything else.
+    from fastapi.exception_handlers import http_exception_handler
+    return await http_exception_handler(request, exc)
 
 # Needed by Authlib to store OIDC state/nonce during the redirect flow.
 app.add_middleware(
