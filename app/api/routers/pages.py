@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Test, User
+from app.models import Card, Deck, Organization, Test, TestAttempt, User
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -68,6 +68,14 @@ templates.env.globals["footer_copyright_text"] = settings.footer_copyright_text
 
 def _deck_has_published_tests(db: Session, deck_id: UUID) -> bool:
     return bool(db.execute(select(Test.id).where(Test.deck_id == deck_id, Test.is_published.is_(True)).limit(1)).scalars().all())
+
+
+def _user_test_attempt_count(db: Session, *, deck_id: UUID, user_id: UUID) -> int:
+    return db.execute(
+        select(TestAttempt.id)
+        .join(Test, TestAttempt.test_id == Test.id)
+        .where(Test.deck_id == deck_id, TestAttempt.user_id == user_id)
+    ).scalars().all().__len__()
 
 
 def _require_settings_access(user: User) -> None:
@@ -600,6 +608,7 @@ def update_deck(
             has_test_content = deck_has_test_content(cards)
             has_published_tests = _deck_has_published_tests(db, deck.id)
             tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
+            test_count = _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id) if tests_available else 0
             return templates.TemplateResponse(
                 "decks/overview.html",
                 {
@@ -611,6 +620,7 @@ def update_deck(
                     "can_edit": can_edit,
                     "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
                     "tests_available": tests_available,
+                    "test_count": test_count,
                     "update_error": message,
                     "title": f"{deck.name} | edu selviz",
                 },
@@ -693,6 +703,7 @@ def deck_overview(
     can_edit = can_manage_deck(user, deck)
     has_test_content = deck_has_test_content(cards)
     tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
+    test_count = _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id) if tests_available else 0
     return templates.TemplateResponse(
         "decks/overview.html",
         {
@@ -704,6 +715,7 @@ def deck_overview(
             "can_edit": can_edit,
             "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
             "tests_available": tests_available,
+            "test_count": test_count,
             "import_success": request.query_params.get("import_success"),
             "update_success": request.query_params.get("update_success"),
             "title": f"{deck.name} | edu selviz",

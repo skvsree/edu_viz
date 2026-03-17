@@ -6,9 +6,20 @@
   </div>
 
   <section class="card section-heading-card">
-    <div><p class="panel-label">Tests</p><h1 class="section-title">{{ deck.name }}</h1><p class="muted">Create full deck tests once, then let each learner choose how many questions to take when launching.</p></div>
+    <div>
+      <p class="panel-label">Tests</p>
+      <h1 class="section-title">{{ deck.name }}</h1>
+      <p class="muted">Your test history for this deck.</p>
+    </div>
+    <div>
+      {% if tests %}
+      <button type="button" class="button" id="take-test-btn">Take Test</button>
+      {% endif %}
+    </div>
   </section>
+
   {% if request.query_params.get('error') %}<section class="status-banner status-banner--error"><strong>Test creation failed.</strong><span>{{ request.query_params.get('error') }}</span></section>{% endif %}
+
   {% if can_edit %}
   <section class="card form-card">
     <p class="panel-label">Create test</p>
@@ -16,33 +27,92 @@
     <form method="post" action="/decks/{{ deck.id }}/tests" class="stack-md">
       <div><label>Title</label><input name="title" required {% if not has_test_content %}disabled{% endif %} /></div>
       <div><label>Description</label><textarea name="description" rows="4" {% if not has_test_content %}disabled{% endif %}></textarea></div>
-      <p class="muted compact-copy">Question count is no longer fixed here. A published test now includes the full MCQ bank for this deck, and the learner picks 10 / 25 / 50 / all when starting the test.</p>
       <button type="submit" class="button" {% if not has_test_content %}disabled{% endif %}>Create published test</button>
     </form>
   </section>
   {% endif %}
+
   <section class="card">
-    <div class="study-card-grid">
-      {% for test in tests %}
-        <article class="study-card">
-          <h3>{{ test.title }}</h3>
-          <p class="muted">{{ test.description or 'Deck-linked MCQ test' }}</p>
-          <p class="muted">{{ test.question_count }} questions available</p>
-          <a href="/tests/{{ test.id }}" class="button button-secondary button-small">Choose question count</a>
-          {% set attempts = attempts_by_test.get(test.id|string, []) %}
-          {% if attempts %}
-            <div class="stack-md">
-              <p class="study-card__label">Your attempts</p>
-              {% for attempt in attempts[:5] %}
-                <a href="/attempts/{{ attempt.id }}" class="button button-secondary button-small">Attempt {{ loop.index }}: {{ attempt.score }}/{{ attempt.total_questions }}</a>
-              {% endfor %}
-            </div>
-          {% endif %}
-        </article>
-      {% else %}
-        <div class="empty-state"><h3>No tests yet</h3><p class="muted">An admin or system admin can create tests from the MCQs in this deck once the user has tests enabled.</p></div>
+    {% set all_attempts = [] %}
+    {% for test in tests %}
+      {% set attempts = attempts_by_test.get(test.id|string, []) %}
+      {% for attempt in attempts %}
+        {% if all_attempts.append({'attempt': attempt, 'test': test}) %}{% endif %}
       {% endfor %}
-    </div>
+    {% endfor %}
+
+    {% if all_attempts %}
+      <div class="study-card-grid">
+        {% for item in all_attempts %}
+        <a href="/attempts/{{ item.attempt.id }}" class="study-card">
+          <div class="study-card__header">
+            <span class="study-card__test-title">{{ item.test.title }}</span>
+            <span class="study-card__date">{{ item.attempt.completed_at.strftime('%b %d, %Y') if item.attempt.completed_at else '—' }}</span>
+          </div>
+          <div class="study-card__score-row">
+            <span class="study-card__score">{{ item.attempt.score }}/{{ item.attempt.total_questions }}</span>
+            {% if item.attempt.total_questions %}
+            <span class="study-card__percent">{{ ((item.attempt.score / item.attempt.total_questions) * 100) | round | int }}%</span>
+            {% endif %}
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No tests taken yet</h3>
+        <p class="muted">{% if tests %}Click "Take Test" above to start your first test.{% else %}An admin can create tests from the MCQs in this deck.{% endif %}</p>
+      </div>
+    {% endif %}
   </section>
 </section>
+
+{% if tests %}
+{# Question count modal #}
+<div class="modal" id="count-modal" aria-hidden="true">
+  <div class="modal__surface">
+    <div>
+      <p class="panel-label">Start test</p>
+      <h2 class="section-subtitle">How many questions?</h2>
+    </div>
+    <div class="modal-count-grid">
+      {% set first_test = tests[0] %}
+      {% set max_q = first_test.question_count %}
+      {% for opt in [10, 25, 50] %}
+        {% if opt <= max_q %}
+        <a href="/tests/{{ first_test.id }}?count={{ opt }}" class="button button-secondary modal-count-btn">{{ opt }}</a>
+        {% endif %}
+      {% endfor %}
+      <a href="/tests/{{ first_test.id }}?count={{ max_q }}" class="button button-secondary modal-count-btn">All ({{ max_q }})</a>
+    </div>
+    <button type="button" class="button button-secondary" id="modal-cancel-btn">Cancel</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const modal = document.getElementById('count-modal');
+  const openBtn = document.getElementById('take-test-btn');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
+
+  function openModal() {
+    modal.classList.add('modal--open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal() {
+    modal.classList.remove('modal--open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  openBtn.addEventListener('click', openModal);
+  cancelBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -34,6 +34,7 @@
         <a href="/decks/{{ deck.id }}/tests" class="overview-nav__item">
           <span class="overview-nav__icon" aria-hidden="true">&#128221;</span>
           <span class="overview-nav__text">Tests</span>
+          {% if test_count %}<span class="overview-nav__count">{{ test_count }}</span>{% endif %}
         </a>
         {% endif %}
       </div>
