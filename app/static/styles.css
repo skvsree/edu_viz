@@ -1457,6 +1457,21 @@ ul {
   margin-top: 12px;
 }
 
+/* Fix button text visibility in review theme */
+.review-body .button-secondary {
+  color: #1f2937 !important;
+  border-color: rgba(120, 113, 108, 0.28);
+}
+
+.review-body .button-secondary:hover {
+  background: rgba(120, 113, 108, 0.12);
+}
+
+/* Ensure Previous/Next button text is visible in test module within review theme */
+.review-body .test-nav .button-secondary {
+  color: #1f2937 !important;
+}
+
 @media (max-width: 640px) {
   .test-header {
     flex-direction: column;
