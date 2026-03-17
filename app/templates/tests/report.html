@@ -67,9 +67,14 @@
               <button type="button" id="next-report-btn" class="button">Next</button>
             </div>
 
+            <div class="test-report-filter">
+              <button type="button" id="filter-all-btn" class="button button-small button-filter active">All</button>
+              <button type="button" id="filter-incorrect-btn" class="button button-small button-filter">Incorrect only</button>
+            </div>
+
             <div id="report-container" class="test-report-slides">
               {% for answer in attempt.answers %}
-                <div class="test-report-slide" data-slide-index="{{ loop.index0 }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
+                <div class="test-report-slide" data-slide-index="{{ loop.index0 }}" data-correct="{{ 'true' if answer.is_correct else 'false' }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
                   <div class="test-report-question">
                     <span class="test-report-status {% if answer.is_correct %}test-correct{% else %}test-incorrect{% endif %}">
                       {{ 'Correct' if answer.is_correct else 'Incorrect' }}
@@ -117,24 +122,67 @@
 
     <script>
       (function() {
-        const slides = document.querySelectorAll('.test-report-slide');
-        const totalSlides = slides.length;
+        const allSlides = Array.from(document.querySelectorAll('.test-report-slide'));
         let currentIndex = 0;
+        let filter = 'all';
+        let visibleSlides = allSlides;
 
         const prevBtn = document.getElementById('prev-report-btn');
         const nextBtn = document.getElementById('next-report-btn');
         const counterEl = document.getElementById('report-counter');
+        const filterAllBtn = document.getElementById('filter-all-btn');
+        const filterIncorrectBtn = document.getElementById('filter-incorrect-btn');
+
+        function applyFilter() {
+          allSlides.forEach(slide => { slide.style.display = 'none'; });
+
+          if (filter === 'incorrect') {
+            visibleSlides = allSlides.filter(s => s.dataset.correct === 'false');
+            filterIncorrectBtn.classList.add('active');
+            filterAllBtn.classList.remove('active');
+          } else {
+            visibleSlides = allSlides;
+            filterAllBtn.classList.add('active');
+            filterIncorrectBtn.classList.remove('active');
+          }
+
+          if (visibleSlides.length === 0) {
+            counterEl.textContent = 'No incorrect answers';
+            prevBtn.style.visibility = 'hidden';
+            nextBtn.style.visibility = 'hidden';
+            return;
+          }
+
+          if (currentIndex >= visibleSlides.length) {
+            currentIndex = visibleSlides.length - 1;
+          }
+          updateSlide();
+        }
 
         function updateSlide() {
-          slides.forEach((slide, index) => {
+          visibleSlides.forEach((slide, index) => {
             slide.style.display = index === currentIndex ? 'block' : 'none';
           });
           
-          counterEl.textContent = `${currentIndex + 1} of ${totalSlides}`;
+          if (visibleSlides.length > 0) {
+            counterEl.textContent = `${currentIndex + 1} of ${visibleSlides.length}`;
+          }
           
           prevBtn.style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
-          nextBtn.style.visibility = currentIndex === totalSlides - 1 ? 'hidden' : 'visible';
+          nextBtn.style.visibility = currentIndex >= visibleSlides.length - 1 ? 'hidden' : 'visible';
         }
+
+        filterAllBtn.addEventListener('click', () => {
+          filter = 'all';
+          currentIndex = 0;
+          applyFilter();
+        });
+
+        filterIncorrectBtn.addEventListener('click', () => {
+          filter = 'incorrect';
+          currentIndex = 0;
+          applyFilter();
+        });
 
         prevBtn.addEventListener('click', () => {
           if (currentIndex > 0) {
@@ -144,7 +192,7 @@
         });
 
         nextBtn.addEventListener('click', () => {
-          if (currentIndex < totalSlides - 1) {
+          if (currentIndex < visibleSlides.length - 1) {
             currentIndex++;
             updateSlide();
           }

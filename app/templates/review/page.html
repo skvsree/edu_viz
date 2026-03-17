@@ -39,29 +39,7 @@
       </header>
 
       <main class="review-main">
-        {% if review_limit %}
-          <section id="review-area" class="review-area" hx-get="/review/next?remaining={{ review_limit }}{% if review_deck %}&deck_id={{ review_deck.id }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></section>
-        {% else %}
-          <section class="review-area">
-            <article class="card review-focus-card stack-md review-launch-card">
-              <div>
-                <p class="panel-label">Start review</p>
-                <h1 class="section-title">Choose how many flashcards to study</h1>
-                <p class="muted">Generate as much as you want earlier. Pick the size of this review session only when you launch it.</p>
-              </div>
-              <form method="get" action="/review" class="stack-md">
-                {% if review_deck %}<input type="hidden" name="deck_id" value="{{ review_deck.id }}" />{% endif %}
-                <div>
-                  <label>Cards for this session</label>
-                  <select name="count">
-                    {% for option in review_options %}<option value="{{ option }}">{{ option }} cards</option>{% endfor %}
-                  </select>
-                </div>
-                <button type="submit" class="button">Start review</button>
-              </form>
-            </article>
-          </section>
-        {% endif %}
+        <section id="review-area" class="review-area" hx-get="/review/next?{% if review_deck %}deck_id={{ review_deck.id }}{% endif %}{% if review_limit %}&remaining={{ review_limit }}{% endif %}" hx-trigger="load" hx-swap="innerHTML"></section>
       </main>
 
       <footer class="site-footer site-footer--review">

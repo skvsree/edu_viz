@@ -88,8 +88,8 @@
 
                 <div class="test-nav">
                   <button type="button" id="prev-btn" class="button button-secondary" style="visibility: hidden;">Previous</button>
-                  <button type="button" id="next-btn" class="button">Next</button>
-                  <button type="submit" id="submit-btn" class="button" style="display: none;">Submit</button>
+                  <button type="button" id="next-btn" class="button" disabled>Next</button>
+                  <button type="submit" id="submit-btn" class="button" style="display: none;" disabled>Submit</button>
                 </div>
               </form>
             </article>
@@ -117,6 +117,25 @@
         const submitBtn = document.getElementById('submit-btn');
         const counterEl = document.getElementById('question-counter');
 
+        function isCurrentQuestionAnswered() {
+          const currentSlide = slides[currentIndex];
+          return !!currentSlide.querySelector('input[type="radio"]:checked');
+        }
+
+        function updateNavButtons() {
+          const answered = isCurrentQuestionAnswered();
+          
+          if (currentIndex === totalQuestions - 1) {
+            nextBtn.style.display = 'none';
+            submitBtn.style.display = 'inline-flex';
+            submitBtn.disabled = !answered;
+          } else {
+            nextBtn.style.display = 'inline-flex';
+            submitBtn.style.display = 'none';
+            nextBtn.disabled = !answered;
+          }
+        }
+
         function updateSlide() {
           slides.forEach((slide, index) => {
             slide.style.display = index === currentIndex ? 'block' : 'none';
@@ -126,13 +145,7 @@
           
           prevBtn.style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
           
-          if (currentIndex === totalQuestions - 1) {
-            nextBtn.style.display = 'none';
-            submitBtn.style.display = 'inline-flex';
-          } else {
-            nextBtn.style.display = 'inline-flex';
-            submitBtn.style.display = 'none';
-          }
+          updateNavButtons();
         }
 
         function saveCurrentAnswer() {
@@ -143,6 +156,15 @@
             answers[questionId] = selected.value;
           }
         }
+
+        // Enable/disable nav buttons when a radio option is selected
+        slides.forEach(slide => {
+          slide.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+              updateNavButtons();
+            });
+          });
+        });
 
         prevBtn.addEventListener('click', () => {
           saveCurrentAnswer();

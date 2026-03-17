@@ -11,7 +11,7 @@ from app.api.routers import content, pages
 from tests.test_dashboard_routes import FakeDB, make_request, render_body
 
 
-def test_review_page_shows_quantity_picker_before_session_starts():
+def test_review_page_starts_review_without_count_selection():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology")
     user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id)
@@ -19,9 +19,9 @@ def test_review_page_shows_quantity_picker_before_session_starts():
     response = pages.review_page(make_request(path="/review", query_string=f"deck_id={deck.id}".encode()), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}))
 
     body = render_body(response)
-    assert "Choose how many flashcards to study" in body
-    assert 'name="count"' in body
-    assert "Start review" in body
+    assert "Choose how many flashcards to study" not in body
+    assert 'name="count"' not in body
+    assert f"/review/next?deck_id={deck.id}" in body
 
 
 def test_review_page_autoloads_session_when_count_is_selected():
@@ -32,7 +32,9 @@ def test_review_page_autoloads_session_when_count_is_selected():
     response = pages.review_page(make_request(path="/review", query_string=f"deck_id={deck.id}&count=25".encode()), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}))
 
     body = render_body(response)
-    assert f"/review/next?remaining=25&deck_id={deck.id}" in body
+    assert f"/review/next?" in body
+    assert f"deck_id={deck.id}" in body
+    assert "remaining=25" in body
 
 
 def test_take_test_page_shows_launch_picker_before_questions():
