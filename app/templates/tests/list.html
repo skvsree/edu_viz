@@ -1,9 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="stack-lg">
+  <div class="back-to-overview">
+    <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">&larr; Back to Overview</a>
+  </div>
+
   <section class="card section-heading-card">
     <div><p class="panel-label">Tests</p><h1 class="section-title">{{ deck.name }}</h1><p class="muted">Create full deck tests once, then let each learner choose how many questions to take when launching.</p></div>
-    <div class="deck-card__actions"><a href="/decks/{{ deck.id }}" class="button button-secondary">Overview</a><a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary button-small">Flashcards</a><a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary button-small">MCQs</a></div>
   </section>
   {% if request.query_params.get('error') %}<section class="status-banner status-banner--error"><strong>Test creation failed.</strong><span>{{ request.query_params.get('error') }}</span></section>{% endif %}
   {% if can_edit %}

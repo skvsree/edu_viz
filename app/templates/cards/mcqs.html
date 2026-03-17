@@ -9,13 +9,9 @@
     </div>
   </section>
 
-  <section class="deck-section-nav" aria-label="Deck sections">
-    <a href="/decks/{{ deck.id }}" class="deck-section-nav__link{% if active_section == 'overview' %} is-active{% endif %}">Overview</a>
-    <a href="/decks/{{ deck.id }}/flashcards" class="deck-section-nav__link{% if active_section == 'flashcards' %} is-active{% endif %}">Flashcards</a>
-    <a href="/decks/{{ deck.id }}/mcqs" class="deck-section-nav__link{% if active_section == 'mcqs' %} is-active{% endif %}">MCQs</a>
-    {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="deck-section-nav__link{% if active_section == 'ai-upload' %} is-active{% endif %}">AI Upload</a>{% endif %}
-    {% if tests_available %}<a href="/decks/{{ deck.id }}/tests" class="deck-section-nav__link">Tests</a>{% endif %}
-  </section>
+  <div class="back-to-overview">
+    <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">&larr; Back to Overview</a>
+  </div>
 
   {% if update_success %}<section class="status-banner status-banner--success"><strong>Updated.</strong><span>{{ update_success }}</span></section>{% endif %}
   {% if update_error %}<section class="status-banner status-banner--error"><strong>Update failed.</strong><span>{{ update_error }}</span></section>{% endif %}

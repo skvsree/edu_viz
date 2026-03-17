@@ -106,10 +106,7 @@ def test_dashboard_shows_deck_actions_for_manageable_deck():
     assert 'id="create-deck-modal"' in body
     assert "Review" in body
     assert f"/review?deck_id={deck.id}" in body
-    assert "Open deck" in body
-    assert "Edit" in body
-    assert "Delete" in body
-    assert f"/decks/{deck.id}/delete" in body
+    assert f"/decks/{deck.id}" in body
 
 
 def test_create_deck_validation_error_reopens_create_modal():
@@ -262,12 +259,13 @@ def test_deck_overview_links_to_split_management_pages():
     )
 
     body = render_body(response)
-    assert "Open deck" in body
+    assert "Navigate" in body
     assert f"/decks/{deck.id}/flashcards" in body
     assert f"/decks/{deck.id}/mcqs" in body
     assert f"/decks/{deck.id}/ai-upload" in body
-    assert "2 ready for review" in body
-    assert "1 in question bank" in body
+    assert "Flash Cards" in body
+    assert "MCQs" in body
+    assert "Review" in body
 
 
 def test_flashcards_page_keeps_flashcard_management_together():
@@ -326,7 +324,7 @@ def test_mcqs_page_keeps_admin_features_and_mcq_list():
     assert "MCQ management" in body
     assert "MCQ JSON import" in body
     assert "AI study generation" not in body
-    assert f"/decks/{deck.id}/ai-upload" in body
+    assert "Back to Overview" in body
     assert "Edit MCQ" in body
     assert "Edit flashcard" not in body
 

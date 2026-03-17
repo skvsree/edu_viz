@@ -594,15 +594,26 @@ def update_deck(
 
     def _deck_update_error_response(message: str):
         if redirect_target.startswith(f"/decks/{deck.id}"):
-            return _deck_content_response(
-                request,
-                user=user,
-                deck=deck,
-                cards=cards,
-                title=f"{deck.name} | edu selviz",
-                template_name="cards/list.html",
-                active_section="overview",
-                update_error=message,
+            flashcards = [card for card in cards if card.card_type == "basic"]
+            mcqs = [card for card in cards if card.card_type == "mcq"]
+            can_edit = can_manage_deck(user, deck)
+            has_test_content = deck_has_test_content(cards)
+            has_published_tests = _deck_has_published_tests(db, deck.id)
+            tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
+            return templates.TemplateResponse(
+                "decks/overview.html",
+                {
+                    "request": request,
+                    "user": user,
+                    "deck": deck,
+                    "flashcard_count": len(flashcards),
+                    "mcq_count": len(mcqs),
+                    "can_edit": can_edit,
+                    "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
+                    "tests_available": tests_available,
+                    "update_error": message,
+                    "title": f"{deck.name} | edu selviz",
+                },
                 status_code=400,
             )
         return _dashboard_response(
@@ -677,17 +688,26 @@ def deck_overview(
 
     cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
     has_published_tests = _deck_has_published_tests(db, deck.id)
-    return _deck_content_response(
-        request,
-        user=user,
-        deck=deck,
-        cards=cards,
-        title=f"{deck.name} | edu selviz",
-        template_name="cards/list.html",
-        active_section="overview",
-        import_success=request.query_params.get("import_success"),
-        update_success=request.query_params.get("update_success"),
-        has_published_tests=has_published_tests,
+    flashcards = [card for card in cards if card.card_type == "basic"]
+    mcqs = [card for card in cards if card.card_type == "mcq"]
+    can_edit = can_manage_deck(user, deck)
+    has_test_content = deck_has_test_content(cards)
+    tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
+    return templates.TemplateResponse(
+        "decks/overview.html",
+        {
+            "request": request,
+            "user": user,
+            "deck": deck,
+            "flashcard_count": len(flashcards),
+            "mcq_count": len(mcqs),
+            "can_edit": can_edit,
+            "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
+            "tests_available": tests_available,
+            "import_success": request.query_params.get("import_success"),
+            "update_success": request.query_params.get("update_success"),
+            "title": f"{deck.name} | edu selviz",
+        },
     )
 
 
