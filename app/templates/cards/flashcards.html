@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card section-heading-card">
+    <div>
+      <p class="panel-label">Flashcard management</p>
+      <h1 class="section-title">{{ deck.name }}</h1>
+      <p class="muted section-copy">{{ deck.description or 'Manage review cards for this deck.' }}</p>
+    </div>
+  </section>
+
+  <div class="back-to-overview">
+    <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">&larr; Back to Overview</a>
+  </div>
+
+  {% if update_success %}<section class="status-banner status-banner--success"><strong>Updated.</strong><span>{{ update_success }}</span></section>{% endif %}
+  {% if update_error %}<section class="status-banner status-banner--error"><strong>Update failed.</strong><span>{{ update_error }}</span></section>{% endif %}
+  {% if import_error %}<section class="status-banner status-banner--error"><strong>Import failed.</strong><span>{{ import_error }}</span></section>{% endif %}
+  {% if import_success %}<section class="status-banner status-banner--success"><strong>Import complete.</strong><span>{{ import_success }}</span></section>{% endif %}
+
+  {% if can_edit %}
+    <section class="dashboard-grid">
+      <article class="card form-card">
+        <p class="panel-label">Add flashcard</p>
+        <form method="post" action="/decks/{{ deck.id }}/cards" class="stack-md">
+          <div><label>Front</label><textarea name="front" rows="4" required></textarea></div>
+          <div><label>Back</label><textarea name="back" rows="4" required></textarea></div>
+          <button type="submit" class="button">Add flashcard</button>
+        </form>
+      </article>
+
+      <article class="card form-card">
+        <p class="panel-label">Import flashcards CSV</p>
+        <form method="post" action="/decks/{{ deck.id }}/cards/import" enctype="multipart/form-data" class="stack-md">
+          <div><label>CSV file</label><input type="file" name="csv_file" accept=".csv,text/csv" required /></div>
+          <button type="submit" class="button">Import CSV</button>
+        </form>
+      </article>
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Flashcards</p>
+        <h2 class="section-subtitle">Anki-style review cards</h2>
+      </div>
+    </div>
+    {% if flashcards %}
+      {% if can_edit %}
+        <form method="post" action="/decks/{{ deck.id }}/flashcards/bulk-delete" class="bulk-form" data-bulk-form data-confirm-message="Delete {count} flashcard(s)? This cannot be undone.">
+          <div class="bulk-actions">
+            <div class="bulk-actions__controls">
+              <label class="bulk-actions__toggle"><input type="checkbox" data-bulk-select-all />Select all</label>
+              <span class="bulk-actions__count"><strong data-bulk-count>0</strong> selected</span>
+            </div>
+            <button type="submit" class="button button-danger button-small" data-bulk-submit disabled>Delete selected</button>
+          </div>
+          <div class="study-card-grid">
+            {% for c in flashcards %}
+              <article class="study-card">
+                <label class="study-card__select"><input type="checkbox" name="card_ids" value="{{ c.id }}" data-bulk-item />Select</label>
+                <div class="study-card__label">Front</div>
+                <p>{{ c.front }}</p>
+                <div class="study-card__label">Back</div>
+                <p class="muted">{{ c.back }}</p>
+                <a href="/decks/{{ deck.id }}/flashcards/{{ c.id }}/edit" class="button button-secondary button-small">Edit flashcard</a>
+              </article>
+            {% endfor %}
+          </div>
+        </form>
+      {% else %}
+        <div class="study-card-grid">
+          {% for c in flashcards %}
+            <article class="study-card">
+              <div class="study-card__label">Front</div>
+              <p>{{ c.front }}</p>
+              <div class="study-card__label">Back</div>
+              <p class="muted">{{ c.back }}</p>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% else %}<div class="empty-state"><h3>No flashcards yet</h3></div>{% endif %}
+  </section>
+</section>
+<script>
+  (() => {
+    const form = document.querySelector("[data-bulk-form]");
+    if (!form) return;
+    const selectAll = form.querySelector("[data-bulk-select-all]");
+    const items = Array.from(form.querySelectorAll("[data-bulk-item]"));
+    const submit = form.querySelector("[data-bulk-submit]");
+    const count = form.querySelector("[data-bulk-count]");
+    const update = () => {
+      const selected = items.filter((item) => item.checked).length;
+      if (count) count.textContent = String(selected);
+      if (submit) submit.disabled = selected === 0;
+      if (selectAll) {
+        selectAll.checked = selected > 0 && selected === items.length;
+        selectAll.indeterminate = selected > 0 && selected < items.length;
+      }
+    };
+    if (selectAll) {
+      selectAll.addEventListener("change", () => {
+        items.forEach((item) => {
+          item.checked = selectAll.checked;
+        });
+        update();
+      });
+    }
+    items.forEach((item) => item.addEventListener("change", update));
+    form.addEventListener("submit", (event) => {
+      const selected = items.filter((item) => item.checked).length;
+      if (selected === 0) {
+        event.preventDefault();
+        return;
+      }
+      const message = form.getAttribute("data-confirm-message");
+      if (message && !window.confirm(message.replace("{count}", String(selected)))) {
+        event.preventDefault();
+      }
+    });
+    update();
+  })();
+</script>
+{% endblock %}

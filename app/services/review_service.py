@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Card, CardState, Review
+from app.models import Card, CardState, Review, User
 from app.fsrs.scheduler import FsrsCard, FsrsScheduler
+from app.services.access import accessible_deck_clause
 
 
 class ReviewService:
@@ -22,21 +23,23 @@ class ReviewService:
             db.flush()
         return state
 
-    def next_due_card(self, db: Session, *, user_id: uuid.UUID) -> Card | None:
-        # Pick the earliest due card for this user.
-        # (Join cards->decks to enforce ownership.)
+    def next_due_card(self, db: Session, *, user: User, deck_id: uuid.UUID | None = None) -> Card | None:
+        # Pick the earliest due card from the decks visible to this user.
         now = datetime.now(timezone.utc)
         stmt = (
             select(Card)
             .join(Card.deck)
             .join(Card.state, isouter=True)
-            .where(Card.deck.has(user_id=user_id))
-            .order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc())
-            .limit(1)
+            .where(accessible_deck_clause(user), Card.card_type == "basic")
         )
-        card = db.execute(stmt).scalars().first()
-        if card is None:
-            return None
+        if deck_id is not None:
+            stmt = stmt.where(Card.deck_id == deck_id)
+        stmt = stmt.order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc()).limit(1)
+        result = db.execute(stmt).scalars().first()
+        if result:
+            import sys
+            print(f"REVIEW_DEBUG: requested_deck={deck_id} returned_deck={result.deck_id} card={result.id}", file=sys.stderr, flush=True)
+        return result
 
         # If state exists and due is in future, allow it only if there are no due cards?
         # For MVP, we still show the earliest card even if not due.

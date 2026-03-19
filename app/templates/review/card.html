@@ -1,5 +1,6 @@
 <article class="card review-card review-focus-card">
   <div class="review-card__body">
+    {% if remaining is not none %}<p class="panel-label">{{ remaining }} card{% if remaining != 1 %}s{% endif %} left in this session</p>{% endif %}
     <div class="review-card__text review-card__text--prompt">{{ card.front }}</div>
 
     <details class="review-answer">
@@ -10,6 +11,8 @@
 
   <form hx-post="/review/rate" hx-target="#review-area" hx-swap="innerHTML" class="review-rating-row">
     <input type="hidden" name="card_id" value="{{ card.id }}" />
+    {% if review_deck %}<input type="hidden" name="deck_id" value="{{ review_deck.id }}" />{% endif %}
+    {% if remaining is not none %}<input type="hidden" name="remaining" value="{{ remaining }}" />{% endif %}
     <button class="button button-rating button-rating--muted" name="rating" value="1">Again</button>
     <button class="button button-rating button-rating--warm" name="rating" value="2">Hard</button>
     <button class="button button-rating button-rating--cool" name="rating" value="3">Good</button>

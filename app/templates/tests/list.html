@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <div class="back-to-overview">
+    <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">&larr; Back to Overview</a>
+  </div>
+
+  <section class="card section-heading-card">
+    <div>
+      <p class="panel-label">Tests</p>
+      <h1 class="section-title">{{ deck.name }}</h1>
+      <p class="muted">Your test history for this deck.</p>
+    </div>
+    <div>
+      {% if has_test_content %}
+      <button type="button" class="button" id="take-test-btn">Take Test</button>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if request.query_params.get('error') %}<section class="status-banner status-banner--error"><strong>Test creation failed.</strong><span>{{ request.query_params.get('error') }}</span></section>{% endif %}
+
+  <section class="card">
+    {% set all_attempts = [] %}
+    {% for test in tests %}
+      {% set attempts = attempts_by_test.get(test.id|string, []) %}
+      {% for attempt in attempts %}
+        {% if all_attempts.append({'attempt': attempt, 'test': test}) %}{% endif %}
+      {% endfor %}
+    {% endfor %}
+
+    {% if all_attempts %}
+      <div class="study-card-grid">
+        {% for item in all_attempts %}
+        <a href="/attempts/{{ item.attempt.id }}" class="study-card">
+          <div class="study-card__header">
+            <span class="study-card__test-title">{{ item.test.title }}</span>
+            <span class="study-card__date">{{ item.attempt.completed_at.strftime('%b %d, %Y') if item.attempt.completed_at else '—' }}</span>
+          </div>
+          <div class="study-card__score-row">
+            <span class="study-card__score">{{ item.attempt.score }}/{{ item.attempt.total_questions }}</span>
+            {% if item.attempt.total_questions %}
+            <span class="study-card__percent">{{ ((item.attempt.score / item.attempt.total_questions) * 100) | round | int }}%</span>
+            {% endif %}
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No tests taken yet</h3>
+        <p class="muted">{% if has_test_content %}Click "Take Test" above to start your first test.{% else %}Add MCQs to this deck to enable tests.{% endif %}</p>
+      </div>
+    {% endif %}
+  </section>
+</section>
+
+{% if has_test_content %}
+{# Question count modal #}
+<div class="modal" id="count-modal" aria-hidden="true">
+  <div class="modal__surface">
+    <div>
+      <p class="panel-label">Start test</p>
+      <h2 class="section-subtitle">How many questions?</h2>
+    </div>
+    <form method="post" action="/decks/{{ deck.id }}/tests" id="take-test-form">
+      <div class="modal-count-grid">
+        {% for opt in [10, 25, 50, 100, 200] %}
+        <button type="submit" name="count" value="{{ opt }}" class="button button-secondary modal-count-btn">{{ opt }}</button>
+        {% endfor %}
+        <button type="submit" name="count" value="0" class="button button-secondary modal-count-btn">All</button>
+      </div>
+    </form>
+    <button type="button" class="button button-secondary" id="modal-cancel-btn">Cancel</button>
+  </div>
+</div>
+
+<script>
+(function() {
+  const modal = document.getElementById('count-modal');
+  const openBtn = document.getElementById('take-test-btn');
+  const cancelBtn = document.getElementById('modal-cancel-btn');
+
+  function openModal() {
+    modal.classList.add('modal--open');
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal() {
+    modal.classList.remove('modal--open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  openBtn.addEventListener('click', openModal);
+  cancelBtn.addEventListener('click', closeModal);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeModal();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeModal();
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

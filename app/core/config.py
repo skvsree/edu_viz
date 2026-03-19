@@ -7,6 +7,14 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://srs:srs@localhost:5432/srs"
     secret_key: str = "dev-secret"
     app_session_cookie_name: str = "eduviz_session"
+    app_session_max_age_seconds: int = 45 * 24 * 60 * 60
+    oidc_state_session_max_age_seconds: int = 45 * 24 * 60 * 60
+    system_admin_bootstrap_email: str = "skv.sree@outlook.com"
+    footer_copyright_text: str = "SelViz Software Solutions"
+
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4.1-mini"
+    openai_generation_enabled: bool = True
 
     # Microsoft Entra External ID / generic OIDC configuration.
     # Prefer the MICROSOFT_ENTRA_EXTERNAL_ID_* env vars for new deployments.
@@ -14,6 +22,7 @@ class Settings(BaseSettings):
     microsoft_entra_external_id_tenant_id: str | None = None
     microsoft_entra_external_id_tenant_domain: str | None = None
     microsoft_entra_external_id_authority: str | None = None
+    microsoft_entra_external_id_authorize_authority: str | None = None
     microsoft_entra_external_id_metadata_url: str | None = None
     microsoft_entra_external_id_client_id: str | None = None
     microsoft_entra_external_id_client_secret: str | None = None

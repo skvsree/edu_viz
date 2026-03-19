@@ -1,84 +1,366 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="stack-lg">
-  <section class="dashboard-hero card">
-    <div>
-      <p class="panel-label">edu selviz workspace</p>
-      <h1 class="section-title">Welcome back</h1>
-      <p class="muted section-copy">
-        Signed in as {{ user.email or user.identity_sub }}. Keep your study system tidy, create new
-        decks, and continue revision from one polished workspace.
-      </p>
-    </div>
-    <div class="dashboard-hero__meta">
-      <div class="metric-pill">
-        <strong>{{ decks|length }}</strong>
-        <span>Decks</span>
+  {% if dashboard_error %}
+    <section class="status-banner status-banner--error">
+      <strong>Workspace update failed.</strong>
+      <span>{{ dashboard_error }}</span>
+    </section>
+  {% endif %}
+
+  {% if dashboard_success %}
+    <section class="status-banner status-banner--success">
+      <strong>Workspace updated.</strong>
+      <span>{{ dashboard_success }}</span>
+    </section>
+  {% endif %}
+
+  <section class="card dashboard-decks">
+    <div class="section-heading dashboard-decks__heading">
+      <div>
+        <p class="panel-label">Accessible decks</p>
+        <h1 class="section-title">Workspace</h1>
+        <p class="muted section-copy">
+          Signed in as {{ user.email or user.identity_sub }}.
+          {% if user.role == "system_admin" %}
+            Manage global and organization decks from one list.
+          {% elif user.role == "admin" %}
+            Review and manage decks for {{ user.organization.name if user.organization else 'your organization once assigned' }}.
+          {% else %}
+            Open any assigned deck and move straight into review.
+          {% endif %}
+        </p>
       </div>
-      <a href="/review" class="button">Start review</a>
+      <div class="dashboard-actions">
+        <div class="metric-pill">
+          <strong>{{ deck_stats|length }}</strong>
+          <span>Decks</span>
+        </div>
+        {% if can_manage_decks %}
+          <a
+            href="/dashboard?modal=create"
+            class="button button-small"
+            data-modal-open="create-deck-modal"
+          >
+            Add deck
+          </a>
+        {% endif %}
+      </div>
     </div>
+
+    {% if deck_stats %}
+      <div class="deck-search">
+        <input type="text" id="deck-search" placeholder="Search decks..." />
+      </div>
+      <div class="deck-grid deck-grid--dashboard" id="deck-grid">
+        {% for item in deck_stats %}
+          <article class="deck-card deck-card--simple" data-name="{{ item.deck.name | lower }}" data-href="/decks/{{ item.deck.id }}">
+            <div class="deck-card__content">
+              <h3 class="deck-card__title">{{ item.deck.name }}</h3>
+            </div>
+            <div class="deck-card__actions deck-card__actions--inline">
+              <a href="/review?deck_id={{ item.deck.id }}" class="button button-secondary button-small button-review" onclick="event.stopPropagation();">Review</a>
+              <a href="/decks/{{ item.deck.id }}/tests" class="button button-secondary button-small button-test" onclick="event.stopPropagation();">Test</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No decks available yet</h3>
+        <p class="muted">
+          {% if user.organization_id %}
+            Ask an admin to add organization decks or assign global content.
+          {% else %}
+            A system admin needs to assign you to an organization before org decks appear here.
+          {% endif %}
+        </p>
+      </div>
+    {% endif %}
   </section>
 
   <section class="dashboard-grid">
-    <article class="card form-card">
-      <p class="panel-label">Create a deck</p>
-      <h2 class="section-subtitle">Add a new study space</h2>
-      <form method="post" action="/decks" class="stack-md">
-        <div>
-          <label for="deck-name">Deck name</label>
-          <input id="deck-name" name="name" placeholder="e.g. Biology fundamentals" required />
-        </div>
-        <div>
-          <label for="deck-description">Description</label>
-          <input
-            id="deck-description"
-            name="description"
-            placeholder="Short note about what this deck covers"
-          />
-        </div>
-        <button type="submit" class="button">Create deck</button>
-      </form>
-    </article>
+    {% if not can_manage_decks %}
+      <article class="card info-card dashboard-note">
+        <p class="panel-label">Access model</p>
+        <h2 class="section-subtitle">Deck creation is admin-managed</h2>
+        <p class="muted">
+          Users can review assigned decks but cannot create or edit them.
+          {% if not user.organization_id %}
+            Your account is waiting for organization assignment from a system admin.
+          {% endif %}
+        </p>
+      </article>
+    {% endif %}
 
     <article class="card info-card dashboard-note">
       <p class="panel-label">Study flow</p>
       <h2 class="section-subtitle">Keep your revision loop simple</h2>
       <ul class="feature-list feature-list--tight">
-        <li>Create focused decks per subject or module.</li>
-        <li>Add cards with clear prompts and answers.</li>
-        <li>Review regularly and let the scheduler guide timing.</li>
+        <li>Review the decks available through your organization or global library.</li>
+        <li>Track due work, review volume, and recent activity in one place.</li>
+        <li>Admins manage deck content while learners stay focused on revision.</li>
       </ul>
     </article>
   </section>
 
-  <section class="card">
-    <div class="section-heading">
-      <div>
-        <p class="panel-label">Your decks</p>
-        <h2 class="section-subtitle">Organized study collections</h2>
+  {% if can_manage_decks and active_modal == "create" %}
+    <article class="card form-card" id="deck-create-fallback">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Add deck</p>
+          <h2 class="section-subtitle">Create a new study space</h2>
+        </div>
       </div>
-      <a href="/review" class="button button-secondary button-small">Go to review</a>
-    </div>
+      <form method="post" action="/decks" class="stack-md">
+        <div>
+          <label for="create-deck-name-inline">Deck name</label>
+          <input id="create-deck-name-inline" name="name" value="{{ create_form.name }}" placeholder="e.g. Biology fundamentals" maxlength="255" required />
+        </div>
+        <div>
+          <label for="create-deck-description-inline">Description</label>
+          <textarea id="create-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ create_form.description }}</textarea>
+        </div>
+        {% if user.role == "system_admin" %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_global" value="true" {% if create_form.is_global %}checked{% endif %} />
+            <span>Make this a global deck</span>
+          </label>
+        {% endif %}
+        <div class="deck-card__actions">
+          <button type="submit" class="button">Create deck</button>
+          <a href="/dashboard" class="button button-secondary">Cancel</a>
+        </div>
+      </form>
+    </article>
+  {% endif %}
 
-    {% if decks %}
-      <div class="deck-grid">
-        {% for d in decks %}
-          <a href="/decks/{{ d.id }}" class="deck-card">
-            <div>
-              <p class="deck-card__eyebrow">Deck name</p>
-              <h3 class="deck-card__title">{{ d.name }}</h3>
-              <p class="muted">{{ d.description or 'A dedicated deck inside your edu selviz workspace.' }}</p>
-            </div>
-            <span class="deck-card__meta">Created {{ d.created_at.strftime('%d %b %Y') if d.created_at else '' }}</span>
-          </a>
-        {% endfor %}
+  {% if can_manage_decks and active_modal == "edit" and modal_deck %}
+    <article class="card form-card" id="deck-edit-fallback">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Edit deck</p>
+          <h2 class="section-subtitle">{{ modal_deck.name }}</h2>
+        </div>
       </div>
-    {% else %}
-      <div class="empty-state">
-        <h3>No decks yet</h3>
-        <p class="muted">Create your first deck to start building a more consistent study routine.</p>
+      <form method="post" action="/decks/{{ modal_deck.id }}/update" class="stack-md">
+        <div>
+          <label for="edit-deck-name-inline">Deck name</label>
+          <input id="edit-deck-name-inline" name="name" value="{{ edit_form.name }}" maxlength="255" required />
+        </div>
+        <div>
+          <label for="edit-deck-description-inline">Description</label>
+          <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
+        </div>
+        {% if user.role == "system_admin" %}
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_global" value="true" {% if edit_form.is_global %}checked{% endif %} />
+            <span>Make this a global deck</span>
+          </label>
+        {% endif %}
+        <div class="deck-card__actions">
+          <button type="submit" class="button">Save deck</button>
+          <a href="/dashboard" class="button button-secondary">Cancel</a>
+        </div>
+      </form>
+    </article>
+  {% endif %}
+
+  {% if can_manage_decks %}
+    <dialog
+      id="create-deck-modal"
+      class="modal"
+      {% if active_modal == "create" %}data-open-on-load="true"{% endif %}
+    >
+      <div class="modal__surface" role="document">
+        <div class="section-heading">
+          <div>
+            <p class="panel-label">Add deck</p>
+            <h2 class="section-subtitle">Create a new study space</h2>
+          </div>
+          <button type="button" class="button button-secondary button-small" data-modal-close="create-deck-modal">Close</button>
+        </div>
+        <form method="post" action="/decks" class="stack-md">
+          <div>
+            <label for="create-deck-name">Deck name</label>
+            <input id="create-deck-name" name="name" value="{{ create_form.name }}" placeholder="e.g. Biology fundamentals" maxlength="255" required />
+          </div>
+          <div>
+            <label for="create-deck-description">Description</label>
+            <textarea
+              id="create-deck-description"
+              name="description"
+              rows="4"
+              placeholder="Short note about what this deck covers"
+            >{{ create_form.description }}</textarea>
+          </div>
+          {% if user.role == "system_admin" %}
+            <label class="checkbox-row">
+              <input type="checkbox" name="is_global" value="true" {% if create_form.is_global %}checked{% endif %} />
+              <span>Make this a global deck</span>
+            </label>
+          {% endif %}
+          <button type="submit" class="button">Create deck</button>
+        </form>
       </div>
-    {% endif %}
-  </section>
+    </dialog>
+
+    <dialog
+      id="edit-deck-modal"
+      class="modal"
+      data-default-action="{% if modal_deck %}/decks/{{ modal_deck.id }}/update{% endif %}"
+      {% if active_modal == "edit" and modal_deck %}data-open-on-load="true"{% endif %}
+    >
+      <div class="modal__surface" role="document">
+        <div class="section-heading">
+          <div>
+            <p class="panel-label">Edit deck</p>
+            <h2 class="section-subtitle" data-edit-title>{{ modal_deck.name if modal_deck else 'Update deck details' }}</h2>
+          </div>
+          <button type="button" class="button button-secondary button-small" data-modal-close="edit-deck-modal">Close</button>
+        </div>
+        <form method="post" action="{% if modal_deck %}/decks/{{ modal_deck.id }}/update{% else %}#{% endif %}" class="stack-md" data-edit-form>
+          <div>
+            <label for="edit-deck-name">Deck name</label>
+            <input id="edit-deck-name" name="name" value="{{ edit_form.name }}" maxlength="255" required />
+          </div>
+          <div>
+            <label for="edit-deck-description">Description</label>
+            <textarea id="edit-deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
+          </div>
+          {% if user.role == "system_admin" %}
+            <label class="checkbox-row">
+              <input id="edit-deck-is-global" type="checkbox" name="is_global" value="true" {% if edit_form.is_global %}checked{% endif %} />
+              <span>Make this a global deck</span>
+            </label>
+          {% endif %}
+          <button type="submit" class="button">Save deck</button>
+        </form>
+      </div>
+    </dialog>
+  {% endif %}
 </section>
+
+<script>
+  (() => {
+    const grid = document.getElementById("deck-grid");
+    const search = document.getElementById("deck-search");
+    if (!grid || !search) return;
+    const cards = grid.querySelectorAll(".deck-card--simple");
+    cards.forEach((card) => {
+      card.style.cursor = "pointer";
+      card.addEventListener("click", () => {
+        window.location.href = card.dataset.href;
+      });
+    });
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      cards.forEach((card) => {
+        card.style.display = !q || card.dataset.name.includes(q) ? "" : "none";
+      });
+    });
+  })();
+</script>
+
+{% if can_manage_decks %}
+  <script>
+    (() => {
+      const dialogs = Array.from(document.querySelectorAll(".modal"));
+      const supportsModalDialog = typeof HTMLDialogElement !== "undefined" && typeof HTMLDialogElement.prototype.showModal === "function";
+
+      const syncModalState = () => {
+        const hasOpenDialog = dialogs.some((dialog) => dialog.open);
+        document.documentElement.classList.toggle("has-modal-open", hasOpenDialog);
+        document.body.classList.toggle("has-modal-open", hasOpenDialog);
+      };
+
+      const closeModal = (id) => {
+        const dialog = document.getElementById(id);
+        if (dialog?.open) {
+          dialog.close();
+        }
+        syncModalState();
+      };
+
+      const openModal = (id) => {
+        const dialog = document.getElementById(id);
+        if (!dialog || !supportsModalDialog) {
+          return;
+        }
+
+        dialogs.forEach((item) => {
+          if (item !== dialog && item.open) {
+            item.close();
+          }
+        });
+
+        if (!dialog.open) {
+          dialog.showModal();
+        }
+
+        syncModalState();
+      };
+
+      dialogs.forEach((dialog) => {
+        dialog.addEventListener("close", syncModalState);
+        dialog.addEventListener("cancel", () => {
+          window.requestAnimationFrame(syncModalState);
+        });
+        dialog.addEventListener("click", (event) => {
+          const surface = dialog.querySelector(".modal__surface");
+          if (surface && !surface.contains(event.target)) {
+            closeModal(dialog.id);
+          }
+        });
+      });
+
+      document.querySelectorAll("[data-modal-open]").forEach((trigger) => {
+        trigger.addEventListener("click", (event) => {
+          if (!supportsModalDialog) {
+            return;
+          }
+
+          event.preventDefault();
+          const modalId = trigger.dataset.modalOpen;
+          if (modalId === "edit-deck-modal") {
+            const dialog = document.getElementById(modalId);
+            const form = dialog?.querySelector("[data-edit-form]");
+            const title = dialog?.querySelector("[data-edit-title]");
+            if (form) {
+              form.action = trigger.dataset.deckUpdateAction || dialog.dataset.defaultAction || "#";
+            }
+            if (title) {
+              title.textContent = trigger.dataset.deckName || "Update deck details";
+            }
+            const nameInput = dialog?.querySelector("#edit-deck-name");
+            const descriptionInput = dialog?.querySelector("#edit-deck-description");
+            const isGlobalInput = dialog?.querySelector("#edit-deck-is-global");
+            if (nameInput) {
+              nameInput.value = trigger.dataset.deckName || "";
+            }
+            if (descriptionInput) {
+              descriptionInput.value = trigger.dataset.deckDescription || "";
+            }
+            if (isGlobalInput) {
+              isGlobalInput.checked = trigger.dataset.deckIsGlobal === "true";
+            }
+          }
+          openModal(modalId);
+        });
+      });
+
+      document.querySelectorAll("[data-modal-close]").forEach((trigger) => {
+        trigger.addEventListener("click", () => {
+          closeModal(trigger.dataset.modalClose);
+        });
+      });
+
+      document.querySelectorAll(".modal[data-open-on-load='true']").forEach((dialog) => {
+        openModal(dialog.id);
+      });
+
+      syncModalState();
+    })();
+  </script>
+{% endif %}
 {% endblock %}

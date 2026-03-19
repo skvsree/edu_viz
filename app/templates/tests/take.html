@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ test.title }} | edu selviz</title>
+    <meta name="description" content="Take test in edu selviz" />
+    <meta name="theme-color" content="#f5efe2" />
+    <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
+    <link rel="apple-touch-icon" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+  </head>
+  <body class="review-body">
+    <div class="review-shell">
+      <header class="review-topbar" aria-label="Test page header">
+        <a href="/dashboard" class="review-brand brand-mark" aria-label="edu selviz workspace">
+          <span class="review-brand__media brand-mark__media">
+            <img
+              src="{{ static_asset_url('brand/review-logo.jpg') }}"
+              alt="edu selviz logo"
+              class="review-brand__image brand-mark__image"
+            />
+          </span>
+          <span class="review-brand__copy brand-mark__copy">
+            <strong>edu selviz</strong>
+            <small>Professional study workflow</small>
+          </span>
+        </a>
+      </header>
+
+      <main class="review-main">
+        <section class="review-area">
+          <article class="card review-focus-card stack-md test-question-card">
+            <div class="test-header">
+              <p class="panel-label">Test in progress</p>
+              <div class="test-counter">
+                <span id="question-counter">1 of {{ questions | length }}</span>
+              </div>
+            </div>
+            
+            <form id="test-form" method="post" action="/tests/{{ test.id }}/submit">
+              {% for question in questions %}
+              <input type="hidden" name="question_ids" value="{{ question.id }}" />
+              {% endfor %}
+              
+              <div id="question-container">
+                {% for question in questions %}
+                  <div class="test-question-slide" data-question-index="{{ loop.index0 }}" data-question-id="{{ question.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
+                    <h2 class="test-question-text">Q{{ loop.index }}. {{ question.card.front }}</h2>
+                    <div class="test-options">
+                      {% for option in question.card.mcq_options or [] %}
+                        <label class="test-option">
+                          <input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required />
+                          <span class="test-option-text">{{ option }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+
+              <div class="test-nav">
+                <button type="button" id="prev-btn" class="button button-secondary" style="visibility: hidden;">Previous</button>
+                <button type="button" id="next-btn" class="button" disabled>Next</button>
+                <button type="submit" id="submit-btn" class="button" style="display: none;" disabled>Submit</button>
+              </div>
+            </form>
+          </article>
+        </section>
+      </main>
+
+      <footer class="site-footer site-footer--review">
+        <small>{{ footer_copyright_text }}</small>
+      </footer>
+    </div>
+
+    <script>
+      (function() {
+        const questions = {{ questions | map(attribute='id') | map('string') | list | tojson }};
+        const totalQuestions = questions.length;
+        let currentIndex = 0;
+        const answers = {};
+
+        const questionContainer = document.getElementById('question-container');
+        const slides = questionContainer.querySelectorAll('.test-question-slide');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const counterEl = document.getElementById('question-counter');
+
+        function isCurrentQuestionAnswered() {
+          const currentSlide = slides[currentIndex];
+          return !!currentSlide.querySelector('input[type="radio"]:checked');
+        }
+
+        function updateNavButtons() {
+          const answered = isCurrentQuestionAnswered();
+          
+          if (currentIndex === totalQuestions - 1) {
+            nextBtn.style.display = 'none';
+            submitBtn.style.display = 'inline-flex';
+            submitBtn.disabled = !answered;
+          } else {
+            nextBtn.style.display = 'inline-flex';
+            submitBtn.style.display = 'none';
+            nextBtn.disabled = !answered;
+          }
+        }
+
+        function updateSlide() {
+          slides.forEach((slide, index) => {
+            slide.style.display = index === currentIndex ? 'block' : 'none';
+          });
+          
+          counterEl.textContent = `${currentIndex + 1} of ${totalQuestions}`;
+          
+          prevBtn.style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+          
+          updateNavButtons();
+        }
+
+        function saveCurrentAnswer() {
+          const currentSlide = slides[currentIndex];
+          const questionId = currentSlide.dataset.questionId;
+          const selected = currentSlide.querySelector('input[type="radio"]:checked');
+          if (selected) {
+            answers[questionId] = selected.value;
+          }
+        }
+
+        // Enable/disable nav buttons when a radio option is selected
+        slides.forEach(slide => {
+          slide.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+              updateNavButtons();
+            });
+          });
+        });
+
+        prevBtn.addEventListener('click', () => {
+          saveCurrentAnswer();
+          if (currentIndex > 0) {
+            currentIndex--;
+            updateSlide();
+          }
+        });
+
+        nextBtn.addEventListener('click', () => {
+          saveCurrentAnswer();
+          if (currentIndex < totalQuestions - 1) {
+            currentIndex++;
+            updateSlide();
+          }
+        });
+
+        document.getElementById('test-form').addEventListener('submit', function() {
+          saveCurrentAnswer();
+          
+          questions.forEach(function(questionId) {
+            var hiddenInput = document.createElement('input');
+            hiddenInput.type = 'hidden';
+            hiddenInput.name = 'question_' + questionId;
+            hiddenInput.value = answers[questionId] !== undefined ? answers[questionId] : '';
+            document.getElementById('test-form').appendChild(hiddenInput);
+          });
+        });
+
+        updateSlide();
+      })();
+    </script>
+  </body>
+</html>

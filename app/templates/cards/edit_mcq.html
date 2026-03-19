@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card form-card stack-md">
+  <div class="section-heading"><div><p class="panel-label">Edit MCQ</p><h1 class="section-title">{{ deck.name }}</h1></div><a href="/decks/{{ deck.id }}/mcqs" class="button button-secondary">Back to MCQs</a></div>
+  <form method="post" action="/decks/{{ deck.id }}/mcqs/{{ card.id }}/edit" class="stack-md">
+    <div><label>Question</label><textarea name="question" rows="4" required>{{ card.front }}</textarea></div>
+    {% for option in card.mcq_options or ['', '', '', ''] %}
+      <div><label>Option {{ loop.index }}</label><input name="option_{{ loop.index0 }}" value="{{ option }}" required /></div>
+    {% endfor %}
+    <div><label>Correct option index</label><input type="number" min="0" max="3" name="answer_index" value="{{ card.mcq_answer_index or 0 }}" required /></div>
+    <div><label>Explanation</label><textarea name="explanation" rows="5">{{ card.back }}</textarea></div>
+    <button type="submit" class="button">Save MCQ</button>
+  </form>
+</section>
+{% endblock %}

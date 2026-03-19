@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analysis Report | {{ attempt.test.title }} | edu selviz</title>
+    <meta name="description" content="Test analysis report in edu selviz" />
+    <meta name="theme-color" content="#f5efe2" />
+    <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
+    <link rel="apple-touch-icon" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+  </head>
+  <body class="review-body">
+    <div class="review-shell">
+      <header class="review-topbar" aria-label="Report page header">
+        <a href="/dashboard" class="review-brand brand-mark" aria-label="edu selviz workspace">
+          <span class="review-brand__media brand-mark__media">
+            <img
+              src="{{ static_asset_url('brand/review-logo.jpg') }}"
+              alt="edu selviz logo"
+              class="review-brand__image brand-mark__image"
+            />
+          </span>
+          <span class="review-brand__copy brand-mark__copy">
+            <strong>edu selviz</strong>
+            <small>Professional study workflow</small>
+          </span>
+        </a>
+      </header>
+
+      <main class="review-main">
+        <section class="review-area">
+          <article class="card review-focus-card stack-md test-report-card">
+            <div class="test-report-header">
+              <p class="panel-label">Analysis report</p>
+              <h1 class="section-title">{{ attempt.test.title }}</h1>
+              <div class="test-score-display">
+                <span class="test-score-label">Score</span>
+                <span class="test-score-value">{{ attempt.score }}/{{ attempt.total_questions }}</span>
+                <span class="test-score-percent">{{ ((attempt.score / attempt.total_questions) * 100) | round(0) | int if attempt.total_questions else 0 }}%</span>
+              </div>
+              <div class="test-report-meta">
+                <span class="test-report-stat">
+                  <span class="test-report-stat-label">Attempts</span>
+                  <span class="test-report-stat-value">{{ summary.total_attempts }}</span>
+                </span>
+                <span class="test-report-stat">
+                  <span class="test-report-stat-label">Best</span>
+                  <span class="test-report-stat-value">{{ summary.best_score if summary.best_score is not none else 'N/A' }}</span>
+                </span>
+                <span class="test-report-stat">
+                  <span class="test-report-stat-label">Completed</span>
+                  <span class="test-report-stat-value">{{ attempt.completed_at.strftime('%d %b %Y %H:%M') }}</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="test-report-nav">
+              <button type="button" id="prev-report-btn" class="button button-secondary" style="visibility: hidden;">Previous</button>
+              <span id="report-counter" class="test-report-counter">1 of {{ attempt.answers | length }}</span>
+              <button type="button" id="next-report-btn" class="button">Next</button>
+            </div>
+
+            <div class="test-report-filter">
+              <button type="button" id="filter-all-btn" class="button button-small button-filter active">All</button>
+              <button type="button" id="filter-incorrect-btn" class="button button-small button-filter">Incorrect only</button>
+            </div>
+
+            <div id="report-container" class="test-report-slides">
+              {% for answer in attempt.answers %}
+                <div class="test-report-slide" data-slide-index="{{ loop.index0 }}" data-correct="{{ 'true' if answer.is_correct else 'false' }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
+                  <div class="test-report-question">
+                    <span class="test-report-status {% if answer.is_correct %}test-correct{% else %}test-incorrect{% endif %}">
+                      {{ 'Correct' if answer.is_correct else 'Incorrect' }}
+                    </span>
+                    <h3 class="test-report-question-text">Q{{ loop.index }}. {{ answer.question.card.front }}</h3>
+                  </div>
+                  <div class="test-report-options">
+                    {% for option in answer.question.card.mcq_options or [] %}
+                      {% set is_correct = loop.index0 == answer.question.card.mcq_answer_index %}
+                      {% set is_selected = loop.index0 == answer.selected_option_index %}
+                      <div class="test-report-option {% if is_correct %}test-correct-option{% endif %} {% if is_selected and not is_correct %}test-incorrect-option{% endif %}">
+                        <span class="test-report-option-text">{{ option }}</span>
+                        {% if is_correct %}
+                          <span class="test-report-option-badge test-correct-badge">✓ Correct</span>
+                        {% endif %}
+                        {% if is_selected and not is_correct %}
+                          <span class="test-report-option-badge test-incorrect-badge">✗ Your answer</span>
+                        {% endif %}
+                        {% if is_selected and is_correct %}
+                          <span class="test-report-option-badge test-correct-badge">✓ Your answer</span>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+                  {% if answer.notes or answer.question.card.back %}
+                    <div class="test-report-explanation">
+                      <p class="muted">{{ answer.notes or answer.question.card.back }}</p>
+                    </div>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+
+            <div class="test-report-footer">
+              <a href="/decks/{{ attempt.test.deck_id }}/tests" class="button button-secondary">Back to tests</a>
+            </div>
+          </article>
+        </section>
+      </main>
+
+      <footer class="site-footer site-footer--review">
+        <small>{{ footer_copyright_text }}</small>
+      </footer>
+    </div>
+
+    <script>
+      (function() {
+        const allSlides = Array.from(document.querySelectorAll('.test-report-slide'));
+        let currentIndex = 0;
+        let filter = 'all';
+        let visibleSlides = allSlides;
+
+        const prevBtn = document.getElementById('prev-report-btn');
+        const nextBtn = document.getElementById('next-report-btn');
+        const counterEl = document.getElementById('report-counter');
+        const filterAllBtn = document.getElementById('filter-all-btn');
+        const filterIncorrectBtn = document.getElementById('filter-incorrect-btn');
+
+        function applyFilter() {
+          allSlides.forEach(slide => { slide.style.display = 'none'; });
+
+          if (filter === 'incorrect') {
+            visibleSlides = allSlides.filter(s => s.dataset.correct === 'false');
+            filterIncorrectBtn.classList.add('active');
+            filterAllBtn.classList.remove('active');
+          } else {
+            visibleSlides = allSlides;
+            filterAllBtn.classList.add('active');
+            filterIncorrectBtn.classList.remove('active');
+          }
+
+          if (visibleSlides.length === 0) {
+            counterEl.textContent = 'No incorrect answers';
+            prevBtn.style.visibility = 'hidden';
+            nextBtn.style.visibility = 'hidden';
+            return;
+          }
+
+          if (currentIndex >= visibleSlides.length) {
+            currentIndex = visibleSlides.length - 1;
+          }
+          updateSlide();
+        }
+
+        function updateSlide() {
+          visibleSlides.forEach((slide, index) => {
+            slide.style.display = index === currentIndex ? 'block' : 'none';
+          });
+          
+          if (visibleSlides.length > 0) {
+            counterEl.textContent = `${currentIndex + 1} of ${visibleSlides.length}`;
+          }
+          
+          prevBtn.style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+          nextBtn.style.visibility = currentIndex >= visibleSlides.length - 1 ? 'hidden' : 'visible';
+        }
+
+        filterAllBtn.addEventListener('click', () => {
+          filter = 'all';
+          currentIndex = 0;
+          applyFilter();
+        });
+
+        filterIncorrectBtn.addEventListener('click', () => {
+          filter = 'incorrect';
+          currentIndex = 0;
+          applyFilter();
+        });
+
+        prevBtn.addEventListener('click', () => {
+          if (currentIndex > 0) {
+            currentIndex--;
+            updateSlide();
+          }
+        });
+
+        nextBtn.addEventListener('click', () => {
+          if (currentIndex < visibleSlides.length - 1) {
+            currentIndex++;
+            updateSlide();
+          }
+        });
+
+        updateSlide();
+      })();
+    </script>
+  </body>
+</html>

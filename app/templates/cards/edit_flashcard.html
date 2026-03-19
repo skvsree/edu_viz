@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card form-card stack-md">
+  <div class="section-heading"><div><p class="panel-label">Edit flashcard</p><h1 class="section-title">{{ deck.name }}</h1></div><a href="/decks/{{ deck.id }}/flashcards" class="button button-secondary">Back to flashcards</a></div>
+  <form method="post" action="/decks/{{ deck.id }}/flashcards/{{ card.id }}/edit" class="stack-md">
+    <div><label>Front</label><textarea name="front" rows="5" required>{{ card.front }}</textarea></div>
+    <div><label>Back</label><textarea name="back" rows="6" required>{{ card.back }}</textarea></div>
+    <button type="submit" class="button">Save flashcard</button>
+  </form>
+</section>
+{% endblock %}
