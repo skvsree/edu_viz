@@ -3,21 +3,6 @@ when:
     branch: [main]
 
 steps:
-  build_and_push:
-    image: woodpeckerci/plugin-docker-buildx:5.0.0
-    settings:
-      repo: ghcr.io/skvsree/edu_viz
-      tags:
-        - "latest"
-        - "${CI_COMMIT_SHA:0:7}"
-      dockerfile: "Dockerfile"
-      context: "."
-      registry: "ghcr.io"
-      username:
-        from_secret: ghcr_username
-      password:
-        from_secret: ghcr_token
-
   deploy_portainer:
     image: curlimages/curl:8.7.1
     environment:
