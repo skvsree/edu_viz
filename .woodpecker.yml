@@ -3,7 +3,7 @@ when:
     branch: [main]
 
 steps:
-  inspect_stack:
+  deploy_portainer:
     image: curlimages/curl:8.7.1
     environment:
       PORTAINER_URL:
@@ -12,9 +12,14 @@ steps:
         from_secret: portainer_token
       PORTAINER_STACK_ID:
         from_secret: portainer_stack_id
+      PORTAINER_ENDPOINT_ID:
+        from_secret: portainer_endpoint_id
     commands:
       - |
-        echo "Inspecting stack $PORTAINER_STACK_ID"
-        curl -sS \
+        echo "Deploying stack $PORTAINER_STACK_ID on endpoint $PORTAINER_ENDPOINT_ID"
+  
+        curl -sS -X PUT \
           -H "X-API-Key: $PORTAINER_TOKEN" \
-          "$PORTAINER_URL/api/stacks/$PORTAINER_STACK_ID"
+          -H "Content-Type: application/json" \
+          "$PORTAINER_URL/api/stacks/$PORTAINER_STACK_ID?endpointId=$PORTAINER_ENDPOINT_ID" \
+          -d '{"pullImage":true}'
