@@ -3,17 +3,17 @@ when:
     branch: [main]
 
 steps:
-  - name: deploy_portainer
-    image: alpine:3.20
-    environment:
-      PORTAINER_TOKEN:
-        from_secret: portainer_token
-    commands:
-      - apk add --no-cache curl jq
-      - STACK_CONTENT=$(jq -Rs . < docker-compose.yml)
-      - |
-        curl -i -sS -X PUT \
-          -H "X-API-Key: $PORTAINER_TOKEN" \
-          -H "Content-Type: application/json" \
-          "https://port.selviz.in/api/stacks/30?endpointId=3" \
-          -d "{\"stackFileContent\":$STACK_CONTENT,\"env\":[],\"prune\":false,\"pullImage\":true}"
+  - name: build_and_push
+    image: woodpeckerci/plugin-docker-buildx:5.0.0
+    settings:
+      repo: ghcr.io/skvsree/edu_viz
+      tags:
+        - latest
+        - "${CI_COMMIT_SHA:0:7}"
+      dockerfile: Dockerfile
+      context: .
+      registry: ghcr.io
+      username:
+        from_secret: ghcr_username
+      password:
+        from_secret: ghcr_token
