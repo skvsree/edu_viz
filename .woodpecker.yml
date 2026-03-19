@@ -11,7 +11,7 @@ steps:
         from_secret: portainer_token
     commands:
       - |
-        echo "Checking $PORTAINER_URL/api/stacks"
+        echo "Checking $PORTAINER_URLapi/stacks"
         curl -i -sS \
           -H "X-API-Key: $PORTAINER_TOKEN" \
           "$PORTAINER_URL/api/stacks"
