@@ -2,16 +2,13 @@ when:
   - event: [manual]
 
 steps:
-  print_portainer_url:
-    image: alpine:3.20
+  check_portainer_api:
+    image: curlimages/curl:8.7.1
     environment:
-      PORTAINER_URL:
-        from_secret: portainer_url
-      PORTAINER_STACK_ID:
-        from_secret: portainer_stack_id
-      PORTAINER_ENDPOINT_ID:
-        from_secret: portainer_endpoint_id
+      PORTAINER_TOKEN:
+        from_secret: portainer_token
     commands:
-      - echo "$PORTAINER_URL"
-      - echo "$PORTAINER_URL/api/stacks"
-      - echo "stack=$PORTAINER_STACK_ID endpoint=$PORTAINER_ENDPOINT_ID"
+      - |
+        curl -i -sS \
+          -H "X-API-Key: $PORTAINER_TOKEN" \
+          "https://port.selviz.in/api/stacks"
