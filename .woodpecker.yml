@@ -1,0 +1,27 @@
+when:
+  - event: [push, manual]
+  - branch: [main]
+
+steps:
+  build_and_push:
+    image: woodpeckerci/plugin-docker-buildx
+    settings:
+      repo: ghcr.io/skvsree/edu_viz
+      tags:
+        - latest
+        - ${CI_COMMIT_SHA:0:7}
+      dockerfile: Dockerfile
+      context: .
+      registry: ghcr.io
+      username:
+        from_secret: ghcr_username
+      password:
+        from_secret: ghcr_token
+
+  deploy_portainer:
+    image: curlimages/curl:8.7.1
+    commands:
+      - curl -X POST "$PORTAINER_WEBHOOK"
+    environment:
+      PORTAINER_WEBHOOK:
+        from_secret: portainer_webhook
