@@ -10,5 +10,5 @@ steps:
     commands:
       - |
         curl -i -sS \
-          -H "X-API-Key: $PORTAINER_TOKEN" \
+          -H "X-API-KEY: $PORTAINER_TOKEN" \
           "https://port.selviz.in/api/stacks"
