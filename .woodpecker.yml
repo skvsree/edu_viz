@@ -1,8 +1,24 @@
 when:
-  - event: [manual]
+  - event: [push, manual]
+    branch: [main]
 
 steps:
-  deploy_debug:
+  build_and_push:
+    image: woodpeckerci/plugin-docker-buildx:5.0.0
+    settings:
+      repo: ghcr.io/skvsree/edu_viz
+      tags:
+        - "latest"
+        - "${CI_COMMIT_SHA:0:7}"
+      dockerfile: "Dockerfile"
+      context: "."
+      registry: "ghcr.io"
+      username:
+        from_secret: ghcr_username
+      password:
+        from_secret: ghcr_token
+
+  deploy_portainer:
     image: curlimages/curl:8.7.1
     environment:
       PORTAINER_URL:
@@ -14,8 +30,5 @@ steps:
       PORTAINER_ENDPOINT_ID:
         from_secret: portainer_endpoint_id
     commands:
-      - test -n "$PORTAINER_URL" && echo "PORTAINER_URL present" || echo "PORTAINER_URL missing"
-      - test -n "$PORTAINER_TOKEN" && echo "PORTAINER_TOKEN present" || echo "PORTAINER_TOKEN missing"
-      - test -n "$PORTAINER_STACK_ID" && echo "PORTAINER_STACK_ID present" || echo "PORTAINER_STACK_ID missing"
-      - test -n "$PORTAINER_ENDPOINT_ID" && echo "PORTAINER_ENDPOINT_ID present" || echo "PORTAINER_ENDPOINT_ID missing"
-      - echo "URL=${PORTAINER_URL}/api/stacks/${PORTAINER_STACK_ID}/git/redeploy?endpointId=${PORTAINER_ENDPOINT_ID}"
+      - echo "URL=$PORTAINER_URL/api/stacks/$PORTAINER_STACK_ID/git/redeploy?endpointId=$PORTAINER_ENDPOINT_ID"
+      - curl -sS -X POST -H "X-API-Key: $PORTAINER_TOKEN" "$PORTAINER_URL/api/stacks/$PORTAINER_STACK_ID/git/redeploy?endpointId=$PORTAINER_ENDPOINT_ID"
