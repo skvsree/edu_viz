@@ -2,8 +2,8 @@ when:
   - event: [manual]
 
 steps:
-  debug_secrets:
-    image: alpine:3.20
+  deploy_debug:
+    image: curlimages/curl:8.7.1
     environment:
       PORTAINER_URL:
         from_secret: portainer_url
@@ -18,3 +18,4 @@ steps:
       - test -n "$PORTAINER_TOKEN" && echo "PORTAINER_TOKEN present" || echo "PORTAINER_TOKEN missing"
       - test -n "$PORTAINER_STACK_ID" && echo "PORTAINER_STACK_ID present" || echo "PORTAINER_STACK_ID missing"
       - test -n "$PORTAINER_ENDPOINT_ID" && echo "PORTAINER_ENDPOINT_ID present" || echo "PORTAINER_ENDPOINT_ID missing"
+      - echo "URL=${PORTAINER_URL}/api/stacks/${PORTAINER_STACK_ID}/git/redeploy?endpointId=${PORTAINER_ENDPOINT_ID}"
