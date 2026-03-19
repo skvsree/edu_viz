@@ -21,7 +21,16 @@ steps:
   deploy_portainer:
     image: curlimages/curl:8.7.1
     commands:
-      - curl -X POST "$PORTAINER_WEBHOOK"
+      - >
+        curl -sS -X POST
+        -H "X-API-Key: ${PORTAINER_TOKEN}"
+        "${PORTAINER_URL}/api/stacks/${PORTAINER_STACK_ID}/git/redeploy?endpointId=${PORTAINER_ENDPOINT_ID}"
     environment:
-      PORTAINER_WEBHOOK:
-        from_secret: portainer_webhook
+      PORTAINER_URL:
+        from_secret: portainer_url
+      PORTAINER_TOKEN:
+        from_secret: portainer_token
+      PORTAINER_ENDPOINT_ID:
+        from_secret: portainer_endpoint_id
+      PORTAINER_STACK_ID:
+        from_secret: portainer_stack_id
