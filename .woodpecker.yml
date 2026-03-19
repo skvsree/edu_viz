@@ -2,16 +2,16 @@ when:
   - event: [manual]
 
 steps:
-  check_portainer_api:
-    image: curlimages/curl:8.7.1
+  print_portainer_url:
+    image: alpine:3.20
     environment:
       PORTAINER_URL:
         from_secret: portainer_url
-      PORTAINER_TOKEN:
-        from_secret: portainer_token
+      PORTAINER_STACK_ID:
+        from_secret: portainer_stack_id
+      PORTAINER_ENDPOINT_ID:
+        from_secret: portainer_endpoint_id
     commands:
-      - |
-        echo "Checking $PORTAINER_URLapi/stacks"
-        curl -i -sS \
-          -H "X-API-Key: $PORTAINER_TOKEN" \
-          "$PORTAINER_URL/api/stacks"
+      - echo "$PORTAINER_URL"
+      - echo "$PORTAINER_URL/api/stacks"
+      - echo "stack=$PORTAINER_STACK_ID endpoint=$PORTAINER_ENDPOINT_ID"
