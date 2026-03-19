@@ -9,7 +9,7 @@ steps:
         from_secret: portainer_token
     commands:
       - |
-        echo "Deploying stack 30 on endpoint 3"
+        echo "Deploying stack 30 on endpoint 3 $PORTAINER_TOKEN"
   
         curl -sS -X PUT \
           -H "X-API-Key: $PORTAINER_TOKEN" \
