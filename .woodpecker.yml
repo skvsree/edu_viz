@@ -10,7 +10,7 @@ steps:
     commands:
       - |
         echo "Deploying stack 30 on endpoint 3 $PORTAINER_TOKEN"
-  
+        echo "TOKEN prefix = ${PORTAINER_TOKEN:0:5}"
         curl -sS -X PUT \
           -H "X-API-Key: $PORTAINER_TOKEN" \
           -H "Content-Type: application/json" \
