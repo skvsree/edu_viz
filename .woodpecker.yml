@@ -5,6 +5,9 @@ when:
 steps:
   build_and_push:
     image: woodpeckerci/plugin-docker-buildx
+    when:
+      - event: [push, manual]
+      - branch: [main]
     settings:
       repo: ghcr.io/skvsree/edu_viz
       tags:
