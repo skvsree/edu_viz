@@ -12,4 +12,8 @@ steps:
       - apk add --no-cache curl jq
       - STACK_CONTENT=$(jq -Rs . < docker-compose.yml)
       - |
-        curl -s -H "X-API-Key: $PORTAINER_TOKEN" "https://port.selviz.in/api/stacks/30?endpointId=3"
+        curl -i -sS -X PUT \
+          -H "X-API-Key: $PORTAINER_TOKEN" \
+          -H "Content-Type: application/json" \
+          "https://port.selviz.in/api/stacks/30?endpointId=3" \
+          -d "{\"stackFileContent\":$STACK_CONTENT,\"env\":[],\"prune\":false,\"pullImage\":true}"
