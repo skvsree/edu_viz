@@ -1,15 +1,15 @@
-deploy_portainer:
-  image: alpine:3.20
-  environment:
-    PORTAINER_TOKEN:
-      from_secret: portainer_token
-  commands:
-    - apk add --no-cache curl jq
-    - STACK_CONTENT=$(jq -Rs . < docker-compose.yml)
-    - |
-      echo "Deploying stack 30 on endpoint 3"
-      curl -i -sS -X PUT \
-        -H "X-API-Key: $PORTAINER_TOKEN" \
-        -H "Content-Type: application/json" \
-        "https://port.selviz.in/api/stacks/30?endpointId=3" \
-        -d "{\"stackFileContent\":$STACK_CONTENT,\"env\":[],\"prune\":false,\"pullImage\":true}"
+when:
+  - event: [push, manual]
+    branch: [main]
+
+steps:
+  - name: deploy_portainer
+    image: alpine:3.20
+    environment:
+      PORTAINER_TOKEN:
+        from_secret: portainer_token
+    commands:
+      - apk add --no-cache curl jq
+      - STACK_CONTENT=$(jq -Rs . < docker-compose.yml)
+      - |
+        curl -s -H "X-API-Key: ptr_XoyB5v9xf8N3h/eklu+WJR58uvIMIU3joh6Y/s420WQ=" "https://port.selviz.in/api/stacks/30?endpointId=3"
