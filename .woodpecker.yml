@@ -2,13 +2,17 @@ when:
   - event: [manual]
 
 steps:
-  check_portainer_api:
+  deploy_portainer:
     image: curlimages/curl:8.7.1
     environment:
       PORTAINER_TOKEN:
         from_secret: portainer_token
     commands:
       - |
-        curl -i -sS \
-          -H "X-API-KEY: $PORTAINER_TOKEN" \
-          "https://port.selviz.in/api/stacks"
+        echo "Deploying stack 30 on endpoint 3"
+  
+        curl -sS -X PUT \
+          -H "X-API-Key: $PORTAINER_TOKEN" \
+          -H "Content-Type: application/json" \
+          "https://port.selviz.in/api/stacks/30?endpointId=3" \
+          -d '{"pullImage":true}'
