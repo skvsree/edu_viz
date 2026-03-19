@@ -8,11 +8,11 @@ steps:
     settings:
       repo: ghcr.io/skvsree/edu_viz
       tags:
-        - latest
-        - ${CI_COMMIT_SHA:0:7}
-      dockerfile: Dockerfile
-      context: .
-      registry: ghcr.io
+        - "latest"
+        - "${CI_COMMIT_SHA:0:7}"
+      dockerfile: "Dockerfile"
+      context: "."
+      registry: "ghcr.io"
       username:
         from_secret: ghcr_username
       password:
@@ -30,4 +30,7 @@ steps:
       PORTAINER_ENDPOINT_ID:
         from_secret: portainer_endpoint_id
     commands:
-      - curl -sS -X POST -H "X-API-Key: ${PORTAINER_TOKEN}" "${PORTAINER_URL}/api/stacks/${PORTAINER_STACK_ID}/git/redeploy?endpointId=${PORTAINER_ENDPOINT_ID}"
+      - >
+        curl -sS -X POST
+        -H "X-API-Key: ${PORTAINER_TOKEN}"
+        "${PORTAINER_URL}/api/stacks/${PORTAINER_STACK_ID}/git/redeploy?endpointId=${PORTAINER_ENDPOINT_ID}"
