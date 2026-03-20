@@ -695,18 +695,6 @@ def update_deck_tags(
     if not redirect_target.startswith("/"):
         redirect_target = f"/decks/{deck.id}"
 
-    if deck.is_global:
-        return RedirectResponse(
-            url=f"{redirect_target}?tag_error={quote_plus('Tags are only supported for organization decks right now')}",
-            status_code=303,
-        )
-
-    if deck.organization_id is None:
-        return RedirectResponse(
-            url=f"{redirect_target}?tag_error={quote_plus('Deck must belong to an organization before tags can be assigned')}",
-            status_code=303,
-        )
-
     raw_names = [item.strip() for item in tag_names.split(",")]
     cleaned_names: list[str] = []
     seen: set[str] = set()
