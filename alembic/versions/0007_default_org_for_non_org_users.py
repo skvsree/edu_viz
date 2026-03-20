@@ -57,7 +57,7 @@ def upgrade() -> None:
             """
             UPDATE decks
             SET organization_id = :organization_id
-            WHERE organization_id IS NULL AND is_global = false
+            WHERE organization_id IS NULL
             """
         ),
         {"organization_id": default_org},
@@ -80,7 +80,7 @@ def downgrade() -> None:
             """
             UPDATE decks
             SET organization_id = NULL
-            WHERE organization_id = :organization_id AND is_global = false
+            WHERE organization_id = :organization_id
             """
         ),
         {"organization_id": default_org},
