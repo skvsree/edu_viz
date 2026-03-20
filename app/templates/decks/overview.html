@@ -103,23 +103,17 @@
           {% endfor %}
         </div>
       {% endif %}
-      {% if deck.is_global %}
-        <p class="muted">Tags are only available for organization decks right now.</p>
-      {% elif not deck.organization_id %}
-        <p class="muted">Assign this deck to an organization before adding tags.</p>
-      {% else %}
-        <form method="post" action="/decks/{{ deck.id }}/tags" class="stack-md">
-          <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
-          <div>
-            <label for="deck-tags">Tags</label>
-            <input id="deck-tags" name="tag_names" value="{{ tag_form.tag_names }}" placeholder="biology, term-1, revision" />
-            <p class="muted">Enter comma-separated tags. Existing organization tags will be reused automatically.</p>
-          </div>
-          <div class="deck-card__actions">
-            <button type="submit" class="button">Save tags</button>
-          </div>
-        </form>
-      {% endif %}
+      <form method="post" action="/decks/{{ deck.id }}/tags" class="stack-md">
+        <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
+        <div>
+          <label for="deck-tags">Tags</label>
+          <input id="deck-tags" name="tag_names" value="{{ tag_form.tag_names }}" placeholder="biology, term-1, revision" />
+          <p class="muted">Enter comma-separated tags. Existing organization tags will be reused automatically when the deck belongs to an organization.</p>
+        </div>
+        <div class="deck-card__actions">
+          <button type="submit" class="button">Save tags</button>
+        </div>
+      </form>
     </article>
   {% endif %}
 </section>

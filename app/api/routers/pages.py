@@ -724,7 +724,7 @@ def update_deck_tags(
     existing_tags = {
         tag.normalized_name: tag
         for tag in db.execute(select(Tag).where(Tag.organization_id == deck.organization_id)).scalars().all()
-    }
+    } if deck.organization_id else {}
 
     updated_tags: list[Tag] = []
     for cleaned_name in cleaned_names:
@@ -738,7 +738,8 @@ def update_deck_tags(
             )
             db.add(tag)
             db.flush()
-            existing_tags[normalized] = tag
+            if deck.organization_id:
+                existing_tags[normalized] = tag
         updated_tags.append(tag)
 
     deck.tags = updated_tags
