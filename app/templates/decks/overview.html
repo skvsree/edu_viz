@@ -3,6 +3,8 @@
 <section class="stack-lg">
   {% if import_success %}<section class="status-banner status-banner--success"><strong>Import complete.</strong><span>{{ import_success }}</span></section>{% endif %}
   {% if update_success %}<section class="status-banner status-banner--success"><strong>Updated.</strong><span>{{ update_success }}</span></section>{% endif %}
+  {% if tag_success %}<section class="status-banner status-banner--success"><strong>Tags updated.</strong><span>{{ tag_success }}</span></section>{% endif %}
+  {% if tag_error %}<section class="status-banner status-banner--error"><strong>Tag update failed.</strong><span>{{ tag_error }}</span></section>{% endif %}
 
   <section class="card section-heading-card">
     <div>
@@ -85,6 +87,39 @@
           <button type="submit" class="button">Save deck</button>
         </div>
       </form>
+    </article>
+
+    <article class="card form-card">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Tags</p>
+          <h2 class="section-subtitle">Assign deck tags</h2>
+        </div>
+      </div>
+      {% if deck.tags %}
+        <div class="deck-card__actions" style="margin-bottom: 12px; flex-wrap: wrap;">
+          {% for tag in deck.tags|sort(attribute='name') %}
+            <span class="button button-secondary button-small" style="cursor: default;">{{ tag.name }}</span>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% if deck.is_global %}
+        <p class="muted">Tags are only available for organization decks right now.</p>
+      {% elif not deck.organization_id %}
+        <p class="muted">Assign this deck to an organization before adding tags.</p>
+      {% else %}
+        <form method="post" action="/decks/{{ deck.id }}/tags" class="stack-md">
+          <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
+          <div>
+            <label for="deck-tags">Tags</label>
+            <input id="deck-tags" name="tag_names" value="{{ tag_form.tag_names }}" placeholder="biology, term-1, revision" />
+            <p class="muted">Enter comma-separated tags. Existing organization tags will be reused automatically.</p>
+          </div>
+          <div class="deck-card__actions">
+            <button type="submit" class="button">Save tags</button>
+          </div>
+        </form>
+      {% endif %}
     </article>
   {% endif %}
 </section>

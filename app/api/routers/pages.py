@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Test, TestAttempt, User
+from app.models import Card, Deck, Organization, Tag, Test, TestAttempt, User
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -219,6 +219,11 @@ def _users_response(
 
 
 
+def _tag_form_context(deck: Deck) -> dict[str, str]:
+    return {"tag_names": ", ".join(tag.name for tag in sorted(deck.tags, key=lambda item: item.name.lower()))}
+
+
+
 def _deck_content_response(
     request: Request,
     *,
@@ -234,6 +239,9 @@ def _deck_content_response(
     update_error: str | None = None,
     update_success: str | None = None,
     has_published_tests: bool = False,
+    tag_error: str | None = None,
+    tag_success: str | None = None,
+    tag_form: dict[str, str] | None = None,
 ):
     can_edit = can_manage_deck(user, deck)
     flashcards = [card for card in cards if card.card_type == "basic"]
@@ -262,6 +270,9 @@ def _deck_content_response(
             "import_success": import_success,
             "update_error": update_error,
             "update_success": update_success,
+            "tag_error": tag_error,
+            "tag_success": tag_success,
+            "tag_form": tag_form or _tag_form_context(deck),
         },
         status_code=status_code,
     )
@@ -309,6 +320,7 @@ def _dashboard_response(
                 "description": (modal_deck.description or "") if modal_deck else "",
                 "is_global": modal_deck.is_global if modal_deck else False,
             },
+            "tag_form": _tag_form_context(modal_deck) if modal_deck else {"tag_names": ""},
             "title": "Workspace | edu selviz",
         },
         status_code=status_code,
@@ -667,6 +679,75 @@ def update_deck(
     return RedirectResponse(url=_append_message_param(redirect_target, "success", "Deck details updated"), status_code=303)
 
 
+@router.post("/decks/{deck_id}/tags")
+def update_deck_tags(
+    deck_id: str,
+    tag_names: str = Form(default=""),
+    next_url: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    redirect_target = next_url.strip() if isinstance(next_url, str) else ""
+    if not redirect_target.startswith("/"):
+        redirect_target = f"/decks/{deck.id}"
+
+    if deck.is_global:
+        return RedirectResponse(
+            url=f"{redirect_target}?tag_error={quote_plus('Tags are only supported for organization decks right now')}",
+            status_code=303,
+        )
+
+    if deck.organization_id is None:
+        return RedirectResponse(
+            url=f"{redirect_target}?tag_error={quote_plus('Deck must belong to an organization before tags can be assigned')}",
+            status_code=303,
+        )
+
+    raw_names = [item.strip() for item in tag_names.split(",")]
+    cleaned_names: list[str] = []
+    seen: set[str] = set()
+    for raw_name in raw_names:
+        if not raw_name:
+            continue
+        normalized = normalize_deck_name(raw_name)
+        if not normalized:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned_names.append(raw_name)
+
+    existing_tags = {
+        tag.normalized_name: tag
+        for tag in db.execute(select(Tag).where(Tag.organization_id == deck.organization_id)).scalars().all()
+    }
+
+    updated_tags: list[Tag] = []
+    for cleaned_name in cleaned_names:
+        normalized = normalize_deck_name(cleaned_name)
+        tag = existing_tags.get(normalized)
+        if tag is None:
+            tag = Tag(
+                organization_id=deck.organization_id,
+                name=cleaned_name,
+                normalized_name=normalized,
+            )
+            db.add(tag)
+            db.flush()
+            existing_tags[normalized] = tag
+        updated_tags.append(tag)
+
+    deck.tags = updated_tags
+    db.commit()
+
+    message = "Tags updated" if updated_tags else "Tags cleared"
+    return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus(message)}", status_code=303)
+
+
 @router.post("/decks/{deck_id}/delete")
 def delete_deck(
     deck_id: str,
@@ -718,6 +799,9 @@ def deck_overview(
             "test_count": test_count,
             "import_success": request.query_params.get("import_success"),
             "update_success": request.query_params.get("update_success"),
+            "tag_error": request.query_params.get("tag_error"),
+            "tag_success": request.query_params.get("tag_success"),
+            "tag_form": _tag_form_context(deck),
             "title": f"{deck.name} | edu selviz",
         },
     )
@@ -748,6 +832,9 @@ def deck_flashcards(
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
+        tag_error=request.query_params.get("tag_error"),
+        tag_success=request.query_params.get("tag_success"),
+        tag_form=_tag_form_context(deck),
         has_published_tests=has_published_tests,
     )
 
@@ -777,6 +864,9 @@ def deck_mcqs(
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
+        tag_error=request.query_params.get("tag_error"),
+        tag_success=request.query_params.get("tag_success"),
+        tag_form=_tag_form_context(deck),
         has_published_tests=has_published_tests,
     )
 
@@ -808,6 +898,9 @@ def deck_ai_upload(
         import_success=request.query_params.get("import_success"),
         update_error=request.query_params.get("update_error"),
         update_success=request.query_params.get("update_success"),
+        tag_error=request.query_params.get("tag_error"),
+        tag_success=request.query_params.get("tag_success"),
+        tag_form=_tag_form_context(deck),
         has_published_tests=has_published_tests,
     )
 
