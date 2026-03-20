@@ -715,14 +715,10 @@ def update_deck_tags(
     } if deck.organization_id else {}
 
     if deck.organization_id is None:
-        if cleaned_names:
-            return RedirectResponse(
-                url=f"{redirect_target}?tag_error={quote_plus('This deck is not linked to an organization, so only existing tags can be assigned')}",
-                status_code=303,
-            )
-        deck.tags = []
-        db.commit()
-        return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus('Tags cleared')}", status_code=303)
+        return RedirectResponse(
+            url=f"{redirect_target}?tag_error={quote_plus('Deck has no organization yet. Reopen this page after the default organization migration is applied')}",
+            status_code=303,
+        )
 
     updated_tags: list[Tag] = []
     for cleaned_name in cleaned_names:
