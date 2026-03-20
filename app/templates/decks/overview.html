@@ -97,23 +97,35 @@
         </div>
       </div>
       {% if deck.tags %}
-        <div class="deck-card__actions" style="margin-bottom: 12px; flex-wrap: wrap;">
+        <div class="tag-badge-list" style="margin-bottom: 12px;">
           {% for tag in deck.tags|sort(attribute='name') %}
-            <span class="button button-secondary button-small" style="cursor: default;">{{ tag.name }}</span>
+            <span class="tag-badge">
+              <span>{{ tag.name }}</span>
+              {% if can_manage_tags %}
+                <form method="post" action="/decks/{{ deck.id }}/tags/{{ tag.id }}/delete" class="tag-badge__remove-form">
+                  <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
+                  <button type="submit" class="tag-badge__remove" aria-label="Remove {{ tag.name }}">×</button>
+                </form>
+              {% endif %}
+            </span>
           {% endfor %}
         </div>
       {% endif %}
-      <form method="post" action="/decks/{{ deck.id }}/tags" class="stack-md">
-        <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
-        <div>
-          <label for="deck-tags">Tags</label>
-          <input id="deck-tags" name="tag_names" value="{{ tag_form.tag_names }}" placeholder="biology, term-1, revision" />
-          <p class="muted">Enter comma-separated tags. Existing organization tags will be reused automatically when the deck belongs to an organization.</p>
-        </div>
-        <div class="deck-card__actions">
-          <button type="submit" class="button">Save tags</button>
-        </div>
-      </form>
+      {% if can_manage_tags %}
+        <form method="post" action="/decks/{{ deck.id }}/tags" class="stack-md">
+          <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
+          <div>
+            <label for="deck-tags">Tags</label>
+            <input id="deck-tags" name="tag_names" value="{{ tag_form.tag_names }}" placeholder="biology, term-1, revision" />
+            <p class="muted">Enter comma-separated tags. Global decks require a system admin. Organization decks allow system admin and matching org admin.</p>
+          </div>
+          <div class="deck-card__actions">
+            <button type="submit" class="button">Save tags</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="muted">You can view deck tags here, but only permitted admins can add or remove them.</p>
+      {% endif %}
     </article>
   {% endif %}
 </section>

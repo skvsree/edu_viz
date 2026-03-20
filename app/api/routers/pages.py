@@ -66,6 +66,17 @@ templates.env.globals["static_asset_url"] = static_asset_url
 templates.env.globals["footer_copyright_text"] = settings.footer_copyright_text
 
 
+def _can_manage_tags(user: User, deck: Deck) -> bool:
+    if user.role == ROLE_SYSTEM_ADMIN:
+        return True
+    if user.role != ROLE_ADMIN:
+        return False
+    if deck.is_global:
+        return False
+    return bool(user.organization_id and deck.organization_id == user.organization_id)
+
+
+
 def _deck_has_published_tests(db: Session, deck_id: UUID) -> bool:
     return bool(db.execute(select(Test.id).where(Test.deck_id == deck_id, Test.is_published.is_(True)).limit(1)).scalars().all())
 
@@ -244,6 +255,7 @@ def _deck_content_response(
     tag_form: dict[str, str] | None = None,
 ):
     can_edit = can_manage_deck(user, deck)
+    can_manage_tags = _can_manage_tags(user, deck)
     flashcards = [card for card in cards if card.card_type == "basic"]
     mcqs = [card for card in cards if card.card_type == "mcq"]
     has_test_content = deck_has_test_content(cards)
@@ -260,6 +272,7 @@ def _deck_content_response(
             "flashcard_count": len(flashcards),
             "mcq_count": len(mcqs),
             "can_edit": can_edit,
+            "can_manage_tags": can_manage_tags,
             "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
             "tests_available": tests_available,
             "has_test_content": has_test_content,
@@ -688,8 +701,10 @@ def update_deck_tags(
     db: Session = Depends(get_db),
 ):
     deck = db.get(Deck, deck_id)
-    if not deck or not can_manage_deck(user, deck):
+    if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
+    if not _can_manage_tags(user, deck):
+        raise HTTPException(status_code=403, detail="You do not have permission to manage tags for this deck.")
 
     redirect_target = next_url.strip() if isinstance(next_url, str) else ""
     if not redirect_target.startswith("/"):
@@ -743,6 +758,34 @@ def update_deck_tags(
     return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus(message)}", status_code=303)
 
 
+@router.post("/decks/{deck_id}/tags/{tag_id}/delete")
+def remove_deck_tag(
+    deck_id: str,
+    tag_id: str,
+    next_url: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not _can_manage_tags(user, deck):
+        raise HTTPException(status_code=403, detail="You do not have permission to manage tags for this deck.")
+
+    tag = db.get(Tag, tag_id)
+    if not tag:
+        raise HTTPException(status_code=404)
+
+    if tag in deck.tags:
+        deck.tags.remove(tag)
+        db.commit()
+
+    redirect_target = next_url.strip() if isinstance(next_url, str) else ""
+    if not redirect_target.startswith("/"):
+        redirect_target = f"/decks/{deck.id}"
+    return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus('Tag removed')}", status_code=303)
+
+
 @router.post("/decks/{deck_id}/delete")
 def delete_deck(
     deck_id: str,
@@ -777,6 +820,7 @@ def deck_overview(
     flashcards = [card for card in cards if card.card_type == "basic"]
     mcqs = [card for card in cards if card.card_type == "mcq"]
     can_edit = can_manage_deck(user, deck)
+    can_manage_tags = _can_manage_tags(user, deck)
     has_test_content = deck_has_test_content(cards)
     tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
     test_count = _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id) if tests_available else 0
@@ -789,6 +833,7 @@ def deck_overview(
             "flashcard_count": len(flashcards),
             "mcq_count": len(mcqs),
             "can_edit": can_edit,
+            "can_manage_tags": can_manage_tags,
             "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
             "tests_available": tests_available,
             "test_count": test_count,

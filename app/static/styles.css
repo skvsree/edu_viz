@@ -1730,3 +1730,39 @@ ul {
     gap: 12px;
   }
 }
+.tag-badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.tag-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(72, 187, 120, 0.14);
+  border: 1px solid rgba(72, 187, 120, 0.28);
+  color: #d6ffe4;
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.tag-badge__remove-form {
+  margin: 0;
+}
+
+.tag-badge__remove {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.tag-badge__remove:hover {
+  opacity: 0.8;
+}
