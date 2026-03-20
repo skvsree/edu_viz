@@ -714,6 +714,16 @@ def update_deck_tags(
         for tag in db.execute(select(Tag).where(Tag.organization_id == deck.organization_id)).scalars().all()
     } if deck.organization_id else {}
 
+    if deck.organization_id is None:
+        if cleaned_names:
+            return RedirectResponse(
+                url=f"{redirect_target}?tag_error={quote_plus('This deck is not linked to an organization, so only existing tags can be assigned')}",
+                status_code=303,
+            )
+        deck.tags = []
+        db.commit()
+        return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus('Tags cleared')}", status_code=303)
+
     updated_tags: list[Tag] = []
     for cleaned_name in cleaned_names:
         normalized = normalize_deck_name(cleaned_name)
