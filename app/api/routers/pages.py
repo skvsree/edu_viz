@@ -751,12 +751,12 @@ def update_deck_tags(
         seen.add(normalized)
         cleaned_names.append(raw_name)
 
+    organization_id = _resolve_deck_tag_organization(db, user=user, deck=deck)
+
     existing_tags = {
         tag.normalized_name: tag
         for tag in db.execute(select(Tag).where(Tag.organization_id == organization_id)).scalars().all()
     }
-
-    organization_id = _resolve_deck_tag_organization(db, user=user, deck=deck)
 
     updated_tags: list[Tag] = []
     for cleaned_name in cleaned_names:
