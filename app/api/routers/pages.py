@@ -77,6 +77,33 @@ def _can_manage_tags(user: User, deck: Deck) -> bool:
 
 
 
+def _default_organization(db: Session) -> Organization:
+    organization = db.execute(select(Organization).where(Organization.name == "Default Organization")).scalars().first()
+    if organization is None:
+        organization = Organization(name="Default Organization", is_ai_enabled=False)
+        db.add(organization)
+        db.flush()
+    return organization
+
+
+
+def _resolve_deck_tag_organization(db: Session, *, user: User, deck: Deck) -> UUID:
+    if deck.organization_id:
+        return deck.organization_id
+
+    if user.organization_id:
+        deck.organization_id = user.organization_id
+        db.flush()
+        return user.organization_id
+
+    organization = _default_organization(db)
+    user.organization_id = organization.id
+    deck.organization_id = organization.id
+    db.flush()
+    return organization.id
+
+
+
 def _deck_has_published_tests(db: Session, deck_id: UUID) -> bool:
     return bool(db.execute(select(Test.id).where(Test.deck_id == deck_id, Test.is_published.is_(True)).limit(1)).scalars().all())
 
@@ -726,14 +753,10 @@ def update_deck_tags(
 
     existing_tags = {
         tag.normalized_name: tag
-        for tag in db.execute(select(Tag).where(Tag.organization_id == deck.organization_id)).scalars().all()
-    } if deck.organization_id else {}
+        for tag in db.execute(select(Tag).where(Tag.organization_id == organization_id)).scalars().all()
+    }
 
-    if deck.organization_id is None:
-        return RedirectResponse(
-            url=f"{redirect_target}?tag_error={quote_plus('Deck has no organization yet. Reopen this page after the default organization migration is applied')}",
-            status_code=303,
-        )
+    organization_id = _resolve_deck_tag_organization(db, user=user, deck=deck)
 
     updated_tags: list[Tag] = []
     for cleaned_name in cleaned_names:
@@ -741,14 +764,13 @@ def update_deck_tags(
         tag = existing_tags.get(normalized)
         if tag is None:
             tag = Tag(
-                organization_id=deck.organization_id,
+                organization_id=organization_id,
                 name=cleaned_name,
                 normalized_name=normalized,
             )
             db.add(tag)
             db.flush()
-            if deck.organization_id:
-                existing_tags[normalized] = tag
+            existing_tags[normalized] = tag
         updated_tags.append(tag)
 
     deck.tags = updated_tags
