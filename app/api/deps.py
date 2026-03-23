@@ -1,6 +1,8 @@
 import uuid
 
-from fastapi import Cookie, Depends, HTTPException
+import secrets
+
+from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -48,3 +50,13 @@ def current_user(
     if user is None:
         raise HTTPException(status_code=401, detail="not authenticated")
     return user
+
+
+def require_bulk_import_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    configured_key = (settings.bulk_import_api_key or "").strip()
+    if not configured_key:
+        raise HTTPException(status_code=503, detail="Bulk import API is not configured")
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    if not secrets.compare_digest(x_api_key, configured_key):
+        raise HTTPException(status_code=403, detail="Invalid API key")
