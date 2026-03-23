@@ -9,6 +9,13 @@ from app.models.test import Test
 from app.models.test_question import TestQuestion
 from app.models.test_attempt import TestAttempt
 from app.models.test_attempt_answer import TestAttemptAnswer
+from app.models.analytics import (
+    UserAnalytics,
+    OrganizationAnalytics,
+    SystemAnalytics,
+    AnalyticsEvent,
+    AnalyticsEventType,
+)
 
 __all__ = [
     "Organization",
@@ -23,4 +30,9 @@ __all__ = [
     "TestQuestion",
     "TestAttempt",
     "TestAttemptAnswer",
+    "UserAnalytics",
+    "OrganizationAnalytics",
+    "SystemAnalytics",
+    "AnalyticsEvent",
+    "AnalyticsEventType",
 ]

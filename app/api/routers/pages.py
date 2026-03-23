@@ -10,14 +10,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Tag, Test, TestAttempt, User
+from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, User
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -389,6 +389,108 @@ def dashboard(
     db: Session = Depends(get_db),
 ):
     return _dashboard_response(request, user=user, db=db)
+
+
+@router.get("/analytics", response_class=HTMLResponse)
+def analytics_home(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if user.role not in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}:
+        raise HTTPException(status_code=403, detail="You do not have access to analytics")
+
+    selected_user_id = request.query_params.get("user_id", "")
+    selected_deck_id = request.query_params.get("deck_id", "")
+
+    # Compute deck completion for accessible decks
+    completion_stats: list[dict[str, object]] = []
+    deck_stats = list_accessible_deck_stats(db, user=user)
+
+    for stats in deck_stats:
+        deck = stats.deck
+        if selected_deck_id and str(deck.id) != selected_deck_id:
+            continue
+
+        total_cards = len(deck.cards)
+        completed_reviews = stats.cards_reviewed
+        percent_complete = 0
+        if total_cards > 0:
+            percent_complete = round(min(completed_reviews / total_cards * 100, 100))
+
+        tests_taken_query = (
+            select(func.count(TestAttempt.id))
+            .join(Test, TestAttempt.test_id == Test.id)
+            .where(Test.deck_id == deck.id)
+        )
+        if selected_user_id:
+            tests_taken_query = tests_taken_query.where(TestAttempt.user_id == selected_user_id)
+        tests_taken = db.execute(tests_taken_query).scalar_one()
+
+        completion_stats.append(
+            {
+                "deck": deck,
+                "percent_complete": percent_complete,
+                "cards_due": stats.cards_due,
+                "cards_reviewed": completed_reviews,
+                "tests_taken": tests_taken,
+            }
+        )
+
+    # Compute user analytics summaries
+    user_summaries = []
+    if user.role == ROLE_SYSTEM_ADMIN:
+        visible_users = db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
+    else:
+        visible_users = (
+            db.execute(select(User).where(User.organization_id == user.organization_id).order_by(User.created_at.desc()))
+            .scalars()
+            .all()
+        )
+
+    if selected_user_id:
+        visible_users = [target_user for target_user in visible_users if str(target_user.id) == selected_user_id]
+
+    for target_user in visible_users:
+        summary = {
+            "user": target_user,
+            "cards_reviewed": 0,
+            "tests_taken": 0,
+        }
+
+        cards_reviewed_query = (
+            select(func.count(Review.id))
+            .join(Card, Card.id == Review.card_id)
+            .where(Card.deck.has(Deck.organization_id == target_user.organization_id) | Deck.is_global.is_(True))
+            .where(Review.card.has(Card.deck.has()))
+        )
+        if selected_deck_id:
+            cards_reviewed_query = cards_reviewed_query.where(Card.deck_id == selected_deck_id)
+        cards_reviewed = db.execute(cards_reviewed_query).scalar() or 0
+
+        tests_taken_query = select(func.count(TestAttempt.id)).where(TestAttempt.user_id == target_user.id)
+        if selected_deck_id:
+            tests_taken_query = tests_taken_query.join(Test, TestAttempt.test_id == Test.id).where(Test.deck_id == selected_deck_id)
+        tests_taken = db.execute(tests_taken_query).scalar() or 0
+
+        summary["cards_reviewed"] = cards_reviewed
+        summary["tests_taken"] = tests_taken
+        user_summaries.append(summary)
+
+    return templates.TemplateResponse(
+        "analytics/index.html",
+        {
+            "request": request,
+            "user": user,
+            "deck_stats": completion_stats,
+            "user_summaries": user_summaries,
+            "visible_users": visible_users,
+            "available_decks": deck_stats,
+            "selected_user_id": selected_user_id,
+            "selected_deck_id": selected_deck_id,
+            "title": "Analytics | edu selviz",
+        },
+    )
 
 
 @router.get("/settings", response_class=HTMLResponse)

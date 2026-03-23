@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card dashboard-decks">
+    <div class="section-heading dashboard-decks__heading">
+      <div>
+        <p class="panel-label">Insights</p>
+        <h1 class="section-title">Analytics</h1>
+        <p class="muted section-copy">
+          {% if user.role == "system_admin" %}
+            View your metrics, organization metrics, and global platform metrics.
+          {% elif user.role == "admin" %}
+            View your metrics and organization-wide analytics.
+          {% else %}
+            View your personal learning analytics.
+          {% endif %}
+        </p>
+      </div>
+      <div class="dashboard-actions">
+        <a href="/dashboard" class="button button-secondary button-small">Back to dashboard</a>
+      </div>
+    </div>
+
+    <form method="get" action="/analytics" class="stack-md analytics-filters">
+      <div class="dashboard-grid">
+        <div>
+          <label for="analytics-user-filter">User</label>
+          <select id="analytics-user-filter" name="user_id">
+            <option value="">All users</option>
+            {% for item in visible_users %}
+              <option value="{{ item.id }}" {% if selected_user_id == (item.id|string) %}selected{% endif %}>
+                {{ item.email or item.identity_sub }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="analytics-deck-filter">Deck</label>
+          <select id="analytics-deck-filter" name="deck_id">
+            <option value="">All decks</option>
+            {% for stat in available_decks %}
+              <option value="{{ stat.deck.id }}" {% if selected_deck_id == (stat.deck.id|string) %}selected{% endif %}>
+                {{ stat.deck.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="dashboard-actions">
+        <button type="submit" class="button button-small">Apply filters</button>
+        <a href="/analytics" class="button button-secondary button-small">Reset</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="card info-card dashboard-note">
+      <p class="panel-label">Your analytics</p>
+      <h2 class="section-subtitle">Personal performance</h2>
+      {% if user_analytics %}
+        <ul class="feature-list feature-list--tight">
+          <li>Total reviews: {{ user_analytics.total_reviews }}</li>
+          <li>Correct reviews: {{ user_analytics.correct_reviews }}</li>
+          <li>Accuracy rate: {{ '%.2f'|format(user_analytics.accuracy_rate * 100) }}%</li>
+          <li>Study time: {{ user_analytics.total_study_time_minutes }} minutes</li>
+          <li>Tests taken: {{ user_analytics.tests_taken }}</li>
+          <li>Average test score: {{ '%.2f'|format(user_analytics.average_test_score) }}</li>
+          <li>MCQs practiced: {{ user_analytics.mcqs_practiced }}</li>
+        </ul>
+      {% else %}
+        <p class="muted">No personal analytics recorded yet.</p>
+      {% endif %}
+    </article>
+
+    {% if organization_analytics %}
+      <article class="card info-card dashboard-note">
+        <p class="panel-label">Organization analytics</p>
+        <h2 class="section-subtitle">Team performance</h2>
+        <ul class="feature-list feature-list--tight">
+          <li>Total users: {{ organization_analytics.total_users }}</li>
+          <li>Active users: {{ organization_analytics.active_users }}</li>
+          <li>Total reviews: {{ organization_analytics.total_reviews }}</li>
+          <li>Correct reviews: {{ organization_analytics.correct_reviews }}</li>
+          <li>Accuracy rate: {{ '%.2f'|format(organization_analytics.organization_accuracy_rate * 100) }}%</li>
+          <li>Total decks: {{ organization_analytics.total_decks }}</li>
+          <li>Total cards: {{ organization_analytics.total_cards }}</li>
+          <li>Tests taken: {{ organization_analytics.tests_taken }}</li>
+        </ul>
+      </article>
+    {% endif %}
+
+    {% if system_analytics %}
+      <article class="card info-card dashboard-note">
+        <p class="panel-label">System analytics</p>
+        <h2 class="section-subtitle">Platform overview</h2>
+        <ul class="feature-list feature-list--tight">
+          <li>Total organizations: {{ system_analytics.total_organizations }}</li>
+          <li>Total users: {{ system_analytics.total_users }}</li>
+          <li>Active users: {{ system_analytics.active_users }}</li>
+          <li>System admins: {{ system_analytics.system_admins }}</li>
+          <li>Total reviews: {{ system_analytics.total_reviews }}</li>
+          <li>Correct reviews: {{ system_analytics.correct_reviews }}</li>
+          <li>Accuracy rate: {{ '%.2f'|format(system_analytics.system_accuracy_rate * 100) }}%</li>
+          <li>Total MCQs generated: {{ system_analytics.total_mcqs_generated }}</li>
+        </ul>
+      </article>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Deck analytics</p>
+        <h2 class="section-subtitle">Deck level performance</h2>
+      </div>
+    </div>
+
+    {% if deck_stats %}
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Deck</th>
+              <th>Scope</th>
+              <th>Progress</th>
+              <th>Cards reviewed</th>
+              <th>Cards due</th>
+              <th>Tests taken</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for stat in deck_stats %}
+              <tr>
+                <td data-label="Deck">{{ stat.deck.name }}</td>
+                <td data-label="Scope">
+                  {% if stat.deck.is_global %}
+                    Global
+                  {% elif stat.deck.organization %}
+                    {{ stat.deck.organization.name }}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td data-label="Progress">{{ stat.percent_complete }}%</td>
+                <td data-label="Cards reviewed">{{ stat.cards_reviewed }}</td>
+                <td data-label="Cards due">{{ stat.cards_due }}</td>
+                <td data-label="Tests taken">{{ stat.tests_taken }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No deck analytics yet</h3>
+        <p class="muted">Deck-level progress will appear here when accessible decks are available.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">User analytics</p>
+        <h2 class="section-subtitle">
+          {% if user.role == "system_admin" %}
+            All users
+          {% else %}
+            Organization users
+          {% endif %}
+        </h2>
+      </div>
+    </div>
+
+    {% if user_summaries %}
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Organization</th>
+              <th>Cards reviewed</th>
+              <th>Tests taken</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for summary in user_summaries %}
+              <tr>
+                <td data-label="User">{{ summary.user.email or summary.user.identity_sub }}</td>
+                <td data-label="Organization">{{ summary.user.organization.name if summary.user.organization else '-' }}</td>
+                <td data-label="Cards reviewed">{{ summary.cards_reviewed }}</td>
+                <td data-label="Tests taken">{{ summary.tests_taken }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No users available</h3>
+        <p class="muted">No visible users were found for this analytics view.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Recent analytics events</p>
+        <h2 class="section-subtitle">Latest activity</h2>
+      </div>
+    </div>
+
+    {% if recent_events %}
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Event</th>
+              <th>User</th>
+              <th>Organization</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for event in recent_events %}
+              <tr>
+                <td data-label="When">{{ event.event_timestamp }}</td>
+                <td data-label="Event">{{ event.event_type.value if event.event_type else '' }}</td>
+                <td data-label="User">{{ event.user_id or '-' }}</td>
+                <td data-label="Organization">{{ event.organization_id or '-' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <h3>No analytics events yet</h3>
+        <p class="muted">Events will appear here after reviews, tests, and other tracked actions are recorded.</p>
+      </div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

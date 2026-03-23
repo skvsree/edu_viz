@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.routers import auth, pages
+from app.api.routers import auth, pages, analytics
 from app.api.routers.content import router as content_router
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # Paths that are served as HTML pages (not API endpoints).
 # An unauthenticated request to any of these should redirect to home.
-_PAGE_PREFIXES = ("/dashboard", "/decks", "/review", "/tests", "/attempts", "/settings")
+_PAGE_PREFIXES = ("/dashboard", "/decks", "/review", "/tests", "/attempts", "/settings", "/analytics")
 
 app = FastAPI(title="edu selviz")
 
@@ -26,11 +26,9 @@ app = FastAPI(title="edu selviz")
 async def redirect_unauthenticated_to_home(request: Request, exc: HTTPException):
     if exc.status_code == 401 and request.url.path.startswith(_PAGE_PREFIXES):
         return RedirectResponse(url="/", status_code=302)
-    # Fall back to the default HTTPException handler for everything else.
     from fastapi.exception_handlers import http_exception_handler
     return await http_exception_handler(request, exc)
 
-# Needed by Authlib to store OIDC state/nonce during the redirect flow.
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.secret_key,
@@ -38,8 +36,6 @@ app.add_middleware(
 )
 
 STATIC_DIR = BASE_DIR / "static"
-
-# Serve static assets reliably regardless of the process working directory.
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
@@ -68,7 +64,7 @@ def promote_bootstrap_system_admin() -> None:
         bootstrap_system_admin_by_email(db)
 
 
-# Routers (controllers)
 app.include_router(auth.router)
 app.include_router(pages.router)
 app.include_router(content_router)
+app.include_router(analytics.router)
