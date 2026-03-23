@@ -15,8 +15,10 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
+    bulk_import_api_key: str | None = None
+ 
+     # Microsoft Entra External ID / generic OIDC configuration.
 
-    # Microsoft Entra External ID / generic OIDC configuration.
     # Prefer the MICROSOFT_ENTRA_EXTERNAL_ID_* env vars for new deployments.
     # Legacy AZURE_B2C_* env vars are still accepted as fallbacks to ease migration.
     microsoft_entra_external_id_tenant_id: str | None = None
