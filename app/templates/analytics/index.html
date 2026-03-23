@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card dashboard-decks">
+    <div class="section-heading dashboard-decks__heading">
+      <div>
+        <p class="panel-label">Performance</p>
+        <h1 class="section-title">Analytics</h1>
+        <p class="muted section-copy">
+          {% if user.role == "system_admin" %}
+            View platform-wide analytics across all organizations, decks, and users.
+          {% else %}
+            Track deck completion and test activity for your organization.
+          {% endif %}
+        </p>
+      </div>
+      <div class="dashboard-actions">
+        <div class="metric-pill">
+          <strong>{{ deck_stats|length }}</strong>
+          <span>Decks monitored</span>
+        </div>
+        <div class="metric-pill">
+          <strong>{{ user_summaries|length }}</strong>
+          <span>Users tracked</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="dashboard-grid">
+    <article class="card">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">Deck progress</p>
+          <h2 class="section-subtitle">Completion overview</h2>
+          <p class="muted">Current completion percentage is based on reviewed cards per deck.</p>
+        </div>
+      </div>
+      {% if deck_stats %}
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Deck</th>
+                <th>Progress</th>
+                <th>Cards reviewed</th>
+                <th>Cards due</th>
+                <th>Tests taken</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for stat in deck_stats %}
+                <tr>
+                  <td>
+                    <div class="stack-xs">
+                      <strong>{{ stat.deck.name }}</strong>
+                      <small class="muted">
+                        {% if stat.deck.is_global %}Global deck{% else %}{{ stat.deck.organization.name if stat.deck.organization else 'Unassigned org' }}{% endif %}
+                      </small>
+                    </div>
+                  </td>
+                  <td>
+                    <div class="progress-bar">
+                      <div class="progress-bar__track">
+                        <div class="progress-bar__fill" style="width: {{ stat.percent_complete }}%"></div>
+                      </div>
+                      <small>{{ stat.percent_complete }}%</small>
+                    </div>
+                  </td>
+                  <td>{{ stat.cards_reviewed }}</td>
+                  <td>{{ stat.cards_due }}</td>
+                  <td>{{ stat.tests_taken }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <h3>No deck analytics yet</h3>
+          <p class="muted">Create or assign decks to see progress data.</p>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="card">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label">User testing</p>
+          <h2 class="section-subtitle">
+            {% if user.role == "system_admin" %}
+              All users
+            {% else %}
+              Organization users
+            {% endif %}
+          </h2>
+          <p class="muted">Track tests taken and review counts per user.</p>
+        </div>
+      </div>
+      {% if user_summaries %}
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Organization</th>
+                <th>Cards reviewed</th>
+                <th>Tests taken</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for summary in user_summaries %}
+                <tr>
+                  <td>
+                    <strong>{{ summary.user.email or summary.user.identity_sub }}</strong>
+                  </td>
+                  <td>
+                    {% if summary.user.organization %}
+                      {{ summary.user.organization.name }}
+                    {% else %}
+                      <span class="muted">Unassigned</span>
+                    {% endif %}
+                  </td>
+                  <td>{{ summary.cards_reviewed }}</td>
+                  <td>{{ summary.tests_taken }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <h3>No user analytics yet</h3>
+          <p class="muted">User data will appear here after they start reviewing or taking tests.</p>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+</section>
+{% endblock %}

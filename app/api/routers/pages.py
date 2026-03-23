@@ -391,6 +391,97 @@ def dashboard(
     return _dashboard_response(request, user=user, db=db)
 
 
+@router.get("/analytics", response_class=HTMLResponse)
+def analytics_home(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    if user.role not in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}:
+        raise HTTPException(status_code=403, detail="You do not have access to analytics")
+
+    # Compute deck completion for accessible decks
+    completion_stats: list[dict[str, object]] = []
+    deck_stats = list_accessible_deck_stats(db, user=user)
+
+    for stats in deck_stats:
+        deck = stats.deck
+        total_cards = len(deck.cards)
+        completed_reviews = stats.cards_reviewed
+        percent_complete = 0
+        if total_cards > 0:
+            percent_complete = round(min(completed_reviews / total_cards * 100, 100))
+
+        # Calculate tests taken for this deck
+        tests_taken = db.execute(
+            select(func.count(TestAttempt.id))
+            .join(Test, TestAttempt.test_id == Test.id)
+            .where(Test.deck_id == deck.id)
+        ).scalar_one()
+
+        completion_stats.append(
+            {
+                "deck": deck,
+                "percent_complete": percent_complete,
+                "cards_due": stats.cards_due,
+                "cards_reviewed": completed_reviews,
+                "tests_taken": tests_taken,
+            }
+        )
+
+    # Compute user analytics summaries
+    user_summaries = []
+    if user.role == ROLE_SYSTEM_ADMIN:
+        visible_users = db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
+    else:
+        visible_users = (
+            db.execute(select(User).where(User.organization_id == user.organization_id).order_by(User.created_at.desc()))
+            .scalars()
+            .all()
+        )
+
+    for target_user in visible_users:
+        summary = {
+            "user": target_user,
+            "cards_reviewed": 0,
+            "tests_taken": 0,
+        }
+
+        # Cards reviewed is approximated by total reviews (distinct cards not tracked yet)
+        cards_reviewed = (
+            db.execute(
+                select(func.count(Review.id))
+                .join(Card, Card.id == Review.card_id)
+                .where(Card.deck.has(Deck.organization_id == target_user.organization_id) | Deck.is_global.is_(True))
+                .where(Review.card.has(Card.deck.has()))
+            ).scalar()
+            or 0
+        )
+
+        tests_taken = (
+            db.execute(
+                select(func.count(TestAttempt.id)).where(TestAttempt.user_id == target_user.id)
+            ).scalar()
+            or 0
+        )
+
+        summary["cards_reviewed"] = cards_reviewed
+        summary["tests_taken"] = tests_taken
+
+        user_summaries.append(summary)
+
+    return templates.TemplateResponse(
+        "analytics/index.html",
+        {
+            "request": request,
+            "user": user,
+            "deck_stats": completion_stats,
+            "user_summaries": user_summaries,
+            "title": "Analytics | edu selviz",
+        },
+    )
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_home(
     request: Request,
