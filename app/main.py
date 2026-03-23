@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from app.api.routers import auth, pages
+from app.api.routers import auth, pages, analytics
 from app.api.routers.content import router as content_router
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -72,3 +72,4 @@ def promote_bootstrap_system_admin() -> None:
 app.include_router(auth.router)
 app.include_router(pages.router)
 app.include_router(content_router)
+app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["analytics"])
