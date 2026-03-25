@@ -54,6 +54,9 @@
       <div class="overview-actions" style="margin-top: 12px;">
         <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
         {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
+        <form method="post" action="/decks/{{ deck.id }}/delete" onsubmit="return confirm('Delete this deck permanently? This cannot be undone.');" style="display:inline;">
+          <button type="submit" class="button button-danger button-small">Delete deck</button>
+        </form>
       </div>
       {% endif %}
     </article>
