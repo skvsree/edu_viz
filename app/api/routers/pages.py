@@ -10,7 +10,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -920,8 +920,33 @@ def delete_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    deck.is_deleted = True
-    deck.deleted_at = datetime.now(timezone.utc)
+    # Hard-delete deck and dependent content (NEET import pipeline behavior)
+    card_ids = db.execute(select(Card.id).where(Card.deck_id == deck.id)).scalars().all()
+    card_id_list = list(card_ids)
+
+    # Delete card/test dependencies first
+    if card_id_list:
+        affected_test_ids = db.execute(
+            select(TestQuestion.test_id).where(TestQuestion.card_id.in_(card_id_list)).distinct()
+        ).scalars().all()
+
+        if affected_test_ids:
+            db.execute(
+                delete(TestAttemptAnswer).where(
+                    TestAttemptAnswer.attempt_id.in_(
+                        select(TestAttempt.id).where(TestAttempt.test_id.in_(affected_test_ids))
+                    )
+                )
+            )
+            db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(affected_test_ids)))
+            db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
+            db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
+
+        db.execute(delete(CardState).where(CardState.card_id.in_(card_id_list)))
+        db.execute(delete(CardReview).where(CardReview.card_id.in_(card_id_list)))
+        db.execute(delete(Card).where(Card.id.in_(card_id_list)))
+
+    db.execute(delete(Deck).where(Deck.id == deck.id))
     db.commit()
 
     success_message = quote_plus("Deck deleted")
