@@ -54,9 +54,6 @@
       <div class="overview-actions" style="margin-top: 12px;">
         <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
         {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
-        <form method="post" action="/decks/{{ deck.id }}/delete" onsubmit="return confirm('Delete this deck permanently? This cannot be undone.');" style="display:inline;">
-          <button type="submit" class="button button-danger button-small">Delete deck</button>
-        </form>
       </div>
       {% endif %}
     </article>
@@ -130,6 +127,22 @@
         <p class="muted">You can view deck tags here, but only permitted admins can add or remove them.</p>
       {% endif %}
     </article>
+
+    <article class="card" style="border: 1px solid rgba(220,53,69,0.35); margin-top: 16px;">
+      <div class="section-heading">
+        <div>
+          <p class="panel-label" style="color: rgb(220,53,69);">Danger zone</p>
+          <h2 class="section-subtitle" style="color: rgb(220,53,69);">Delete deck</h2>
+        </div>
+      </div>
+      <form method="post" action="/decks/{{ deck.id }}/delete" onsubmit="return confirm('Delete this deck permanently? This cannot be undone.');" class="stack-md">
+        <p class="muted">This will permanently delete the deck along with its cards, card states/reviews, and any dependent tests/attempts.</p>
+        <div>
+          <button type="submit" class="button button-danger">Delete deck permanently</button>
+        </div>
+      </form>
+    </article>
+
   {% endif %}
 </section>
 {% endblock %}
