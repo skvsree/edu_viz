@@ -382,6 +382,23 @@ def home(request: Request, user: User | None = Depends(optional_current_user)):
     )
 
 
+@router.get("/login/providers", response_class=HTMLResponse)
+def login_providers(request: Request, user: User | None = Depends(optional_current_user)):
+    if user is not None:
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    return templates.TemplateResponse(
+        "auth/providers.html",
+        {
+            "request": request,
+            "user": user,
+            "title": "Sign in | edu selviz",
+            "microsoft_login_url": "/login/microsoft",
+            "google_login_url": "/login/google",
+        },
+    )
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(
     request: Request,
