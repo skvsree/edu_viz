@@ -16,8 +16,14 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
     bulk_import_api_key: str | None = None
- 
-     # Microsoft Entra External ID / generic OIDC configuration.
+
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/auth/callback/google"
+    google_scopes: str = "openid email profile"
+
+    # Microsoft Entra External ID / generic OIDC configuration.
+
 
     # Prefer the MICROSOFT_ENTRA_EXTERNAL_ID_* env vars for new deployments.
     # Legacy AZURE_B2C_* env vars are still accepted as fallbacks to ease migration.

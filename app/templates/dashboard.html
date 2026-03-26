@@ -20,16 +20,22 @@
       <div>
         <p class="panel-label">Accessible decks</p>
         <h1 class="section-title">Workspace</h1>
-        <p class="muted section-copy">
-          Signed in as {{ user.email or user.identity_sub }}.
-          {% if user.role == "system_admin" %}
-            Manage global and organization decks from one list.
-          {% elif user.role == "admin" %}
-            Review and manage decks for {{ user.organization.name if user.organization else 'your organization once assigned' }}.
-          {% else %}
-            Open any assigned deck and move straight into review.
-          {% endif %}
-        </p>
+        <div class="stack-sm" style="margin-top: 0.5rem;">
+          <span class="panel-label" style="margin-bottom: 0;">Signed in</span>
+          <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.65rem 0.9rem; border-radius: 999px; background: linear-gradient(135deg, rgba(59,130,246,0.16), rgba(16,185,129,0.14)); border: 1px solid rgba(148,163,184,0.35); width: fit-content;">
+            <span style="display: inline-flex; width: 0.65rem; height: 0.65rem; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.15);"></span>
+            <strong style="font-size: 1.02rem; color: var(--text-primary);">{{ user.email or user.identity_sub }}</strong>
+          </div>
+          <p class="muted section-copy" style="margin-top: 0.75rem;">
+            {% if user.role == "system_admin" %}
+              Manage global and organization decks from one list.
+            {% elif user.role == "admin" %}
+              Review and manage decks for {{ user.organization.name if user.organization else 'your organization once assigned' }}.
+            {% else %}
+              Open any assigned deck and move straight into review.
+            {% endif %}
+          </p>
+        </div>
       </div>
       <div class="dashboard-actions">
         <div class="metric-pill">

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="hero" style="align-items: center; min-height: 72vh;">
+  <div class="hero-copy">
+    <div class="hero-brand">
+      <div class="hero-brand__media">
+        <img
+          src="{{ static_asset_url('brand/logo.jpg') }}"
+          alt="edu selviz logo"
+          class="hero-brand__image"
+        />
+      </div>
+      <div class="hero-brand__copy">
+        <span class="eyebrow">edu selviz access</span>
+        <p class="hero-brand__caption">Choose how you want to sign in to your study workspace.</p>
+      </div>
+    </div>
+
+    <h1>Sign in with your preferred account</h1>
+    <p class="hero-text">
+      Use Microsoft or Google to continue. Your account will still map into the same edu selviz workspace.
+    </p>
+
+    <div class="hero-actions">
+      <a href="{{ microsoft_login_url }}" class="button">Sign in with Microsoft</a>
+      <a href="{{ google_login_url }}" class="button button-secondary">Sign in with Google</a>
+    </div>
+  </div>
+
+  <div class="hero-panel card hero-panel--accent">
+    <div class="hero-panel__glow"></div>
+    <div class="hero-panel__brand">
+      <img
+        src="{{ static_asset_url('brand/logo.jpg') }}"
+        alt="edu selviz emblem"
+        class="hero-panel__image"
+      />
+    </div>
+    <p class="panel-label">Clean login</p>
+    <h2>One study system. Two sign-in options.</h2>
+    <ul class="feature-list">
+      <li>Microsoft login for your existing Entra setup.</li>
+      <li>Google login for personal account access.</li>
+      <li>Same workspace after sign-in either way.</li>
+    </ul>
+  </div>
+</section>
+{% endblock %}

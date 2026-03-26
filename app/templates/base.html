@@ -44,9 +44,15 @@
               <a href="/analytics">Analytics</a>
               <a href="/settings">Settings</a>
             {% endif %}
-            <form action="/logout" method="post">
-              <button type="submit" class="button button-secondary button-small">Logout</button>
-            </form>
+            <div class="user-menu">
+              <div class="user-menu__meta user-menu__meta--inline">
+                <span class="user-menu__dot"></span>
+                <span class="user-menu__text">{{ user.email or user.identity_sub }}</span>
+              </div>
+              <form action="/logout" method="post">
+                <button type="submit" class="user-menu__logout user-menu__logout--inline">Logout</button>
+              </form>
+            </div>
           {% else %}
             <a href="/">Home</a>
             <a href="/login">Sign in</a>
