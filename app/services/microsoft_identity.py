@@ -65,6 +65,15 @@ def _resolve_authority() -> str | None:
     return _normalize_url(_legacy_b2c_authority())
 
 
+def _resolve_authority_family(authority: str | None, metadata_url: str | None) -> str | None:
+    # Prefer the exact OIDC metadata endpoint when present.
+    # This keeps the app aligned with Entra External ID discovery.
+    metadata = _normalize_url(metadata_url)
+    if metadata:
+        return metadata.removesuffix("/.well-known/openid-configuration")
+    return authority
+
+
 def _metadata_is_tenant_scoped_microsoft(metadata_url: str | None) -> bool:
     if not metadata_url:
         return False
@@ -183,6 +192,7 @@ def get_identity_config_status() -> MicrosoftIdentityConfigStatus:
     )
     authority = _resolve_authority()
     metadata_url, metadata_source = _resolve_metadata_url(authority)
+    authority = _resolve_authority_family(authority, metadata_url)
 
     missing: list[str] = []
     if not client_id:

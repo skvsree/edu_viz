@@ -16,25 +16,16 @@ edu selviz now treats Microsoft sign-in as a generic OpenID Connect integration,
 Copy `.env.example` to `.env` and set:
 
 - `MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_ID`
-- either `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORITY` **or** `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL`
+- `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL` from the app registration / user flow OIDC metadata document
 - `MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_SECRET` if your app registration uses one
 - `MICROSOFT_ENTRA_EXTERNAL_ID_REDIRECT_URI`
 
-If you already know the exact OpenID metadata endpoint for your Entra External ID tenant,
-use `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL`. That is the least ambiguous option.
+If you know the exact OpenID metadata endpoint for your Entra External ID setup,
+use `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL`. That is the preferred and least ambiguous option.
 
-Important: keep the authorize endpoint and token/metadata authority aligned. A broad
-Microsoft authorize authority like `https://login.microsoftonline.com/common` or
-`https://login.microsoftonline.com/organizations` cannot safely be paired with a
-tenant-scoped metadata/token endpoint; Azure rejects the callback code exchange with
-`AADSTS700005` in that mixed setup.
+If you do not have a metadata URL handy, `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORITY` can still be used as a fallback, and the app will derive discovery metadata from it.
 
-For true multi-tenant Microsoft login, use `common` consistently for discovery and
-authorization, for example:
-
-- `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORITY=https://login.microsoftonline.com/common/v2.0`
-- leave `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORIZE_AUTHORITY` empty unless you need an explicit override
-- leave `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL` empty unless you need an explicit override
+Keep the authorize endpoint and token/metadata authority aligned. Avoid mixing a broad Microsoft authority such as `https://login.microsoftonline.com/common` with a tenant-scoped metadata URL, because Azure can reject the callback code exchange with `AADSTS700005` in that mixed setup.
 
 ### Legacy Azure AD B2C compatibility
 
