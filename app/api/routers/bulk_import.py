@@ -31,6 +31,7 @@ class BulkImportMcqItem(BaseModel):
 class BulkImportDeckPayload(BaseModel):
     grade_no: int = Field(ge=1)
     chapter_no: int | None = Field(default=None, ge=1)
+    subject: str | None = None
     description: str = ""
     tags: list[str] = Field(default_factory=list)
     flashcards: list[BulkImportFlashcardItem] = Field(default_factory=list)
@@ -59,15 +60,17 @@ class BulkImportBatchResponse(BaseModel):
 
 
 
-def _deck_name(grade_no: int, chapter_no: int | None) -> str:
+def _deck_name(grade_no: int, chapter_no: int | None, subject: str | None = None) -> str:
     if chapter_no is None:
+        if subject:
+            return f"grade_{grade_no}_{normalize_deck_name(subject)}_full"
         return f"grade_{grade_no}_science_full"
     return f"grade_{grade_no}_science_chapter_{chapter_no}"
 
 
 
-def _clean_tag_names(grade_no: int, chapter_no: int | None, extra_tags: list[str]) -> list[str]:
-    raw_names = [f"grade_{grade_no}", "science"]
+def _clean_tag_names(grade_no: int, chapter_no: int | None, extra_tags: list[str], subject: str | None = None) -> list[str]:
+    raw_names = [f"grade_{grade_no}", subject or "science"]
     if chapter_no is not None:
         raw_names.append(f"chapter_{chapter_no}")
     raw_names.extend(extra_tags)
@@ -123,10 +126,10 @@ def _import_chapter_deck(payload: BulkImportDeckPayload, db: Session) -> BulkImp
     if not payload.flashcards and not payload.mcqs:
         raise HTTPException(status_code=400, detail="At least one flashcard or MCQ is required")
 
-    deck_name = _deck_name(payload.grade_no, payload.chapter_no)
+    deck_name = _deck_name(payload.grade_no, payload.chapter_no, payload.subject)
     normalized_name = normalize_deck_name(deck_name)
     owner = _system_admin_user(db)
-    tag_names = _clean_tag_names(payload.grade_no, payload.chapter_no, payload.tags)
+    tag_names = _clean_tag_names(payload.grade_no, payload.chapter_no, payload.tags, payload.subject)
 
     query = select(Deck).where(
         Deck.normalized_name == normalized_name,

@@ -116,6 +116,15 @@
 
 ## Feature summary (current state)
 
+### Bulk import
+- Bulk import endpoint is `POST /api/v1/import/deck` and `POST /api/v1/import/decks` with `X-Api-Key` auth via `require_bulk_import_api_key`.
+- Added optional `subject` to bulk import payloads so subject-level full decks can be named like `grade_11_biology_full`, `grade_11_chemistry_full`, etc.
+- QA verified the new subject naming path by importing `grade_11_biology_full`, `grade_11_chemistry_full`, `grade_11_physics_full`, `grade_12_biology_full`, `grade_12_chemistry_full`, and `grade_12_physics_full`.
+- The old `grade_{grade}_science_full` naming still exists for legacy full-science imports.
+- Runtime env key for QA/prod bulk import was confirmed to be `BULK_IMPORT_API_KEY` in `/opt/edu_viz/.env`.
+
+## Feature summary (current state)
+
 ### Dashboard
 - Home page shows simplified deck cards with deck name + Review (green outline) and Test (purple outline) buttons
 - Clicking the deck card opens the deck overview page

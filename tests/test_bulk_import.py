@@ -156,6 +156,23 @@ def test_bulk_import_creates_full_grade_science_deck_name():
     assert {tag.name for tag in created_deck.tags} == {"grade_6", "science", "full_book"}
 
 
+def test_bulk_import_creates_subject_full_deck_name():
+    db = RecordingDB(system_admin=_system_admin(org_id=uuid4()))
+    payload = bulk_import.BulkImportDeckPayload(
+        grade_no=11,
+        chapter_no=None,
+        subject="biology",
+        flashcards=[bulk_import.BulkImportFlashcardItem(front="Q1", back="A1")],
+        tags=["full_book"],
+    )
+
+    response = bulk_import.import_chapter_deck(payload, db=db)
+
+    assert response.deck_name == "grade_11_biology_full"
+    created_deck = next(item for item in db.added if getattr(item, "name", None) == "grade_11_biology_full")
+    assert {tag.name for tag in created_deck.tags} == {"grade_11", "biology", "full_book"}
+
+
 def test_bulk_import_skips_duplicate_cards_on_rerun():
     existing_deck = SimpleNamespace(
         id=uuid4(),
