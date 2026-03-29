@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, User
+from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, deck_tags
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -960,9 +960,11 @@ def delete_deck(
             db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
 
         db.execute(delete(CardState).where(CardState.card_id.in_(card_id_list)))
-        db.execute(delete(CardReview).where(CardReview.card_id.in_(card_id_list)))
+        db.execute(delete(Review).where(Review.card_id.in_(card_id_list)))
         db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
+    # Delete deck_tags before deleting deck (foreign key constraint)
+    db.execute(delete(deck_tags).where(deck_tags.c.deck_id == deck.id))
     db.execute(delete(Deck).where(Deck.id == deck.id))
     db.commit()
 
