@@ -326,8 +326,26 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
 @router.post("/decks/{deck_id}/tests")
 def create_test(deck_id: str, count: int = Form(default=0), user: User = Depends(current_user), db: Session = Depends(get_db)):
     deck = db.get(Deck, deck_id)
-    if not deck or not can_manage_tests(user, deck):
+    if not deck:
         raise HTTPException(status_code=404)
+
+    # Users who have test-taking enabled should be able to start tests.
+    # "Manage" permission is not required for creating/starting a test attempt.
+    tests = list_accessible_tests(db, deck_id=deck.id)
+    has_test_content = bool(
+        db.execute(
+            select(Card.id).where(Card.deck_id == deck.id, Card.card_type == "mcq").limit(1)
+        ).scalars().all()
+    )
+    if not can_open_test_center(
+        user,
+        deck,
+        has_test_content=has_test_content,
+        has_published_tests=bool(tests),
+    ):
+        # Hide existence when user can't access tests.
+        raise HTTPException(status_code=404)
+
     try:
         test = create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, question_count=count or None)
     except ValueError as exc:
