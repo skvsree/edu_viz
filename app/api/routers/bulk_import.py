@@ -32,6 +32,7 @@ class BulkImportDeckPayload(BaseModel):
     grade_no: int = Field(ge=1)
     chapter_no: int | None = Field(default=None, ge=1)
     subject: str | None = None
+    name: str | None = None  # Optional custom deck name (e.g., "neet_biology")
     description: str = ""
     tags: list[str] = Field(default_factory=list)
     flashcards: list[BulkImportFlashcardItem] = Field(default_factory=list)
@@ -60,7 +61,9 @@ class BulkImportBatchResponse(BaseModel):
 
 
 
-def _deck_name(grade_no: int, chapter_no: int | None, subject: str | None = None) -> str:
+def _deck_name(grade_no: int, chapter_no: int | None, subject: str | None = None, custom_name: str | None = None) -> str:
+    if custom_name:
+        return normalize_deck_name(custom_name)
     if chapter_no is None:
         if subject:
             return f"grade_{grade_no}_{normalize_deck_name(subject)}_full"
@@ -126,7 +129,7 @@ def _import_chapter_deck(payload: BulkImportDeckPayload, db: Session) -> BulkImp
     if not payload.flashcards and not payload.mcqs:
         raise HTTPException(status_code=400, detail="At least one flashcard or MCQ is required")
 
-    deck_name = _deck_name(payload.grade_no, payload.chapter_no, payload.subject)
+    deck_name = _deck_name(payload.grade_no, payload.chapter_no, payload.subject, payload.name)
     normalized_name = normalize_deck_name(deck_name)
     owner = _system_admin_user(db)
     tag_names = _clean_tag_names(payload.grade_no, payload.chapter_no, payload.tags, payload.subject)
