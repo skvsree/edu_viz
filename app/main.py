@@ -20,7 +20,12 @@ BASE_DIR = Path(__file__).resolve().parent
 # An unauthenticated request to any of these should redirect to home.
 _PAGE_PREFIXES = ("/dashboard", "/decks", "/review", "/tests", "/attempts", "/settings", "/analytics")
 
-app = FastAPI(title="edu selviz")
+app = FastAPI(
+    title="edu selviz",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    swagger_ui_oauth2_redirect_url="/api/docs/oauth2-redirect",
+)
 
 
 @app.exception_handler(HTTPException)
