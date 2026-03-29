@@ -831,7 +831,7 @@ def update_deck(
         db.commit()
     except IntegrityError:
         db.rollback()
-        return _deck_update_error_response("Unable to update this deck right now. Please try again.")
+        return _deck_update_error_response("Unable to update: a deck with this normalized name already exists in the same scope.")
 
     if redirect_target.startswith(f"/decks/{deck.id}"):
         return RedirectResponse(url=_append_message_param(redirect_target, "update_success", "Deck details updated"), status_code=303)
