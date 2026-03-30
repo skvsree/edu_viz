@@ -747,25 +747,33 @@ body::after {
   justify-content: flex-end;
 }
 
-.deck-star-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  display: inline-flex;
-  color: var(--text-muted, #94a3b8);
-  flex-shrink: 0;
-}
-.deck-star-btn--favorited {
-  color: #f59e0b;
-}
-.deck-star-btn--favorited svg {
-  fill: currentColor;
-  stroke: none;
-}
-.deck-star-btn:not(.deck-star-btn--favorited) svg {
-  fill: none;
-}
+ .deck-star-btn {
+   background: none;
+   border: none;
+   cursor: pointer;
+   padding: 0;
+   display: inline-flex;
+   color: var(--text-muted, #94a3b8);
+   flex-shrink: 0;
+   transition: filter 0.2s ease, transform 0.15s ease;
+ }
+ .deck-star-btn:hover {
+   filter: drop-shadow(0 0 6px currentColor);
+   transform: scale(1.15);
+ }
+ .deck-star-btn--favorited {
+   color: #f59e0b;
+ }
+ .deck-star-btn--favorited:hover {
+   filter: drop-shadow(0 0 8px #f59e0b);
+ }
+ .deck-star-btn--favorited svg {
+   fill: currentColor;
+   stroke: none;
+ }
+ .deck-star-btn:not(.deck-star-btn--favorited) svg {
+   fill: none;
+ }
 
 .button-review {
   border-color: rgba(34, 197, 94, 0.36) !important;
