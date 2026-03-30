@@ -473,6 +473,10 @@ def browse_decks(
 
     total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
 
+    # Pagination window around current page
+    start_page = max(1, page - 2)
+    end_page = min(total_pages, page + 2)
+
     return templates.TemplateResponse(
         "decks/browse.html",
         {
@@ -485,6 +489,8 @@ def browse_decks(
             "total_pages": total_pages,
             "total": total,
             "page_size": BROWSE_PAGE_SIZE,
+            "start_page": start_page,
+            "end_page": end_page,
             "title": "Browse Decks | edu selviz",
         },
     )

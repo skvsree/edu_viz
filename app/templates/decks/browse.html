@@ -65,21 +65,19 @@
             {% endif %}
 
             {# Page number buttons #}
-            {% set start = max(1, page - 2) %}
-            {% set end = min(total_pages, page + 2) %}
-            {% if start > 1 %}
+            {% if start_page > 1 %}
               <a href="?q={{ q }}&page=1" class="button button-ghost page-num">1</a>
-              {% if start > 2 %}<span class="pagination__ellipsis">…</span>{% endif %}
+              {% if start_page > 2 %}<span class="pagination__ellipsis">…</span>{% endif %}
             {% endif %}
-            {% for p in range(start, end + 1) %}
+            {% for p in range(start_page, end_page + 1) %}
               {% if p == page %}
                 <span class="button page-num page-num--active" aria-current="page">{{ p }}</span>
               {% else %}
                 <a href="?q={{ q }}&page={{ p }}" class="button button-ghost page-num">{{ p }}</a>
               {% endif %}
             {% endfor %}
-            {% if end < total_pages %}
-              {% if end < total_pages - 1 %}<span class="pagination__ellipsis">…</span>{% endif %}
+            {% if end_page < total_pages %}
+              {% if end_page < total_pages - 1 %}<span class="pagination__ellipsis">…</span>{% endif %}
               <a href="?q={{ q }}&page={{ total_pages }}" class="button button-ghost page-num">{{ total_pages }}</a>
             {% endif %}
 
