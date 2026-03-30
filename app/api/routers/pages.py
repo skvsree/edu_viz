@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, deck_tags
+from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, UserDeckFavorite, deck_tags
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -333,6 +333,15 @@ def _dashboard_response(
     edit_form: dict[str, str | bool] | None = None,
 ):
     deck_stats = list_accessible_deck_stats(db, user=user)
+
+    # Compute user's favorite deck IDs
+    favorite_deck_ids = set()
+    fav_rows = db.execute(
+        select(UserDeckFavorite.deck_id)
+        .where(UserDeckFavorite.user_id == user.id)
+    ).scalars().all()
+    favorite_deck_ids = {str(f) for f in fav_rows}
+
     requested_edit_deck_id = request.query_params.get("edit_deck")
     if modal_deck is None and requested_edit_deck_id:
         requested_deck = db.get(Deck, requested_edit_deck_id)
@@ -347,6 +356,7 @@ def _dashboard_response(
             "request": request,
             "user": user,
             "deck_stats": deck_stats,
+            "favorite_deck_ids": favorite_deck_ids,
             "can_manage_decks": can_manage_decks(user),
             "can_manage_deck": can_manage_deck,
             "dashboard_error": dashboard_error if dashboard_error is not None else request.query_params.get("error"),
@@ -992,12 +1002,19 @@ def deck_overview(
     has_test_content = deck_has_test_content(cards)
     tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
     test_count = _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id) if tests_available else 0
+
+    is_favorited = db.execute(
+        select(UserDeckFavorite)
+        .where(UserDeckFavorite.user_id == user.id, UserDeckFavorite.deck_id == deck.id)
+    ).scalars().first() is not None
+
     return templates.TemplateResponse(
         "decks/overview.html",
         {
             "request": request,
             "user": user,
             "deck": deck,
+            "is_favorited": is_favorited,
             "flashcard_count": len(flashcards),
             "mcq_count": len(mcqs),
             "can_edit": can_edit,

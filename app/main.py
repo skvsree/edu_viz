@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.routers import auth, pages, analytics
+from app.api.routers.favorites import router as favorites_router
 from app.api.routers.bulk_import import router as bulk_import_router
 from app.api.routers.content import router as content_router
 from app.core.config import settings
@@ -75,3 +76,4 @@ app.include_router(pages.router)
 app.include_router(content_router)
 app.include_router(analytics.router)
 app.include_router(bulk_import_router)
+app.include_router(favorites_router)
