@@ -58,24 +58,39 @@
 
       {# Pagination #}
       {% if total_pages > 1 %}
-        <nav class="pagination" aria-label="Browse pagination">
-          {% if page > 1 %}
-            <a href="?q={{ q }}&page={{ page - 1 }}" class="pagination__prev" aria-label="Previous page">&larr; Prev</a>
-          {% else %}
-            <span class="pagination__prev pagination__prev--disabled">&larr; Prev</span>
-          {% endif %}
+        <nav class="pagination pagination--prominent" aria-label="Browse pagination">
+          <div class="pagination__controls">
+            {% if page > 1 %}
+              <a href="?q={{ q }}&page={{ page - 1 }}" class="button button-secondary" aria-label="Previous page">&larr; Previous</a>
+            {% endif %}
 
-          <span class="pagination__info">
-            Page {{ page }} of {{ total_pages }}
-            <span class="muted">({{ total }} decks)</span>
-          </span>
+            {# Page number buttons #}
+            {% set start = max(1, page - 2) %}
+            {% set end = min(total_pages, page + 2) %}
+            {% if start > 1 %}
+              <a href="?q={{ q }}&page=1" class="button button-ghost page-num">1</a>
+              {% if start > 2 %}<span class="pagination__ellipsis">…</span>{% endif %}
+            {% endif %}
+            {% for p in range(start, end + 1) %}
+              {% if p == page %}
+                <span class="button page-num page-num--active" aria-current="page">{{ p }}</span>
+              {% else %}
+                <a href="?q={{ q }}&page={{ p }}" class="button button-ghost page-num">{{ p }}</a>
+              {% endif %}
+            {% endfor %}
+            {% if end < total_pages %}
+              {% if end < total_pages - 1 %}<span class="pagination__ellipsis">…</span>{% endif %}
+              <a href="?q={{ q }}&page={{ total_pages }}" class="button button-ghost page-num">{{ total_pages }}</a>
+            {% endif %}
 
-          {% if page < total_pages %}
-            <a href="?q={{ q }}&page={{ page + 1 }}" class="pagination__next" aria-label="Next page">Next &rarr;</a>
-          {% else %}
-            <span class="pagination__next pagination__next--disabled">Next &rarr;</span>
-          {% endif %}
+            {% if page < total_pages %}
+              <a href="?q={{ q }}&page={{ page + 1 }}" class="button button-secondary" aria-label="Next page">Next &rarr;</a>
+            {% endif %}
+          </div>
+          <span class="pagination__info">{{ total }} decks &middot; Page {{ page }} of {{ total_pages }}</span>
         </nav>
+      {% elif total > 0 %}
+        <p class="pagination__info pagination__info--single">Showing all {{ total }} decks</p>
       {% endif %}
     {% else %}
       <div class="empty-state">

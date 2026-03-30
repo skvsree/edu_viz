@@ -43,7 +43,6 @@
         <nav class="topbar-nav" aria-label="Primary navigation">
           {% if user %}
             <a href="/dashboard">Favorites</a>
-            <a href="/decks/browse">Browse Decks</a>
             {% if user.role in ["admin", "system_admin"] %}
               <a href="/analytics">Analytics</a>
               <a href="/settings">Settings</a>
