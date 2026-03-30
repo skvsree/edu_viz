@@ -1,7 +1,7 @@
 """add user deck favorites
 
 Revision ID: 0010
-Revises: 0009
+Revises: '0009'
 Create Date: 2026-03-30
 
 """
