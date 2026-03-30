@@ -2091,6 +2091,16 @@ ul {
   color: #1e293b;
 }
 
+[data-theme="light"] .tag-badge {
+  background: rgba(72, 187, 120, 0.1);
+  border-color: rgba(72, 187, 120, 0.3);
+  color: #16a34a;
+}
+
+[data-theme="light"] .tag-badge__remove {
+  color: #94a3b8;
+}
+
 [data-theme="light"] .hero-panel {
   background: linear-gradient(180deg, rgba(238, 242, 255, 0.96), rgba(241, 245, 249, 0.92));
   border-color: rgba(109, 94, 252, 0.2);
