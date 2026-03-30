@@ -2328,11 +2328,6 @@ ul {
   color: #1e293b;
 }
 
-/* Review body override */
-[data-theme="light"] .review-body {
-  color: #1e293b;
-}
-
 /* Footer */
 [data-theme="light"] .site-footer {
   color: #94a3b8;
@@ -2351,7 +2346,192 @@ ul {
   color: #64748b;
 }
 
-/* User badge (signed-in indicator) */
+/* Danger / delete button in light mode */
+[data-theme="light"] .button-danger {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+}
+
+[data-theme="light"] .button-danger:hover {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: #dc2626;
+}
+
+/* User menu in light mode — keep it clean */
+[data-theme="light"] .user-menu {
+  background: rgba(241, 245, 249, 0.9);
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+[data-theme="light"] .user-menu__text {
+  color: #1e293b;
+  font-weight: 700;
+}
+
+[data-theme="light"] .user-menu__logout--inline {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #dc2626;
+}
+
+[data-theme="light"] .user-menu__logout--inline:hover {
+  background: rgba(239, 68, 68, 0.14);
+}
+
+/* Count badges (MCQ / flash card counts) in light mode */
+[data-theme="light"] .overview-nav__count {
+  background: rgba(109, 94, 252, 0.12);
+  color: #6d5efc;
+}
+
+[data-theme="light"] .bulk-actions__count {
+  color: #64748b;
+}
+
+/* Modal count buttons in light mode */
+[data-theme="light"] .modal-count-btn {
+  background: rgba(109, 94, 252, 0.1);
+  border-color: rgba(109, 94, 252, 0.25);
+  color: #6d5efc;
+}
+
+/* Review/test pages — keep warm paper background in dark mode.
+   These pages have their own distinct warm "dark" theme by design. */
+.review-body,
+[data-theme="dark"] .review-body {
+  color: #1f2937;
+  background:
+    radial-gradient(circle at top, rgba(120, 113, 108, 0.1), transparent 36%),
+    linear-gradient(180deg, #f8f3e8 0%, #f3ede1 48%, #efe7d8 100%);
+}
+
+[data-theme="light"] .review-body {
+  background:
+    radial-gradient(circle at top, rgba(109, 94, 252, 0.06), transparent 36%),
+    linear-gradient(180deg, #f1f5f9 0%, #e8eef5 48%, #f8fafc 100%);
+}
+
+[data-theme="light"] .review-shell {
+  /* already inherits fine */
+}
+
+[data-theme="light"] .review-topbar {
+  border-bottom-color: rgba(148, 163, 184, 0.2);
+}
+
+[data-theme="light"] .review-brand {
+  color: #1e293b;
+}
+
+[data-theme="light"] .review-brand small {
+  color: #64748b;
+}
+
+[data-theme="light"] .review-focus-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(148, 163, 184, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .review-card__text {
+  background: rgba(241, 245, 249, 0.7);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #1e293b;
+}
+
+[data-theme="light"] .review-card__text--answer {
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.2);
+}
+
+[data-theme="light"] .review-answer {
+  background: rgba(241, 245, 249, 0.6);
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #1e293b;
+}
+
+[data-theme="light"] .review-body .button {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .review-body .button-secondary {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #475569;
+}
+
+[data-theme="light"] .review-body .button-secondary:hover {
+  background: rgba(109, 94, 252, 0.08);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+[data-theme="light"] .test-counter {
+  background: rgba(109, 94, 252, 0.1);
+  color: #6d5efc;
+}
+
+[data-theme="light"] .test-report-counter {
+  background: rgba(109, 94, 252, 0.1);
+  color: #6d5efc;
+}
+
+[data-theme="light"] .test-question-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(148, 163, 184, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .test-question-text {
+  color: #1e293b;
+}
+
+[data-theme="light"] .test-option {
+  background: rgba(241, 245, 249, 0.7);
+  border-color: rgba(148, 163, 184, 0.25);
+  color: #1e293b;
+}
+
+[data-theme="light"] .test-option:hover {
+  border-color: rgba(109, 94, 252, 0.4);
+  background: rgba(109, 94, 252, 0.06);
+}
+
+[data-theme="light"] .test-option-text {
+  color: #1e293b;
+}
+
+[data-theme="light"] .test-report-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(148, 163, 184, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .test-report-question-text {
+  color: #1e293b;
+}
+
+[data-theme="light"] .test-report-option {
+  background: rgba(241, 245, 249, 0.6);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+[data-theme="light"] .test-report-option-text {
+  color: #1e293b;
+}
+
+[data-theme="light"] .site-footer--review {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .review-brand__copy strong {
+  color: #1e293b;
+}
+
+[data-theme="light"] .review-brand__copy small {
+  color: #64748b;
+}
 .user-badge {
   display: inline-flex;
   align-items: center;
