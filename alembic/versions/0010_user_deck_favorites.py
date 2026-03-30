@@ -1,7 +1,7 @@
 """add user deck favorites
 
 Revision ID: 0010
-Revises: '0009'
+Revises: '0009_add_analytics_tables'
 Create Date: 2026-03-30
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "0010"
-down_revision = "0009"
+down_revision = '0009_add_analytics_tables'
 branch_labels = None
 depends_on = None
 
