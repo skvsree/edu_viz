@@ -2092,9 +2092,13 @@ ul {
 }
 
 [data-theme="light"] .tag-badge {
-  background: rgba(72, 187, 120, 0.1);
-  border-color: rgba(72, 187, 120, 0.3);
-  color: #16a34a;
+  background: rgba(72, 187, 120, 0.1) !important;
+  border-color: rgba(72, 187, 120, 0.3) !important;
+  color: #16a34a !important;
+}
+
+[data-theme="light"] .tag-badge > span {
+  color: #16a34a !important;
 }
 
 [data-theme="light"] .tag-badge__remove {
