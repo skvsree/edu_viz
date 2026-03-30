@@ -2083,6 +2083,14 @@ ul {
   background: transparent;
 }
 
+[data-theme="light"] .study-card__date {
+  color: #64748b;
+}
+
+[data-theme="light"] .study-card__test-title {
+  color: #1e293b;
+}
+
 [data-theme="light"] .hero-panel {
   background: linear-gradient(180deg, rgba(238, 242, 255, 0.96), rgba(241, 245, 249, 0.92));
   border-color: rgba(109, 94, 252, 0.2);
