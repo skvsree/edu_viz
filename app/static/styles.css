@@ -2262,7 +2262,13 @@ ul {
 
 /* Dashboard section headings */
 [data-theme="light"] .section-title {
-  color: #1e293b;
+  color: #0f172a;
+}
+
+/* Deck name on overview page — extra dark */
+[data-theme="light"] .page-content .section-title,
+[data-theme="light"] .page-content .section-title span {
+  color: #0f172a !important;
 }
 
 [data-theme="light"] .panel-label {
@@ -2452,7 +2458,14 @@ ul {
 }
 
 [data-theme="light"] .review-body .button {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(109, 94, 252, 0.3);
+}
+
+[data-theme="light"] .review-body .button:hover {
+  background: var(--primary-strong);
+  box-shadow: 0 4px 16px rgba(109, 94, 252, 0.4);
 }
 
 [data-theme="light"] .review-body .button-secondary {
@@ -2519,6 +2532,39 @@ ul {
 
 [data-theme="light"] .test-report-option-text {
   color: #1e293b;
+}
+
+/* Review rating buttons — bright accents in light mode */
+[data-theme="light"] .button-rating--muted {
+  background: linear-gradient(135deg, #94a3b8, #64748b);
+  color: #fff;
+}
+
+[data-theme="light"] .button-rating--warm {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+[data-theme="light"] .button-rating--cool {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+}
+
+[data-theme="light"] .button-rating--bright {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff;
+}
+
+/* Test nav buttons — bright accent in light mode */
+[data-theme="light"] .test-nav .button:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 12px rgba(109, 94, 252, 0.35);
+}
+
+[data-theme="light"] .test-nav .button:not(:disabled):hover {
+  background: var(--primary-strong);
+  box-shadow: 0 4px 16px rgba(109, 94, 252, 0.45);
 }
 
 [data-theme="light"] .site-footer--review {
