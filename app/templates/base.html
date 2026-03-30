@@ -6,8 +6,11 @@
     <title>{{ title or 'edu selviz' }}</title>
     <meta
       name="description"
-      content="edu selviz is a focused study workspace for spaced repetition, deck management, and calm daily review."
+      content="{{ description or 'edu selviz is a focused study workspace for spaced repetition, deck management, and calm daily review.' }}"
     />
+
+    {# SEO helpers #}
+    {% block extra_seo %}{% endblock %}
     <meta name="theme-color" content="#07111f" />
     <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />

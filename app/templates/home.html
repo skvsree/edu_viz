@@ -1,4 +1,21 @@
 {% extends "base.html" %}
+
+{% block extra_seo %}
+  {% set seo_title = 'NEET & JEE Training: Spaced Repetition Study Decks | edu selviz' %}
+  {% set seo_description = 'Train for NEET and JEE with ready-to-use practice decks. edu selviz helps you study with spaced repetition, fast review sessions, and calm daily scheduling.' %}
+
+  <title>{{ seo_title }}</title>
+  <meta name="description" content="{{ seo_description }}" />
+
+  <meta property="og:title" content="{{ seo_title }}" />
+  <meta property="og:description" content="{{ seo_description }}" />
+  <meta property="og:type" content="website" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="{{ seo_title }}" />
+  <meta name="twitter:description" content="{{ seo_description }}" />
+{% endblock %}
+
 {% block content %}
 <section class="hero">
   <div class="hero-copy">
