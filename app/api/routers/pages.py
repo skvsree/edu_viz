@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, deck_tags
+from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, UserDeckFavorite, deck_tags
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -333,6 +333,17 @@ def _dashboard_response(
     edit_form: dict[str, str | bool] | None = None,
 ):
     deck_stats = list_accessible_deck_stats(db, user=user)
+
+    # Compute user's favorite deck IDs
+    fav_rows = db.execute(
+        select(UserDeckFavorite.deck_id)
+        .where(UserDeckFavorite.user_id == user.id)
+    ).scalars().all()
+    favorite_deck_ids = {str(f) for f in fav_rows}
+
+    # Filter deck_stats to only favorites (for display on dashboard)
+    favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
+
     requested_edit_deck_id = request.query_params.get("edit_deck")
     if modal_deck is None and requested_edit_deck_id:
         requested_deck = db.get(Deck, requested_edit_deck_id)
@@ -346,7 +357,8 @@ def _dashboard_response(
         {
             "request": request,
             "user": user,
-            "deck_stats": deck_stats,
+            "deck_stats": favorite_deck_stats,
+            "favorite_deck_ids": favorite_deck_ids,
             "can_manage_decks": can_manage_decks(user),
             "can_manage_deck": can_manage_deck,
             "dashboard_error": dashboard_error if dashboard_error is not None else request.query_params.get("error"),
@@ -406,6 +418,82 @@ def dashboard(
     db: Session = Depends(get_db),
 ):
     return _dashboard_response(request, user=user, db=db)
+
+
+BROWSE_PAGE_SIZE = 10
+
+
+@router.get("/decks/browse", response_class=HTMLResponse)
+def browse_decks(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.access import accessible_deck_clause
+
+    q = request.query_params.get("q", "").strip()
+    page = request.query_params.get("page", "1")
+    try:
+        page = max(1, int(page))
+    except ValueError:
+        page = 1
+
+    # Base query — accessible decks
+    base_q = (
+        select(Deck)
+        .options(selectinload(Deck.organization), selectinload(Deck.tags))
+        .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
+    )
+
+    # Search filter
+    if q:
+        base_q = base_q.where(Deck.normalized_name.ilike(f"%{q}%"))
+
+    # Count total
+    count_q = select(func.count()).select_from(base_q.subquery())
+    total = db.execute(count_q).scalar_one()
+
+    # Paginated
+    offset = (page - 1) * BROWSE_PAGE_SIZE
+    decks = (
+        db.execute(
+            base_q.order_by(Deck.is_global.desc(), Deck.created_at.desc())
+            .limit(BROWSE_PAGE_SIZE)
+            .offset(offset)
+        )
+        .scalars()
+        .all()
+    )
+
+    # Favorite IDs for current user
+    fav_rows = db.execute(
+        select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
+    ).scalars().all()
+    favorite_deck_ids = {str(f) for f in fav_rows}
+
+    total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
+
+    # Pagination window around current page
+    start_page = max(1, page - 2)
+    end_page = min(total_pages, page + 2)
+
+    return templates.TemplateResponse(
+        "decks/browse.html",
+        {
+            "request": request,
+            "user": user,
+            "decks": decks,
+            "favorite_deck_ids": favorite_deck_ids,
+            "q": q,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
+            "page_size": BROWSE_PAGE_SIZE,
+            "start_page": start_page,
+            "end_page": end_page,
+            "title": "Browse Decks | edu selviz",
+        },
+    )
 
 
 @router.get("/analytics", response_class=HTMLResponse)
@@ -992,12 +1080,19 @@ def deck_overview(
     has_test_content = deck_has_test_content(cards)
     tests_available = can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=has_published_tests)
     test_count = _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id) if tests_available else 0
+
+    is_favorited = db.execute(
+        select(UserDeckFavorite)
+        .where(UserDeckFavorite.user_id == user.id, UserDeckFavorite.deck_id == deck.id)
+    ).scalars().first() is not None
+
     return templates.TemplateResponse(
         "decks/overview.html",
         {
             "request": request,
             "user": user,
             "deck": deck,
+            "is_favorited": is_favorited,
             "flashcard_count": len(flashcards),
             "mcq_count": len(mcqs),
             "can_edit": can_edit,

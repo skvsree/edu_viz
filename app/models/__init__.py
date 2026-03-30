@@ -1,6 +1,7 @@
 from app.models.organization import Organization
 from app.models.user import User
 from app.models.deck import Deck
+from app.models.user_deck_favorite import UserDeckFavorite
 from app.models.card import Card
 from app.models.card_state import CardState
 from app.models.review import Review
@@ -21,6 +22,7 @@ __all__ = [
     "Organization",
     "User",
     "Deck",
+    "UserDeckFavorite",
     "Card",
     "CardState",
     "Review",
@@ -35,4 +37,5 @@ __all__ = [
     "SystemAnalytics",
     "AnalyticsEvent",
     "AnalyticsEventType",
+    "UserDeckFavorite",
 ]

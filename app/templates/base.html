@@ -6,9 +6,12 @@
     <title>{{ title or 'edu selviz' }}</title>
     <meta
       name="description"
-      content="edu selviz is a focused study workspace for spaced repetition, deck management, and calm daily review."
+      content="{{ description or 'edu selviz is a focused study workspace for spaced repetition, deck management, and calm daily review.' }}"
     />
-    <meta name="theme-color" content="#07111f" />
+
+    {# SEO helpers #}
+    {% block extra_seo %}{% endblock %}
+    <meta name="theme-color" content="#07111f" id="theme-meta" />
     <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,6 +20,17 @@
       href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    {# Apply saved theme before paint to avoid flash #}
+    <script>
+      (function () {
+        var t = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+        if (t === 'light') {
+          var m = document.getElementById('theme-meta');
+          if (m) m.setAttribute('content', '#f1f5f9');
+        }
+      })();
+    </script>
     <script src="{{ static_asset_url('vendor/htmx.min.js') }}"></script>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
     {% block extra_head %}{% endblock %}
@@ -38,8 +52,14 @@
           </span>
         </a>
         <nav class="topbar-nav" aria-label="Primary navigation">
+          <button
+            id="theme-toggle"
+            class="theme-toggle"
+            aria-label="Toggle dark/light theme"
+            title="Toggle theme (T)"
+          >🌙</button>
           {% if user %}
-            <a href="/dashboard">Workspace</a>
+            <a href="/dashboard">Home</a>
             {% if user.role in ["admin", "system_admin"] %}
               <a href="/analytics">Analytics</a>
               <a href="/settings">Settings</a>
@@ -68,5 +88,29 @@
         <small>{{ footer_copyright_text }}</small>
       </footer>
     </div>
+    <script>
+      (function () {
+        var btn = document.getElementById('theme-toggle');
+        var meta = document.getElementById('theme-meta');
+        function applyTheme(t) {
+          document.documentElement.setAttribute('data-theme', t);
+          localStorage.setItem('theme', t);
+          if (meta) meta.setAttribute('content', t === 'light' ? '#f1f5f9' : '#07111f');
+          btn.textContent = t === 'light' ? '🌙' : '☀️';
+        }
+        btn.addEventListener('click', function () {
+          var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+          applyTheme(cur === 'dark' ? 'light' : 'dark');
+        });
+        document.addEventListener('keydown', function (e) {
+          if (e.key === 't' || e.key === 'T') {
+            if (document.activeElement === document.body || document.activeElement === document.documentElement) {
+              var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+              applyTheme(cur === 'dark' ? 'light' : 'dark');
+            }
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

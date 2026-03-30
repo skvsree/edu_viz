@@ -15,33 +15,26 @@
     </section>
   {% endif %}
 
+  {# Favorites section #}
   <section class="card dashboard-decks">
     <div class="section-heading dashboard-decks__heading">
       <div>
-        <p class="panel-label">Accessible decks</p>
-        <h1 class="section-title">Workspace</h1>
+        <p class="panel-label">Your starred decks</p>
+        <h1 class="section-title">Favorites</h1>
         <div class="stack-sm" style="margin-top: 0.5rem;">
           <span class="panel-label" style="margin-bottom: 0;">Signed in</span>
-          <div style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.65rem 0.9rem; border-radius: 999px; background: linear-gradient(135deg, rgba(59,130,246,0.16), rgba(16,185,129,0.14)); border: 1px solid rgba(148,163,184,0.35); width: fit-content;">
-            <span style="display: inline-flex; width: 0.65rem; height: 0.65rem; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,0.15);"></span>
-            <strong style="font-size: 1.02rem; color: var(--text-primary);">{{ user.email or user.identity_sub }}</strong>
+          <div class="user-badge">
+            <span class="user-badge__dot"></span>
+            <strong>{{ user.email or user.identity_sub }}</strong>
           </div>
-          <p class="muted section-copy" style="margin-top: 0.75rem;">
-            {% if user.role == "system_admin" %}
-              Manage global and organization decks from one list.
-            {% elif user.role == "admin" %}
-              Review and manage decks for {{ user.organization.name if user.organization else 'your organization once assigned' }}.
-            {% else %}
-              Open any assigned deck and move straight into review.
-            {% endif %}
-          </p>
         </div>
       </div>
       <div class="dashboard-actions">
         <div class="metric-pill">
           <strong>{{ deck_stats|length }}</strong>
-          <span>Decks</span>
+          <span>Favorites</span>
         </div>
+        <a href="/decks/browse" class="button button-small">Browse Decks</a>
         {% if can_manage_decks %}
           <a
             href="/dashboard?modal=create"
@@ -55,13 +48,13 @@
     </div>
 
     {% if deck_stats %}
-      <div class="deck-search">
-        <input type="text" id="deck-search" placeholder="Search decks..." />
-      </div>
-      <div class="deck-grid deck-grid--dashboard" id="deck-grid">
+      <div class="deck-grid deck-grid--dashboard" id="favorites-grid">
         {% for item in deck_stats %}
-          <article class="deck-card deck-card--simple" data-name="{{ item.deck.name | lower }}" data-href="/decks/{{ item.deck.id }}">
+          <article class="deck-card deck-card--simple" data-name="{{ item.deck.name | lower }}" data-href="/decks/{{ item.deck.id }}" data-deck-id="{{ item.deck.id }}">
             <div class="deck-card__content">
+              <button type="button" class="deck-star-btn deck-star-btn--favorited" data-deck-id="{{ item.deck.id }}" title="Remove from favorites" aria-label="Remove {{ item.deck.name }} from favorites">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              </button>
               <h3 class="deck-card__title">{{ item.deck.name }}</h3>
             </div>
             <div class="deck-card__actions deck-card__actions--inline">
@@ -73,18 +66,15 @@
       </div>
     {% else %}
       <div class="empty-state">
-        <h3>No decks available yet</h3>
+        <h3>No favorites yet</h3>
         <p class="muted">
-          {% if user.organization_id %}
-            Ask an admin to add organization decks or assign global content.
-          {% else %}
-            A system admin needs to assign you to an organization before org decks appear here.
-          {% endif %}
+          <a href="/decks/browse">Browse all decks</a> and star the ones you want to study.
         </p>
       </div>
     {% endif %}
   </section>
 
+  {# Info cards #}
   <section class="dashboard-grid">
     {% if not can_manage_decks %}
       <article class="card info-card dashboard-note">
@@ -103,13 +93,14 @@
       <p class="panel-label">Study flow</p>
       <h2 class="section-subtitle">Keep your revision loop simple</h2>
       <ul class="feature-list feature-list--tight">
-        <li>Review the decks available through your organization or global library.</li>
+        <li>Star decks you study regularly so they appear here on your dashboard.</li>
+        <li>Use <a href="/decks/browse">Browse Decks</a> to find and star new decks.</li>
         <li>Track due work, review volume, and recent activity in one place.</li>
-        <li>Admins manage deck content while learners stay focused on revision.</li>
       </ul>
     </article>
   </section>
 
+  {# Create deck inline form #}
   {% if can_manage_decks and active_modal == "create" %}
     <article class="card form-card" id="deck-create-fallback">
       <div class="section-heading">
@@ -141,6 +132,7 @@
     </article>
   {% endif %}
 
+  {# Edit deck inline form #}
   {% if can_manage_decks and active_modal == "edit" and modal_deck %}
     <article class="card form-card" id="deck-edit-fallback">
       <div class="section-heading">
@@ -172,6 +164,7 @@
     </article>
   {% endif %}
 
+  {# Create deck modal #}
   {% if can_manage_decks %}
     <dialog
       id="create-deck-modal"
@@ -246,27 +239,6 @@
     </dialog>
   {% endif %}
 </section>
-
-<script>
-  (() => {
-    const grid = document.getElementById("deck-grid");
-    const search = document.getElementById("deck-search");
-    if (!grid || !search) return;
-    const cards = grid.querySelectorAll(".deck-card--simple");
-    cards.forEach((card) => {
-      card.style.cursor = "pointer";
-      card.addEventListener("click", () => {
-        window.location.href = card.dataset.href;
-      });
-    });
-    search.addEventListener("input", () => {
-      const q = search.value.trim().toLowerCase();
-      cards.forEach((card) => {
-        card.style.display = !q || card.dataset.name.includes(q) ? "" : "none";
-      });
-    });
-  })();
-</script>
 
 {% if can_manage_decks %}
   <script>
@@ -369,4 +341,84 @@
     })();
   </script>
 {% endif %}
+
+<script>
+  (() => {
+    const FAVORITES_API = "/api/v1/favorites/decks/";
+
+    function getSvgStar(filled) {
+      if (filled) {
+        return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+      }
+      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+    }
+
+    function updateStarBtn(btn, isFavorited) {
+      btn.innerHTML = getSvgStar(isFavorited);
+      btn.classList.toggle("deck-star-btn--favorited", isFavorited);
+      btn.title = isFavorited ? "Remove from favorites" : "Add to favorites";
+      btn.setAttribute("aria-label", isFavorited
+        ? (btn.getAttribute("aria-label") || "").replace("Add", "Remove").replace("to favorites", "from favorites")
+        : (btn.getAttribute("aria-label") || "").replace("Remove", "Add").replace("from favorites", "to favorites")
+      );
+    }
+
+    document.querySelectorAll(".deck-star-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const deckId = btn.dataset.deckId;
+        if (!deckId) return;
+
+        btn.disabled = true;
+        try {
+          const res = await fetch(FAVORITES_API + deckId + "/toggle", { method: "POST" });
+          if (res.ok) {
+            const data = await res.json();
+            updateStarBtn(btn, data.favorite);
+
+            // If unfavorited, remove the card from the dashboard
+            if (!data.favorite) {
+              const card = btn.closest(".deck-card");
+              if (card) {
+                card.remove();
+                // Update count
+                const grid = document.getElementById("favorites-grid");
+                const remaining = grid ? grid.querySelectorAll(".deck-card").length : 0;
+                const pill = document.querySelector(".metric-pill strong");
+                if (pill) pill.textContent = remaining;
+
+                // Show empty state if no more favorites
+                if (remaining === 0) {
+                  const section = document.querySelector(".card.dashboard-decks");
+                  if (section) {
+                    const empty = document.createElement("div");
+                    empty.className = "empty-state";
+                    empty.innerHTML = "<h3>No favorites yet</h3><p class=\"muted\"><a href=\"/decks/browse\">Browse all decks</a> and star the ones you want to study.</p>";
+                    grid.replaceWith(empty);
+                    const pill2 = section.querySelector(".metric-pill");
+                    if (pill2) pill2.remove();
+                  }
+                }
+              }
+            }
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    // Click card to navigate
+    const grid = document.getElementById("favorites-grid");
+    if (grid) {
+      grid.querySelectorAll(".deck-card--simple").forEach((card) => {
+        card.style.cursor = "pointer";
+        card.addEventListener("click", () => {
+          window.location.href = card.dataset.href;
+        });
+      });
+    }
+  })();
+</script>
 {% endblock %}

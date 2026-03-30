@@ -9,7 +9,16 @@
   <section class="card section-heading-card">
     <div>
       <p class="panel-label">Deck</p>
-      <h1 class="section-title">{{ deck.name }}</h1>
+      <h1 class="section-title" style="display:flex;align-items:center;gap:0.5rem;">
+        <span style="flex:1">{{ deck.name }}</span>
+        <button type="button" id="overview-star-btn" class="deck-star-btn {% if is_favorited %}deck-star-btn--favorited{% endif %}" data-deck-id="{{ deck.id }}" title="{% if is_favorited %}Remove from favorites{% else %}Add to favorites{% endif %}" aria-label="{% if is_favorited %}Remove {{ deck.name }} from favorites{% else %}Add {{ deck.name }} to favorites{% endif %}">
+          {% if is_favorited %}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          {% else %}
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          {% endif %}
+        </button>
+      </h1>
       {% if deck.description %}<p class="muted section-copy">{{ deck.description }}</p>{% endif %}
     </div>
   </section>
@@ -145,4 +154,36 @@
 
   {% endif %}
 </section>
+
+<script>
+  (() => {
+    const btn = document.getElementById("overview-star-btn");
+    if (!btn) return;
+    const deckId = btn.dataset.deckId;
+
+    function getSvg(filled) {
+      if (filled) {
+        return `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+      }
+      return `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+    }
+
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/v1/favorites/decks/" + deckId + "/toggle", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          const isFav = data.favorite;
+          btn.innerHTML = getSvg(isFav);
+          btn.classList.toggle("deck-star-btn--favorited", isFav);
+          btn.title = isFav ? "Remove from favorites" : "Add to favorites";
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  })();
+</script>
 {% endblock %}
