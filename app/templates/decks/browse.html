@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Deck library</p>
+        <h1 class="section-title">Browse Decks</h1>
+        <p class="muted section-copy">
+          Search and filter through all decks available to you, then star the ones you want on your dashboard.
+        </p>
+      </div>
+      <div class="metric-pill">
+        <strong>{{ total }}</strong>
+        <span>Total</span>
+      </div>
+    </div>
+
+    <form method="get" action="/decks/browse" class="deck-search" style="margin-bottom: 1.5rem;">
+      <input
+        type="text"
+        name="q"
+        id="browse-search"
+        value="{{ q }}"
+        placeholder="Search by deck name..."
+        autocomplete="off"
+      />
+      <button type="submit" class="button button-secondary">Search</button>
+      {% if q %}
+        <a href="/decks/browse" class="button button-ghost">Clear</a>
+      {% endif %}
+    </form>
+
+    {% if decks %}
+      <div class="deck-grid deck-grid--dashboard" id="browse-grid">
+        {% for deck in decks %}
+          <article class="deck-card deck-card--simple" data-name="{{ deck.name | lower }}" data-href="/decks/{{ deck.id }}">
+            <div class="deck-card__content">
+              <button type="button" class="deck-star-btn {% if deck.id|string in favorite_deck_ids %}deck-star-btn--favorited{% endif %}" data-deck-id="{{ deck.id }}" title="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}" aria-label="Add {{ deck.name }} to favorites">
+                {% if deck.id|string in favorite_deck_ids %}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                {% else %}
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                {% endif %}
+              </button>
+              <h3 class="deck-card__title">{{ deck.name }}</h3>
+              {% if deck.description %}
+                <p class="deck-card__desc muted">{{ deck.description }}</p>
+              {% endif %}
+            </div>
+            <div class="deck-card__actions deck-card__actions--inline">
+              <a href="/review?deck_id={{ deck.id }}" class="button button-secondary button-small button-review" onclick="event.stopPropagation();">Review</a>
+              <a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small button-test" onclick="event.stopPropagation();">Test</a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+
+      {# Pagination #}
+      {% if total_pages > 1 %}
+        <nav class="pagination" aria-label="Browse pagination">
+          {% if page > 1 %}
+            <a href="?q={{ q }}&page={{ page - 1 }}" class="pagination__prev" aria-label="Previous page">&larr; Prev</a>
+          {% else %}
+            <span class="pagination__prev pagination__prev--disabled">&larr; Prev</span>
+          {% endif %}
+
+          <span class="pagination__info">
+            Page {{ page }} of {{ total_pages }}
+            <span class="muted">({{ total }} decks)</span>
+          </span>
+
+          {% if page < total_pages %}
+            <a href="?q={{ q }}&page={{ page + 1 }}" class="pagination__next" aria-label="Next page">Next &rarr;</a>
+          {% else %}
+            <span class="pagination__next pagination__next--disabled">Next &rarr;</span>
+          {% endif %}
+        </nav>
+      {% endif %}
+    {% else %}
+      <div class="empty-state">
+        {% if q %}
+          <h3>No decks match "{{ q }}"</h3>
+          <p class="muted">Try a different search term or <a href="/decks/browse">browse all decks</a>.</p>
+        {% else %}
+          <h3>No decks available</h3>
+          <p class="muted">Ask an admin to add organization or global decks.</p>
+        {% endif %}
+      </div>
+    {% endif %}
+  </section>
+</section>
+
+<script>
+  (() => {
+    const grid = document.getElementById("browse-grid");
+    if (grid) {
+      grid.querySelectorAll(".deck-card--simple").forEach((card) => {
+        card.style.cursor = "pointer";
+        card.addEventListener("click", () => {
+          window.location.href = card.dataset.href;
+        });
+      });
+    }
+  })();
+</script>
+
+<script>
+  (() => {
+    const FAVORITES_API = "/api/v1/favorites/decks/";
+
+    function getSvgStar(filled) {
+      if (filled) {
+        return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+      }
+      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+    }
+
+    function updateStarBtn(btn, isFavorited) {
+      btn.innerHTML = getSvgStar(isFavorited);
+      btn.classList.toggle("deck-star-btn--favorited", isFavorited);
+      btn.title = isFavorited ? "Remove from favorites" : "Add to favorites";
+    }
+
+    document.querySelectorAll(".deck-star-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const deckId = btn.dataset.deckId;
+        if (!deckId) return;
+        btn.disabled = true;
+        try {
+          const res = await fetch(FAVORITES_API + deckId + "/toggle", { method: "POST" });
+          if (res.ok) {
+            const data = await res.json();
+            updateStarBtn(btn, data.favorite);
+          }
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}

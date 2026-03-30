@@ -1906,3 +1906,37 @@ ul {
 .tag-badge__remove:hover {
   opacity: 0.8;
 }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.pagination a {
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.pagination a:hover {
+  background: rgba(59,130,246,0.08);
+}
+
+.pagination__prev--disabled,
+.pagination__next--disabled {
+  color: var(--text-muted);
+  padding: 0.4rem 0.8rem;
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+.pagination__info {
+  color: var(--text-muted);
+}

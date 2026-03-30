@@ -335,12 +335,14 @@ def _dashboard_response(
     deck_stats = list_accessible_deck_stats(db, user=user)
 
     # Compute user's favorite deck IDs
-    favorite_deck_ids = set()
     fav_rows = db.execute(
         select(UserDeckFavorite.deck_id)
         .where(UserDeckFavorite.user_id == user.id)
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
+
+    # Filter deck_stats to only favorites (for display on dashboard)
+    favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
 
     requested_edit_deck_id = request.query_params.get("edit_deck")
     if modal_deck is None and requested_edit_deck_id:
@@ -355,7 +357,7 @@ def _dashboard_response(
         {
             "request": request,
             "user": user,
-            "deck_stats": deck_stats,
+            "deck_stats": favorite_deck_stats,
             "favorite_deck_ids": favorite_deck_ids,
             "can_manage_decks": can_manage_decks(user),
             "can_manage_deck": can_manage_deck,
@@ -416,6 +418,76 @@ def dashboard(
     db: Session = Depends(get_db),
 ):
     return _dashboard_response(request, user=user, db=db)
+
+
+BROWSE_PAGE_SIZE = 10
+
+
+@router.get("/decks/browse", response_class=HTMLResponse)
+def browse_decks(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.services.access import accessible_deck_clause
+
+    q = request.query_params.get("q", "").strip()
+    page = request.query_params.get("page", "1")
+    try:
+        page = max(1, int(page))
+    except ValueError:
+        page = 1
+
+    # Base query — accessible decks
+    base_q = (
+        select(Deck)
+        .options(selectinload(Deck.organization), selectinload(Deck.tags))
+        .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
+    )
+
+    # Search filter
+    if q:
+        base_q = base_q.where(Deck.normalized_name.ilike(f"%{q}%"))
+
+    # Count total
+    count_q = select(func.count()).select_from(base_q.subquery())
+    total = db.execute(count_q).scalar_one()
+
+    # Paginated
+    offset = (page - 1) * BROWSE_PAGE_SIZE
+    decks = (
+        db.execute(
+            base_q.order_by(Deck.is_global.desc(), Deck.created_at.desc())
+            .limit(BROWSE_PAGE_SIZE)
+            .offset(offset)
+        )
+        .scalars()
+        .all()
+    )
+
+    # Favorite IDs for current user
+    fav_rows = db.execute(
+        select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
+    ).scalars().all()
+    favorite_deck_ids = {str(f) for f in fav_rows}
+
+    total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
+
+    return templates.TemplateResponse(
+        "decks/browse.html",
+        {
+            "request": request,
+            "user": user,
+            "decks": decks,
+            "favorite_deck_ids": favorite_deck_ids,
+            "q": q,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
+            "page_size": BROWSE_PAGE_SIZE,
+            "title": "Browse Decks | edu selviz",
+        },
+    )
 
 
 @router.get("/analytics", response_class=HTMLResponse)
