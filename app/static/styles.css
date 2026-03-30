@@ -751,15 +751,14 @@ body::after {
    background: none;
    border: none;
    cursor: pointer;
-   padding: 0;
+   padding: 4px;
    display: inline-flex;
    color: var(--text-muted, #94a3b8);
    flex-shrink: 0;
-   transition: filter 0.2s ease, transform 0.15s ease;
+   transition: filter 0.2s ease;
  }
  .deck-star-btn:hover {
    filter: drop-shadow(0 0 6px currentColor);
-   transform: scale(1.15);
  }
  .deck-star-btn--favorited {
    color: #f59e0b;

@@ -56,8 +56,16 @@
   - `edu selviz`
   - subtitle: `Professional study workflow`
 - Review page should stay distraction-light even when branded.
+- Review, Test, and Test Report pages use a fixed warm cream theme (no light mode toggle).
 - Dashboard/settings modals should feel native and not break navigation state.
 - Use the existing logo asset instead of introducing alternate brand artwork.
+
+## Theme system
+- Browser-level dark/light toggle using `data-theme="light"` on `<html>` and CSS variables.
+- Theme stored in `localStorage` (no DB), persists across sessions.
+- Toggle button (🌙/☀️) in `base.html` topbar + keyboard shortcut `T` toggles on main app pages.
+- All `[data-theme="light"]` element overrides are scoped under `.page-content` class — review/test pages do not use this class so their warm cream theme is unaffected.
+- Review, Test, and Test Report pages have their own standalone HTML templates (not extending base.html) with a fixed warm cream gradient theme.
 
 ## Deployment notes
 - Live deployment path: `/opt/edu_viz`.
@@ -108,6 +116,7 @@
 - `take.html` and `report.html` are standalone pages (not extending base.html), matching review page style.
 - Question payload parsing was recently fixed — be careful with card type discrimination when changing test submission logic.
 - When submitting answers via form POST, `question_ids` must be individual hidden fields per question, not comma-separated.
+- Favorite star buttons (`deck-star-btn`) have a glow hover effect via `filter: drop-shadow(...)`. No transform scale on hover to avoid cursor jump.
 - Do NOT use `request.scope["query_string"]` hack to pass params between functions — Starlette caches `query_params`.
 
 ### Static assets
