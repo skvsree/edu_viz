@@ -8,7 +8,7 @@
       name="description"
       content="Focused review mode in edu selviz for calm, distraction-reduced spaced repetition."
     />
-    <meta name="theme-color" content="#f5efe2" />
+    <meta name="theme-color" content="#f5efe2" id="theme-meta" />
     <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
     <link rel="apple-touch-icon" href="{{ static_asset_url('brand/review-logo.jpg') }}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,6 +17,17 @@
       href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
+    {# Apply saved theme before paint #}
+    <script>
+      (function () {
+        var t = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+        if (t === 'light') {
+          var m = document.getElementById('theme-meta');
+          if (m) m.setAttribute('content', '#f1f5f9');
+        }
+      })();
+    </script>
     <script src="{{ static_asset_url('vendor/htmx.min.js') }}"></script>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
   </head>
@@ -24,18 +35,24 @@
     <div class="review-shell">
       <header class="review-topbar" aria-label="Review page header">
         <a href="/dashboard" class="review-brand brand-mark" aria-label="edu selviz workspace">
-          <span class="review-brand__media brand-mark__media">
+          <span class="brand-mark__media">
             <img
               src="{{ static_asset_url('brand/review-logo.jpg') }}"
               alt="edu selviz logo"
-              class="review-brand__image brand-mark__image"
+              class="brand-mark__image"
             />
           </span>
-          <span class="review-brand__copy brand-mark__copy">
+          <span class="brand-mark__copy">
             <strong>edu selviz</strong>
             <small>Professional study workflow</small>
           </span>
         </a>
+        <button
+          id="theme-toggle"
+          class="theme-toggle"
+          aria-label="Toggle dark/light theme"
+          title="Toggle theme (T)"
+        >🌙</button>
       </header>
 
       <main class="review-main">
@@ -46,5 +63,28 @@
         <small>{{ footer_copyright_text }}</small>
       </footer>
     </div>
+    <script>
+      (function () {
+        var btn = document.getElementById('theme-toggle');
+        var meta = document.getElementById('theme-meta');
+        function applyTheme(t) {
+          document.documentElement.setAttribute('data-theme', t);
+          localStorage.setItem('theme', t);
+          if (meta) meta.setAttribute('content', t === 'light' ? '#f1f5f9' : '#f5efe2');
+          btn.textContent = t === 'light' ? '🌙' : '☀️';
+        }
+        btn.addEventListener('click', function () {
+          var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+          applyTheme(cur === 'dark' ? 'light' : 'dark');
+        });
+        document.addEventListener('keydown', function (e) {
+          if ((e.key === 't' || e.key === 'T') &&
+              (document.activeElement === document.body || document.activeElement === document.documentElement)) {
+            var cur = document.documentElement.getAttribute('data-theme') || 'dark';
+            applyTheme(cur === 'dark' ? 'light' : 'dark');
+          }
+        });
+      })();
+    </script>
   </body>
 </html>
