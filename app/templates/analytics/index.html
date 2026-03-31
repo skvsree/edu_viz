@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    {% if user.role in {"system_admin", "admin"} %}
+    {% if user.role in ["system_admin", "admin"] %}
     <form method="get" action="/analytics" class="stack-md analytics-filters">
       <div class="dashboard-grid">
         <div>
@@ -108,7 +108,7 @@
     {% endif %}
   </section>
 
-  {% if user.role in {"system_admin", "admin"} %}
+  {% if user.role in ["system_admin", "admin"] %}
   <section class="card">
     <div class="section-heading">
       <div>
