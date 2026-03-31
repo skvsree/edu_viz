@@ -508,42 +508,10 @@ def analytics_home(
     selected_user_id = request.query_params.get("user_id", "")
     selected_deck_id = request.query_params.get("deck_id", "")
 
-    # Compute deck completion for accessible decks
-    completion_stats: list[dict[str, object]] = []
-    deck_stats = list_accessible_deck_stats(db, user=user)
+    # Only compute data when both filters are applied
+    has_filters = bool(selected_user_id and selected_deck_id)
 
-    for stats in deck_stats:
-        deck = stats.deck
-        if selected_deck_id and str(deck.id) != selected_deck_id:
-            continue
-
-        total_cards = len(deck.cards)
-        completed_reviews = stats.cards_reviewed
-        percent_complete = 0
-        if total_cards > 0:
-            percent_complete = round(min(completed_reviews / total_cards * 100, 100))
-
-        tests_taken_query = (
-            select(func.count(TestAttempt.id))
-            .join(Test, TestAttempt.test_id == Test.id)
-            .where(Test.deck_id == deck.id)
-        )
-        if selected_user_id:
-            tests_taken_query = tests_taken_query.where(TestAttempt.user_id == selected_user_id)
-        tests_taken = db.execute(tests_taken_query).scalar_one()
-
-        completion_stats.append(
-            {
-                "deck": deck,
-                "percent_complete": percent_complete,
-                "cards_due": stats.cards_due,
-                "cards_reviewed": completed_reviews,
-                "tests_taken": tests_taken,
-            }
-        )
-
-    # Compute user analytics summaries
-    user_summaries = []
+    # Always load filter options for dropdowns
     if user.role == ROLE_SYSTEM_ADMIN:
         visible_users = db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
     else:
@@ -552,35 +520,71 @@ def analytics_home(
             .scalars()
             .all()
         )
+    available_decks = list_accessible_deck_stats(db, user=user)
 
-    if selected_user_id:
-        visible_users = [target_user for target_user in visible_users if str(target_user.id) == selected_user_id]
+    # Only compute analytics when both filters are applied
+    completion_stats: list[dict[str, object]] = []
+    user_summaries = []
 
-    for target_user in visible_users:
-        summary = {
-            "user": target_user,
-            "cards_reviewed": 0,
-            "tests_taken": 0,
-        }
+    if has_filters:
+        # Compute deck completion for the selected deck
+        for stats in available_decks:
+            deck = stats.deck
+            if str(deck.id) != selected_deck_id:
+                continue
 
-        cards_reviewed_query = (
-            select(func.count(Review.id))
-            .join(Card, Card.id == Review.card_id)
-            .where(Card.deck.has(Deck.organization_id == target_user.organization_id) | Deck.is_global.is_(True))
-            .where(Review.card.has(Card.deck.has()))
-        )
-        if selected_deck_id:
-            cards_reviewed_query = cards_reviewed_query.where(Card.deck_id == selected_deck_id)
-        cards_reviewed = db.execute(cards_reviewed_query).scalar() or 0
+            total_cards = len(deck.cards)
+            completed_reviews = stats.cards_reviewed
+            percent_complete = 0
+            if total_cards > 0:
+                percent_complete = round(min(completed_reviews / total_cards * 100, 100))
 
-        tests_taken_query = select(func.count(TestAttempt.id)).where(TestAttempt.user_id == target_user.id)
-        if selected_deck_id:
-            tests_taken_query = tests_taken_query.join(Test, TestAttempt.test_id == Test.id).where(Test.deck_id == selected_deck_id)
-        tests_taken = db.execute(tests_taken_query).scalar() or 0
+            tests_taken_query = (
+                select(func.count(TestAttempt.id))
+                .join(Test, TestAttempt.test_id == Test.id)
+                .where(Test.deck_id == deck.id)
+            )
+            if selected_user_id:
+                tests_taken_query = tests_taken_query.where(TestAttempt.user_id == selected_user_id)
+            tests_taken = db.execute(tests_taken_query).scalar_one()
 
-        summary["cards_reviewed"] = cards_reviewed
-        summary["tests_taken"] = tests_taken
-        user_summaries.append(summary)
+            completion_stats.append(
+                {
+                    "deck": deck,
+                    "percent_complete": percent_complete,
+                    "cards_due": stats.cards_due,
+                    "cards_reviewed": completed_reviews,
+                    "tests_taken": tests_taken,
+                }
+            )
+
+        # Compute user analytics for selected user
+        target_user_list = [u for u in visible_users if str(u.id) == selected_user_id]
+        for target_user in target_user_list:
+            summary = {
+                "user": target_user,
+                "cards_reviewed": 0,
+                "tests_taken": 0,
+            }
+
+            cards_reviewed_query = (
+                select(func.count(Review.id))
+                .join(Card, Card.id == Review.card_id)
+                .where(Card.deck.has(Deck.organization_id == target_user.organization_id) | Deck.is_global.is_(True))
+                .where(Review.card.has(Card.deck.has()))
+            )
+            if selected_deck_id:
+                cards_reviewed_query = cards_reviewed_query.where(Card.deck_id == selected_deck_id)
+            cards_reviewed = db.execute(cards_reviewed_query).scalar() or 0
+
+            tests_taken_query = select(func.count(TestAttempt.id)).where(TestAttempt.user_id == target_user.id)
+            if selected_deck_id:
+                tests_taken_query = tests_taken_query.join(Test, TestAttempt.test_id == Test.id).where(Test.deck_id == selected_deck_id)
+            tests_taken = db.execute(tests_taken_query).scalar() or 0
+
+            summary["cards_reviewed"] = cards_reviewed
+            summary["tests_taken"] = tests_taken
+            user_summaries.append(summary)
 
     return templates.TemplateResponse(
         "analytics/index.html",
@@ -590,9 +594,10 @@ def analytics_home(
             "deck_stats": completion_stats,
             "user_summaries": user_summaries,
             "visible_users": visible_users,
-            "available_decks": deck_stats,
+            "available_decks": available_decks,
             "selected_user_id": selected_user_id,
             "selected_deck_id": selected_deck_id,
+            "has_filters": has_filters,
             "title": "Analytics | edu selviz",
         },
     )
