@@ -247,53 +247,106 @@
 
 {% block extra_head %}
 <style>
-  .ts-wrapper.form-select {
+  /* Tom Select - Dark Mode (default) */
+  .ts-wrapper {
     min-height: 42px;
   }
   .ts-control {
-    border-radius: var(--radius, 4px);
-    border-color: var(--border-color, #cbd5e1);
+    background: #1e293b !important;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    color: #f1f5f9;
+    padding: 6px 10px;
   }
   .ts-control:focus, .ts-wrapper.focus .ts-control {
-    border-color: var(--accent-color, #6366f1);
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
   }
-  /* Fix placeholder color for dark mode */
-  .ts-control .ts-placeholder {
-    color: #94a3b8;
+  .ts-placeholder {
+    color: #f1f5f9 !important;
+    opacity: 0.6;
   }
-  /* Checkbox option styling */
+  .ts-dropdown {
+    background: #1e293b !important;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    color: #f1f5f9;
+  }
+  .ts-dropdown .option {
+    color: #f1f5f9;
+    padding: 8px 12px;
+  }
+  .ts-dropdown .option:hover, .ts-dropdown .option.active {
+    background: #334155;
+  }
   .ts-checkbox-option {
-    padding: 6px 10px;
+    padding: 6px 12px;
   }
   .ts-checkbox-option label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     cursor: pointer;
-    color: inherit;
+    color: #f1f5f9;
   }
   .ts-checkbox-option input[type="checkbox"] {
     width: 16px;
     height: 16px;
     accent-color: #6366f1;
   }
-  /* Multi-select item styling */
   .ts-control .ts-item {
-    background: rgba(99, 102, 241, 0.2);
+    background: rgba(99, 102, 241, 0.25);
     border: 1px solid rgba(99, 102, 241, 0.4);
     border-radius: 4px;
-    padding: 2px 6px;
+    padding: 3px 8px;
     margin: 2px;
-  }
-  .ts-control .ts-item .ts-item-label {
     color: #f1f5f9;
   }
   .ts-control .ts-item .ts-item-delete {
     color: #94a3b8;
+    margin-left: 6px;
   }
   .ts-control .ts-item .ts-item-delete:hover {
     color: #ef4444;
+  }
+  .ts-clear-button {
+    color: #94a3b8;
+  }
+  .ts-clear-button:hover {
+    color: #f1f5f9;
+  }
+
+  /* Tom Select - Light Mode */
+  [data-theme="light"] .ts-control {
+    background: #ffffff !important;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+  [data-theme="light"] .ts-placeholder {
+    color: #64748b !important;
+  }
+  [data-theme="light"] .ts-dropdown {
+    background: #ffffff !important;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+  [data-theme="light"] .ts-dropdown .option {
+    color: #1e293b;
+  }
+  [data-theme="light"] .ts-dropdown .option:hover, 
+  [data-theme="light"] .ts-dropdown .option.active {
+    background: #f1f5f9;
+  }
+  [data-theme="light"] .ts-checkbox-option label {
+    color: #1e293b;
+  }
+  [data-theme="light"] .ts-control .ts-item {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #1e293b;
+  }
+  [data-theme="light"] .ts-control .ts-item .ts-item-delete {
+    color: #64748b;
   }
 </style>
 {% endblock %}
