@@ -36,9 +36,8 @@
           </select>
         </div>
         <div>
-          <label for="analytics-deck-filter">Deck</label>
-          <select id="analytics-deck-filter" name="deck_id" placeholder="Search a deck...">
-            <option value="">Select a deck</option>
+          <label for="analytics-deck-filter">Decks</label>
+          <select id="analytics-deck-filter" name="deck_id" multiple placeholder="Search and select decks...">
             {% for stat in available_decks %}
               <option value="{{ stat.deck.id }}" {% if selected_deck_id == (stat.deck.id|string) %}selected{% endif %}>
                 {{ stat.deck.name }}
@@ -287,6 +286,21 @@
   .ts-clear-button:hover {
     color: #f1f5f9;
   }
+  /* Multi-select items */
+  .ts-control .ts-item {
+    background: #334155;
+    border: 1px solid #475569;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin: 2px;
+    color: #f1f5f9;
+  }
+  .ts-control .ts-item .ts-item-delete {
+    color: #94a3b8;
+  }
+  .ts-control .ts-item .ts-item-delete:hover {
+    color: #ef4444;
+  }
 
   /* Tom Select - Light Mode */
   [data-theme="light"] .ts-control {
@@ -309,6 +323,14 @@
   [data-theme="light"] .ts-dropdown .option.active {
     background: #f1f5f9;
   }
+  [data-theme="light"] .ts-control .ts-item {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+  [data-theme="light"] .ts-control .ts-item .ts-item-delete {
+    color: #64748b;
+  }
 </style>
 {% endblock %}
 
@@ -323,7 +345,7 @@
     new TomSelect('#analytics-deck-filter', {
       create: false,
       sortField: { field: 'text', direction: 'asc' },
-      plugins: ['clear_button']
+      plugins: ['checkbox_options', 'clear_button']
     });
   });
 </script>
