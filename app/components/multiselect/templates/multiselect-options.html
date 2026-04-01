@@ -1,0 +1,20 @@
+{# Partial: dropdown options for multiselect component #}
+{% if options %}
+<div class="multiselect-dropdown">
+  {% for opt in options %}
+  <button type="button" 
+          class="multiselect-option"
+          data-key="{{ opt.key }}"
+          hx-post="/components/multiselect/control"
+          hx-vals='{"name": "{{ control_name }}", "action": "select", "key": "{{ opt.key }}", "selected": "{{ selected|default([])|join(",") }}"}'
+          hx-target="#multiselect-{{ control_name }}"
+          hx-swap="outerHTML">
+    {{ opt.title }}
+  </button>
+  {% endfor %}
+</div>
+{% else %}
+<div class="multiselect-dropdown multiselect-dropdown--empty">
+  <span class="multiselect-empty">No options found</span>
+</div>
+{% endif %}

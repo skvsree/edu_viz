@@ -1,0 +1,168 @@
+{#- Multiselect Component with Modal Popup -#}
+
+{%- macro _get_key(opt) -%}
+  {%- if opt is mapping -%}
+    {{- (opt.get("key") or opt.get("id"))|string -}}
+  {%- else -%}
+    {{- opt.id|string -}}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro _get_title(opt) -%}
+  {%- if opt is mapping -%}
+    {{- opt.get("title") or opt.get("name") -}}
+  {%- else -%}
+    {{- opt.name -}}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- macro multiselect(control_name, options, selected_keys, placeholder, modal_id) -%}
+{%- set placeholder = placeholder or "Select..." -%}
+{%- set modal_id = modal_id or "modal-" + control_name -%}
+{%- set selected = selected_keys if selected_keys else [] -%}
+{%- set selected_set = selected|map('string')|list -%}
+
+{#- Convert options to consistent format -#}
+{%- set options_list = [] -%}
+{%- for opt in options -%}
+  {%- set key = _get_key(opt) -%}
+  {%- set title = _get_title(opt) -%}
+  {%- if key and title -%}
+    {%- set _ = options_list.append({"key": key, "title": title}) -%}
+  {%- endif -%}
+{%- endfor -%}
+
+<div class="multiselect" id="multiselect-{{ control_name }}" data-control-name="{{ control_name }}" data-modal-id="{{ modal_id }}">
+  
+  {#- Hidden input for form submission -#}
+  <input type="hidden" name="{{ control_name }}" id="multiselect-hidden-{{ control_name }}" value="{{ selected|join(',') if selected else '' }}">
+  
+  {#- Selected chips/badges -#}
+  <div class="multiselect-selected">
+    {%- for opt in options_list -%}
+      {%- if opt.key|string in selected_set -%}
+      <span class="multiselect-badge" data-key="{{ opt.key }}">
+        {{ opt.title }}
+        <button type="button" class="multiselect-badge__remove" onclick="multiselectRemove('{{ control_name }}', '{{ opt.key }}')">×</button>
+      </span>
+      {%- endif -%}
+    {%- endfor -%}
+    
+    {#- Add button -#}
+    <button type="button" class="multiselect-add-btn" onclick="multiselectOpenModal('{{ modal_id }}')">
+      + {{ placeholder }}
+    </button>
+  </div>
+</div>
+
+{#- Modal -#}
+<div class="multiselect-modal" id="{{ modal_id }}" data-open="false">
+  <div class="multiselect-modal__backdrop" onclick="multiselectCloseModal('{{ modal_id }}')"></div>
+  <div class="multiselect-modal__content">
+    <div class="multiselect-modal__header">
+      <h3>{{ placeholder }}</h3>
+      <button type="button" class="multiselect-modal__close" onclick="multiselectCloseModal('{{ modal_id }}')">×</button>
+    </div>
+    <div class="multiselect-modal__search">
+      <input type="text" id="{{ modal_id }}-search" placeholder="Search..." oninput="multiselectFilter('{{ modal_id }}')">
+    </div>
+    <div class="multiselect-modal__options">
+      {%- for opt in options_list -%}
+      <label class="multiselect-option{%- if opt.key|string in selected_set %} multiselect-option--selected{% endif -%}">
+        <input type="checkbox" 
+               value="{{ opt.key }}" 
+               {%- if opt.key|string in selected_set %} checked{% endif -%}
+               onchange="multiselectToggle('{{ control_name }}', '{{ modal_id }}', '{{ opt.key }}', this.checked)">
+        <span>{{ opt.title }}</span>
+      </label>
+      {%- endfor -%}
+    </div>
+    <div class="multiselect-modal__footer">
+      <button type="button" class="btn" onclick="multiselectCloseModal('{{ modal_id }}')">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Make functions globally available
+window.multiselectOpenModal = function(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.dataset.open = 'true';
+    setTimeout(() => {
+      const searchInput = document.getElementById(id + '-search');
+      if (searchInput) searchInput.focus();
+    }, 50);
+  }
+};
+
+window.multiselectCloseModal = function(id) {
+  const modal = document.getElementById(id);
+  if (modal) {
+    modal.dataset.open = 'false';
+  }
+};
+
+window.multiselectFilter = function(modalId) {
+  const search = document.getElementById(modalId + '-search').value.toLowerCase();
+  const options = document.querySelectorAll('#' + modalId + ' .multiselect-option');
+  options.forEach(opt => {
+    const text = opt.querySelector('span').textContent.toLowerCase();
+    opt.style.display = text.includes(search) ? '' : 'none';
+  });
+};
+
+window.multiselectToggle = function(controlName, modalId, key, checked) {
+  const hidden = document.getElementById('multiselect-hidden-' + controlName);
+  let selected = hidden.value ? hidden.value.split(',') : [];
+  
+  if (checked && !selected.includes(key)) {
+    selected.push(key);
+  } else if (!checked) {
+    selected = selected.filter(k => k !== key);
+  }
+  
+  hidden.value = selected.join(',');
+  
+  // Update badge
+  const container = document.getElementById('multiselect-' + controlName);
+  const addBtn = container.querySelector('.multiselect-add-btn');
+  const checkbox = document.querySelector(`#${modalId} .multiselect-option input[value="${key}"]`);
+  const label = checkbox.closest('.multiselect-option').querySelector('span').textContent;
+  
+  if (checked) {
+    const badge = document.createElement('span');
+    badge.className = 'multiselect-badge';
+    badge.dataset.key = key;
+    badge.innerHTML = label + '<button type="button" class="multiselect-badge__remove" onclick="multiselectRemove(\'' + controlName + '\', \'' + key + '\')">×</button>';
+    addBtn.before(badge);
+    checkbox.closest('.multiselect-option').classList.add('multiselect-option--selected');
+  } else {
+    const badge = container.querySelector(`.multiselect-badge[data-key="${key}"]`);
+    if (badge) badge.remove();
+    checkbox.closest('.multiselect-option').classList.remove('multiselect-option--selected');
+  }
+};
+
+window.multiselectRemove = function(controlName, key) {
+  const hidden = document.getElementById('multiselect-hidden-' + controlName);
+  let selected = hidden.value ? hidden.value.split(',') : [];
+  selected = selected.filter(k => k !== key);
+  hidden.value = selected.join(',');
+  
+  // Update badge
+  const badge = document.querySelector(`#multiselect-${controlName} .multiselect-badge[data-key="${key}"]`);
+  if (badge) badge.remove();
+  
+  // Update checkbox in modal
+  const modal = document.querySelector(`[data-modal-id="modal-${controlName}"]`);
+  if (modal) {
+    const checkbox = modal.querySelector(`input[type="checkbox"][value="${key}"]`);
+    if (checkbox) {
+      checkbox.checked = false;
+      checkbox.closest('.multiselect-option').classList.remove('multiselect-option--selected');
+    }
+  }
+};
+</script>
+{%- endmacro -%}

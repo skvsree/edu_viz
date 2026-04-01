@@ -2732,3 +2732,22 @@ ul {
 [data-theme="light"] .ts-placeholder {
   color: #64748b;
 }
+
+/* Light theme - data-table overrides */
+[data-theme="light"] .data-table tr {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(148, 163, 184, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .data-table td::before {
+  color: #64748b;
+}
+
+[data-theme="light"] .data-table td {
+  color: #1e293b;
+}
+
+[data-theme="light"] .data-table th {
+  color: #64748b;
+}

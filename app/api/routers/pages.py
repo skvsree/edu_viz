@@ -18,6 +18,7 @@ from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, UserDeckFavorite, deck_tags
+from app.models.analytics import AnalyticsEvent
 from app.models.card_state import CardState
 from app.services.access import (
     ROLE_ADMIN,
@@ -41,7 +42,9 @@ router = APIRouter(tags=["pages"])
 APP_DIR = Path(__file__).resolve().parents[2]
 TEMPLATES_DIR = APP_DIR / "templates"
 STATIC_DIR = APP_DIR / "static"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+COMPONENTS_DIR = APP_DIR / "components"
+COMPONENT_TEMPLATES_DIR = COMPONENTS_DIR / "multiselect" / "templates"
+templates = Jinja2Templates(directory=[str(TEMPLATES_DIR), str(COMPONENT_TEMPLATES_DIR)])
 
 
 @lru_cache(maxsize=256)
@@ -506,10 +509,12 @@ def analytics_home(
         raise HTTPException(status_code=403, detail="You do not have access to analytics")
 
     selected_user_id = request.query_params.get("user_id", "")
-    selected_deck_id = request.query_params.get("deck_id", "")
+    # Get deck_id(s) from query param (handles both single and multiselect)
+    selected_deck_id = request.query_params.get("deck_id", "") or request.query_params.get("deck_ids", "")
+    selected_deck_ids = [d.strip() for d in selected_deck_id.split(",") if d.strip()] if selected_deck_id else []
 
     # Only compute data when both filters are applied
-    has_filters = bool(selected_user_id and selected_deck_id)
+    has_filters = bool(selected_user_id and selected_deck_ids)
 
     # Always load filter options for dropdowns
     if user.role == ROLE_SYSTEM_ADMIN:
@@ -522,6 +527,12 @@ def analytics_home(
         )
     available_decks = list_accessible_deck_stats(db, user=user)
 
+    # Register deck options for multiselect component
+    request.app.state.multiselect_options["deck_ids"] = [
+        {"key": str(stats.deck.id), "title": stats.deck.name}
+        for stats in available_decks
+    ]
+
     # Only compute analytics when both filters are applied
     completion_stats: list[dict[str, object]] = []
     user_summaries = []
@@ -530,7 +541,7 @@ def analytics_home(
         # Compute deck completion for the selected deck
         for stats in available_decks:
             deck = stats.deck
-            if str(deck.id) != selected_deck_id:
+            if str(deck.id) not in selected_deck_ids:
                 continue
 
             total_cards = len(deck.cards)
@@ -573,18 +584,25 @@ def analytics_home(
                 .where(Card.deck.has(Deck.organization_id == target_user.organization_id) | Deck.is_global.is_(True))
                 .where(Review.card.has(Card.deck.has()))
             )
-            if selected_deck_id:
-                cards_reviewed_query = cards_reviewed_query.where(Card.deck_id == selected_deck_id)
+            if selected_deck_ids:
+                cards_reviewed_query = cards_reviewed_query.where(Card.deck_id.in_(selected_deck_ids))
             cards_reviewed = db.execute(cards_reviewed_query).scalar() or 0
 
             tests_taken_query = select(func.count(TestAttempt.id)).where(TestAttempt.user_id == target_user.id)
-            if selected_deck_id:
-                tests_taken_query = tests_taken_query.join(Test, TestAttempt.test_id == Test.id).where(Test.deck_id == selected_deck_id)
+            if selected_deck_ids:
+                tests_taken_query = tests_taken_query.join(Test, TestAttempt.test_id == Test.id).where(Test.deck_id.in_(selected_deck_ids))
             tests_taken = db.execute(tests_taken_query).scalar() or 0
 
             summary["cards_reviewed"] = cards_reviewed
             summary["tests_taken"] = tests_taken
             user_summaries.append(summary)
+
+    # Get recent analytics events (limited to last 50)
+    recent_events = db.execute(
+        select(AnalyticsEvent)
+        .order_by(AnalyticsEvent.event_timestamp.desc())
+        .limit(50)
+    ).scalars().all()
 
     return templates.TemplateResponse(
         "analytics/index.html",
@@ -597,7 +615,9 @@ def analytics_home(
             "available_decks": available_decks,
             "selected_user_id": selected_user_id,
             "selected_deck_id": selected_deck_id,
+            "selected_deck_ids": selected_deck_ids,
             "has_filters": has_filters,
+            "recent_events": recent_events,
             "title": "Analytics | edu selviz",
         },
     )

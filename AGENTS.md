@@ -174,6 +174,16 @@
 - Question IDs are sent as individual hidden fields (name=`question_ids`), NOT comma-separated.
 - UUID values in templates must be converted to string before `tojson` filter.
 
+### Analytics
+- Analytics page at `/analytics` for admin/system_admin roles
+- Shows personal, organization, and system-wide analytics
+- Deck filter uses multiselect component with `deck_ids` control
+- User filter uses native select dropdown
+- Backend expects `selected_deck_ids` as a list for multiselect
+- Multiselect component: `app/components/multiselect/templates/multiselect.html`
+- Multiselect stores selected keys in hidden input as comma-separated string
+- For Deck objects, use `opt.id|string` for key extraction (not `opt.key|default(opt.id)` which returns 'undefined')
+
 ### Settings (admin)
 - Organizations management (`/settings/organizations`) — create, rename, assign users
 - Users management (`/settings/users`) — update role, assign organization
