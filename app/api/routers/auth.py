@@ -43,7 +43,7 @@ def _resolve_user_from_oidc_userinfo(db: Session, cfg, userinfo: dict[str, objec
             user.identity_sub = sub
             db.commit()
     if user is None:
-        user = User(identity_sub=sub, email=email)
+        user = User(identity_sub=sub, email=email, is_test_enabled=settings.test_enabled_default)
         db.add(user)
         db.commit()
     else:

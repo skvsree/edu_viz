@@ -19,6 +19,7 @@
 - Static assets: `app/static`
 - Styles: `app/static/styles.css`
 - DB: PostgreSQL via SQLAlchemy
+- Connection pooling: PgBouncer (transaction mode) in Docker Compose
 - Migrations: Alembic
 - Review interactions: HTMX (`/review` page loads `/review/next`, rating posts to `/review/rate`)
 - Docker runtime: `docker-compose.yml`, `Dockerfile`, `entrypoint.sh`
@@ -71,12 +72,19 @@
 - Live deployment path: `/opt/edu_viz`.
 - Runtime uses Docker Compose.
 - Common deploy flow is effectively:
-  1. update repo on `phase-2`
+  1. update repo on `phase-3`
   2. sync to `/opt/edu_viz`
   3. rebuild/restart with `docker compose up --build -d`
 - `entrypoint.sh` waits for Postgres, runs `alembic upgrade head`, then starts Uvicorn.
 - Static assets are cache-busted through `static_asset_url()` in `app/api/routers/pages.py`, which hashes file contents and serves `/assets/<version>/...` URLs.
 - Because of hashed asset URLs, CSS/image changes normally do not need manual cache purges after deploy.
+
+### PgBouncer
+- Running as `edu_viz-pgbouncer-1` container in Docker Compose
+- App connects via `pgbouncer:5432` (configured in `.env` DATABASE_URL)
+- Uses SCRAM-SHA-256 auth (matches PostgreSQL 16 default)
+- Transaction pooling mode (optimal for request-response web apps)
+- Key settings: `pool_mode=transaction`, `default_pool_size=20`, `max_client_conn=500`
 
 ## Known pitfalls / regressions already seen
 - Auth naming drift: codebase moved from Azure AD B2C wording to Microsoft Entra External ID. Compatibility shim remains; do not remove old env support casually or you may break current deployments.
@@ -173,6 +181,19 @@
 - One question at a time with Previous/Next navigation, answers stored in JS until submit.
 - Question IDs are sent as individual hidden fields (name=`question_ids`), NOT comma-separated.
 - UUID values in templates must be converted to string before `tojson` filter.
+
+### Test Throttling
+- Configurable via env vars in `app/core/config.py`:
+  - `TEST_DAILY_LIMIT`: Max tests per user per day (default: 0 = unlimited)
+  - `TEST_COOLDOWN_SECONDS`: Minimum time between test attempts (default: 0 = no cooldown)
+- Org-level override: Organizations can set `test_daily_limit` (0-10, capped by env max)
+  - Set via `/settings/organizations` edit modal
+  - Displayed in org card: "Tests Enabled (5/day)" or "Tests Enabled" (using global)
+- Logic in `check_test_throttle()` (`app/services/access.py`):
+  1. System admins bypass all limits
+  2. Check cooldown (per deck)
+  3. Check daily limit (org-specific, capped by env)
+- Migration: `0012_org_test_daily_limit.py` adds `test_daily_limit` column to organizations
 
 ### Analytics
 - Analytics page at `/analytics` for admin/system_admin roles

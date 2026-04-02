@@ -13,8 +13,8 @@ from tests.test_dashboard_routes import FakeDB, make_request, render_body
 
 def test_access_helpers_cover_test_and_ai_flags():
     org_id = uuid4()
-    admin = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=True)
-    learner = SimpleNamespace(id=uuid4(), role="user", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=False)
+    admin = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True, is_test_enabled=False), is_test_enabled=True)
+    learner = SimpleNamespace(id=uuid4(), role="user", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True, is_test_enabled=False), is_test_enabled=False)
     sysadmin = SimpleNamespace(id=uuid4(), role="system_admin", organization_id=None, organization=None, is_test_enabled=True)
     deck = SimpleNamespace(is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
 
@@ -29,11 +29,56 @@ def test_access_helpers_cover_test_and_ai_flags():
     assert deck_has_test_content([SimpleNamespace(card_type="mcq", mcq_options=["A", "B", "C", "D"], mcq_answer_index=2)]) is True
 
 
+def test_org_test_enabled_overrides_user_disabled():
+    """Org-level is_test_enabled allows access even when user is explicitly disabled."""
+    org_id = uuid4()
+    deck = SimpleNamespace(is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
+    # User disabled, but org enabled - org should win
+    user = SimpleNamespace(
+        id=uuid4(),
+        role="user",
+        organization_id=org_id,
+        is_test_enabled=False,
+        organization=SimpleNamespace(is_ai_enabled=False, is_test_enabled=True),
+    )
+    assert can_access_tests(user, deck) is True
+
+
+def test_org_test_enabled_allows_user_without_explicit_flag():
+    """User without explicit flag can access if org is enabled."""
+    org_id = uuid4()
+    deck = SimpleNamespace(is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
+
+    class UserWithoutTestFlag:
+        def __init__(self):
+            self.id = uuid4()
+            self.role = "user"
+            self.organization_id = org_id
+            self.organization = SimpleNamespace(is_ai_enabled=False, is_test_enabled=True)
+
+    user = UserWithoutTestFlag()
+    assert can_access_tests(user, deck) is True
+
+
+def test_user_disabled_with_org_disabled_denies_access():
+    """User explicitly disabled with org disabled = no access."""
+    org_id = uuid4()
+    deck = SimpleNamespace(is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
+    user = SimpleNamespace(
+        id=uuid4(),
+        role="user",
+        organization_id=org_id,
+        is_test_enabled=False,
+        organization=SimpleNamespace(is_ai_enabled=False, is_test_enabled=False),
+    )
+    assert can_access_tests(user, deck) is False
+
+
 def test_deck_overview_shows_test_action_for_managers_even_before_mcqs_and_for_enabled_users_with_mcqs():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description="Cells")
-    enabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True, organization=SimpleNamespace(is_ai_enabled=True))
-    disabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=False, organization=SimpleNamespace(is_ai_enabled=True))
+    enabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True, organization=SimpleNamespace(is_ai_enabled=True, is_test_enabled=False))
+    disabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=False, organization=SimpleNamespace(is_ai_enabled=True, is_test_enabled=False))
     cards = [SimpleNamespace(card_type="mcq", mcq_options=["A", "B", "C", "D"], mcq_answer_index=0)]
 
     enabled = pages.deck_overview(make_request(path=f"/decks/{deck.id}"), deck_id=str(deck.id), user=enabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=cards))
@@ -48,7 +93,7 @@ def test_deck_overview_shows_test_action_for_managers_even_before_mcqs_and_for_e
 def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_when_org_ai_disabled():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description=None)
-    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=False), is_test_enabled=True)
+    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=False, is_test_enabled=False), is_test_enabled=True)
     mcq = SimpleNamespace(id=uuid4(), card_type="mcq", front="Question", back="Answer", mcq_options=["A", "B", "C", "D"], mcq_answer_index=1)
 
     response = pages.deck_mcqs(make_request(path=f"/decks/{deck.id}/mcqs"), deck_id=str(deck.id), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[mcq]))
@@ -62,7 +107,7 @@ def test_mcq_page_shows_admin_json_import_and_sample_download_without_ai_form_wh
 def test_deck_tests_page_shows_empty_state_when_mcqs_missing():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description=None)
-    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=False)
+    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=False, organization=SimpleNamespace(is_ai_enabled=False, is_test_enabled=False))
 
     response = content.deck_tests_page(str(deck.id), make_request(path=f"/decks/{deck.id}/tests"), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
 
@@ -74,7 +119,7 @@ def test_deck_tests_page_shows_empty_state_when_mcqs_missing():
 def test_create_test_allows_admin_manager():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
-    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True)
+    user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, is_test_enabled=True, organization=SimpleNamespace(is_ai_enabled=False, is_test_enabled=False))
     db = FakeDB({str(deck.id): deck, deck.id: deck})
 
     fake_test = SimpleNamespace(id=uuid4())
@@ -89,8 +134,8 @@ def test_create_test_allows_admin_manager():
 def test_ai_upload_page_requires_existing_ai_access_rules():
     org_id = uuid4()
     deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4(), name="Biology", description=None)
-    enabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=True)
-    disabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=False), is_test_enabled=True)
+    enabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True, is_test_enabled=False), is_test_enabled=True)
+    disabled_user = SimpleNamespace(id=uuid4(), role="admin", organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=False, is_test_enabled=False), is_test_enabled=True)
 
     enabled = pages.deck_ai_upload(make_request(path=f"/decks/{deck.id}/ai-upload"), deck_id=str(deck.id), user=enabled_user, db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[]))
     enabled_body = render_body(enabled)

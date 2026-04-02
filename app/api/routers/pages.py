@@ -210,6 +210,7 @@ def _organizations_response(
                 "name": modal_organization.name if modal_organization else "",
                 "is_ai_enabled": modal_organization.is_ai_enabled if modal_organization else False,
             },
+            "test_global_limit": settings.test_daily_limit,
             "title": "Organizations | edu selviz",
         },
         status_code=status_code,
@@ -646,11 +647,15 @@ def create_organization(
     request: Request,
     name: str = Form(...),
     is_ai_enabled: bool = Form(default=False),
+    is_test_enabled: bool = Form(default=False),
+    test_daily_limit: int = Form(default=0),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     _require_system_admin(user)
     cleaned_name = name.strip()
+    # Cap at global limit
+    test_daily_limit = min(max(test_daily_limit, 0), settings.test_daily_limit or 9999)
     if not cleaned_name:
         return _organizations_response(
             request,
@@ -659,10 +664,10 @@ def create_organization(
             status_code=400,
             organization_error="Organization name is required.",
             active_modal="create",
-            create_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
+            create_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled, "is_test_enabled": is_test_enabled, "test_daily_limit": test_daily_limit},
         )
 
-    organization = Organization(name=cleaned_name, is_ai_enabled=is_ai_enabled)
+    organization = Organization(name=cleaned_name, is_ai_enabled=is_ai_enabled, is_test_enabled=is_test_enabled, test_daily_limit=test_daily_limit)
     db.add(organization)
     try:
         db.commit()
@@ -675,7 +680,7 @@ def create_organization(
             status_code=400,
             organization_error="An organization with that name already exists.",
             active_modal="create",
-            create_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
+            create_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled, "is_test_enabled": is_test_enabled, "test_daily_limit": test_daily_limit},
         )
 
     return RedirectResponse(url="/settings/organizations?success=Organization+created", status_code=303)
@@ -687,6 +692,8 @@ def update_organization(
     organization_id: str,
     name: str = Form(...),
     is_ai_enabled: bool = Form(default=False),
+    is_test_enabled: bool = Form(default=False),
+    test_daily_limit: int = Form(default=0),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -696,6 +703,8 @@ def update_organization(
         raise HTTPException(status_code=404)
 
     cleaned_name = name.strip()
+    # Cap at global limit
+    test_daily_limit = min(max(test_daily_limit, 0), settings.test_daily_limit or 9999)
     if not cleaned_name:
         return _organizations_response(
             request,
@@ -705,11 +714,13 @@ def update_organization(
             organization_error="Organization name is required.",
             active_modal="edit",
             modal_organization=organization,
-            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
+            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled, "is_test_enabled": is_test_enabled},
         )
 
     organization.name = cleaned_name
     organization.is_ai_enabled = is_ai_enabled
+    organization.is_test_enabled = is_test_enabled
+    organization.test_daily_limit = test_daily_limit
     try:
         db.commit()
     except IntegrityError:
@@ -722,7 +733,7 @@ def update_organization(
             organization_error="Unable to update this organization right now.",
             active_modal="edit",
             modal_organization=organization,
-            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled},
+            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled, "is_test_enabled": is_test_enabled},
         )
 
     return RedirectResponse(url="/settings/organizations?success=Organization+updated", status_code=303)
@@ -1125,6 +1136,7 @@ def deck_overview(
             "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
             "tests_available": tests_available,
             "test_count": test_count,
+            "default_test_count": settings.default_test_count,
             "import_success": request.query_params.get("import_success"),
             "update_success": request.query_params.get("update_success"),
             "tag_error": request.query_params.get("tag_error"),

@@ -17,6 +17,20 @@ class Settings(BaseSettings):
     openai_generation_enabled: bool = True
     bulk_import_api_key: str | None = None
 
+    # Default question count for auto-starting tests. When set (positive integer),
+    # the Test button will skip the question count modal and create a test with
+    # this many questions. Set to 0 to disable auto-start (shows modal instead).
+    default_test_count: int = 0
+
+    # Default test access for users. Can be overridden at organization and user level.
+    # When False, users need explicit org-level or user-level enablement.
+    test_enabled_default: bool = False
+
+    # Test throttling: max tests per user per day (0 = unlimited)
+    test_daily_limit: int = 0
+    # Test throttle: minimum seconds between test attempts (0 = no cooldown)
+    test_cooldown_seconds: int = 0
+
     google_client_id: str | None = None
     google_client_secret: str | None = None
     google_redirect_uri: str = "http://localhost:8000/auth/callback/google"

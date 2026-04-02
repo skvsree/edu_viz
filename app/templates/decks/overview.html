@@ -56,7 +56,14 @@
       <div class="overview-actions">
         <a href="/review?deck_id={{ deck.id }}" class="button button-review overview-action-btn">Review</a>
         {% if tests_available %}
-        <a href="/decks/{{ deck.id }}/tests" class="button button-test overview-action-btn">Test</a>
+          {% if default_test_count > 0 %}
+          <form method="post" action="/decks/{{ deck.id }}/tests" style="display:inline;">
+            <input type="hidden" name="count" value="{{ default_test_count }}" />
+            <button type="submit" class="button button-test overview-action-btn">Test</button>
+          </form>
+          {% else %}
+          <a href="/decks/{{ deck.id }}/tests" class="button button-test overview-action-btn">Test</a>
+          {% endif %}
         {% endif %}
       </div>
       {% if can_edit %}

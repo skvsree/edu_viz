@@ -4,9 +4,27 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
+      - pgbouncer
     ports:
       - "18000:8000"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: srs
+      DB_PASSWORD: srs
+      DB_NAME: srs
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 20
+      SERVER_IDLE_TIMEOUT: 600
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:5432"
+    depends_on:
+      - db
 
   db:
     image: postgres:16-alpine

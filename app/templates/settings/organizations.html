@@ -32,6 +32,14 @@
             <input type="checkbox" name="is_ai_enabled" value="true" {% if create_form.is_ai_enabled %}checked{% endif %} />
             <span>Enable AI generation for this organization</span>
           </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_test_enabled" value="true" {% if create_form.is_test_enabled %}checked{% endif %} />
+            <span>Enable tests for this organization</span>
+          </label>
+          <div>
+            <label for="test-daily-limit-create">Daily test limit (0 = use global limit of {{ test_global_limit }})</label>
+            <input id="test-daily-limit-create" name="test_daily_limit" type="number" value="{{ create_form.test_daily_limit or 0 }}" min="0" max="{{ test_global_limit }}" />
+          </div>
           <div class="deck-card__actions">
             <button type="submit" class="button">Create organization</button>
             <a href="/settings/organizations" class="button button-secondary">Cancel</a>
@@ -51,6 +59,14 @@
             <input type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} />
             <span>Enable AI generation for this organization</span>
           </label>
+          <label class="checkbox-row">
+            <input type="checkbox" name="is_test_enabled" value="true" {% if edit_form.is_test_enabled %}checked{% endif %} />
+            <span>Enable tests for this organization</span>
+          </label>
+          <div>
+            <label for="test-daily-limit-edit">Daily test limit (0 = use global limit of {{ test_global_limit }})</label>
+            <input id="test-daily-limit-edit" name="test_daily_limit" type="number" value="{{ modal_organization.test_daily_limit or 0 }}" min="0" max="{{ test_global_limit }}" />
+          </div>
           <div class="deck-card__actions">
             <button type="submit" class="button">Save organization</button>
             <a href="/settings/organizations" class="button button-secondary">Cancel</a>
@@ -69,6 +85,7 @@
           <div class="deck-card__stats">
             <span class="deck-card__meta">Users {{ org_user_counts.get(organization.id|string, 0) }}</span>
             <span class="deck-card__meta">AI {{ "Enabled" if organization.is_ai_enabled else "Disabled" }}</span>
+            <span class="deck-card__meta">Tests {{ "Enabled" if organization.is_test_enabled else "Disabled" }}{% if organization.test_daily_limit > 0 %} ({{ organization.test_daily_limit }}/day){% endif %}</span>
           </div>
           <div class="deck-card__actions">
             <a href="/settings/users" class="button button-secondary button-small">View users</a>
@@ -79,6 +96,7 @@
               data-organization-id="{{ organization.id }}"
               data-organization-name="{{ organization.name }}"
               data-organization-ai-enabled="{{ 'true' if organization.is_ai_enabled else 'false' }}"
+              data-organization-test-enabled="{{ 'true' if organization.is_test_enabled else 'false' }}"
               data-organization-update-action="/settings/organizations/{{ organization.id }}/update"
             >
               Edit
@@ -95,6 +113,7 @@
       <form method="post" action="/settings/organizations" class="stack-md">
         <div><label for="organization-name">Organization name</label><input id="organization-name" name="name" value="{{ create_form.name }}" maxlength="255" required /></div>
         <label class="checkbox-row"><input type="checkbox" name="is_ai_enabled" value="true" {% if create_form.is_ai_enabled %}checked{% endif %} /><span>Enable AI generation for this organization</span></label>
+        <label class="checkbox-row"><input type="checkbox" name="is_test_enabled" value="true" {% if create_form.is_test_enabled %}checked{% endif %} /><span>Enable tests for this organization</span></label>
         <button type="submit" class="button">Create organization</button>
       </form>
     </div>
@@ -106,6 +125,7 @@
       <form method="post" action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% else %}#{% endif %}" class="stack-md" data-edit-form>
         <div><label for="organization-name-edit">Organization name</label><input id="organization-name-edit" name="name" value="{{ edit_form.name }}" maxlength="255" required /></div>
         <label class="checkbox-row"><input id="organization-ai-enabled-edit" type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} /><span>Enable AI generation for this organization</span></label>
+        <label class="checkbox-row"><input id="organization-test-enabled-edit" type="checkbox" name="is_test_enabled" value="true" {% if edit_form.is_test_enabled %}checked{% endif %} /><span>Enable tests for this organization</span></label>
         <button type="submit" class="button">Save organization</button>
       </form>
     </div>
@@ -152,6 +172,7 @@
         const form = dialog?.querySelector('[data-edit-form]');
         const nameInput = dialog?.querySelector('#organization-name-edit');
         const aiInput = dialog?.querySelector('#organization-ai-enabled-edit');
+        const testInput = dialog?.querySelector('#organization-test-enabled-edit');
         if (form) {
           form.action = trigger.dataset.organizationUpdateAction || dialog?.dataset.defaultAction || '#';
         }
@@ -160,6 +181,9 @@
         }
         if (aiInput) {
           aiInput.checked = (trigger.dataset.organizationAiEnabled || 'false') === 'true';
+        }
+        if (testInput) {
+          testInput.checked = (trigger.dataset.organizationTestEnabled || 'false') === 'true';
         }
       }
       openModal(modalId);

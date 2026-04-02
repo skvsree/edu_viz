@@ -325,6 +325,8 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
 
 @router.post("/decks/{deck_id}/tests")
 def create_test(deck_id: str, count: int = Form(default=0), user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from app.services.access import check_test_throttle
+
     deck = db.get(Deck, deck_id)
     if not deck:
         raise HTTPException(status_code=404)
@@ -345,6 +347,11 @@ def create_test(deck_id: str, count: int = Form(default=0), user: User = Depends
     ):
         # Hide existence when user can't access tests.
         raise HTTPException(status_code=404)
+
+    # Check throttling limits
+    allowed, error_msg = check_test_throttle(user, deck, db)
+    if not allowed:
+        return RedirectResponse(url=f"/decks/{deck.id}/tests?error={quote_plus(error_msg)}", status_code=303)
 
     try:
         test = create_test_from_deck(db, deck_id=deck.id, created_by_user_id=user.id, question_count=count or None)
