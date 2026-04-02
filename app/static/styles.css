@@ -1031,6 +1031,7 @@ body::after {
 
 .review-main {
   display: block;
+  position: relative;
 }
 
 .review-area {
@@ -1039,6 +1040,12 @@ body::after {
   min-height: calc(100vh - 110px);
   align-items: center;
 }
+
+.review-area {
+  transition: opacity 0.2s ease;
+}
+
+
 
 .review-focus-card,
 .review-empty-state {
@@ -1141,6 +1148,45 @@ body::after {
 
 .button-rating--bright {
   background: linear-gradient(135deg, #16a34a, #15803d);
+}
+
+.review-body .button-rating[disabled],
+.review-body .button-rating.disabled {
+  opacity: 0.2 !important;
+  cursor: not-allowed;
+  filter: grayscale(1) !important;
+  border: 3px dashed red !important;
+}
+
+.review-loading .review-card__body {
+  opacity: 0.4;
+}
+
+.review-loading .review-loading-ring {
+  display: flex !important;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+}
+
+.review-card__body {
+  position: relative;
+}
+
+.review-loading-ring {
+  display: none;
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(120, 113, 108, 0.2);
+  border-top-color: rgba(120, 113, 108, 0.8);
+  border-radius: 50%;
+  animation: review-spin 0.6s linear infinite;
+}
+
+@keyframes review-spin {
+  to { transform: translate(-50%, -50%) rotate(360deg); }
 }
 
 .status-banner {
