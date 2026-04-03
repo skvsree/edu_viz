@@ -6,10 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel, Field
+
 from app.api.deps import require_bulk_import_api_key
 from app.core.db import get_db
 from app.models import Card, CardState, Deck, Tag, User
 from app.services.access import ROLE_SYSTEM_ADMIN, normalize_deck_name
+from app.services.anki_import import AnkiImportError, AnkiImportService
 
 router = APIRouter(prefix="/api/v1/import", tags=["bulk-import"])
 
@@ -257,3 +261,55 @@ def import_chapter_decks(payload: BulkImportBatchPayload, db: Session = Depends(
         total_mcqs_imported=sum(item.mcqs_imported for item in imported),
         total_cards_imported=sum(item.total_cards_imported for item in imported),
     )
+
+
+# =============================================================================
+# Anki Import
+# =============================================================================
+
+class AnkiImportResponse(BaseModel):
+    success: bool
+    cards_imported: int = 0
+    media_files: int = 0
+    duplicates_skipped: int = 0
+    errors: list[str] = Field(default_factory=list)
+
+
+@router.post("/decks/{deck_id}/anki-import", response_model=AnkiImportResponse, dependencies=[Depends(require_bulk_import_api_key)])
+def import_anki_deck(
+    deck_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Import an Anki .apkg file into a deck.
+
+    Supports:
+    - Basic cards
+    - Cloze deletion cards ({{c1::text}})
+    - Images (extracted to app/static/media/{deck_id}/)
+    """
+    # Get deck
+    deck = db.get(Deck, deck_id)
+    if not deck:
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    # Validate file
+    if not file.filename or not file.filename.endswith('.apkg'):
+        raise HTTPException(status_code=400, detail="File must be a .apkg file")
+
+    # Import
+    try:
+        service = AnkiImportService(db, deck)
+        result = service.import_apkg(file.file)
+        return AnkiImportResponse(
+            success=True,
+            cards_imported=result.cards_imported,
+            media_files=result.media_files,
+            duplicates_skipped=result.duplicates_skipped,
+            errors=result.errors,
+        )
+    except AnkiImportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {e}")
