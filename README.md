@@ -7,16 +7,6 @@ A self-hostable, server-rendered spaced repetition web app (AnkiWeb-like) built 
 - FSRS-style scheduler adapter
 - Docker Compose (recommended) or bare Python
 
-## Security checklist before going live
-
-- [ ] Set a strong, random `SECRET_KEY` (min 32 chars)
-- [ ] Enable `FORCE_SECURE_COOKIES=true` to add `Secure` flag on session cookies
-- [ ] Configure `ALLOWED_ORIGINS` to your domain (prevents CSRF on POST endpoints)
-- [ ] Use HTTPS in production (handled by your reverse proxy)
-- [ ] Set `DEBUG=false` (or unset `DEBUG`)
-- [ ] Set a strong `BULK_IMPORT_API_KEY` if using bulk import
-- [ ] Do not commit `.env` — keep secrets out of version control
-
 ---
 
 ## Quick start (Docker)
@@ -41,6 +31,7 @@ Open http://localhost:8000 and log in via Microsoft or Google.
 |----------|-------------|
 | `SECRET_KEY` | Random string (min 32 chars) used to sign session cookies. **Generate one with:** `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
 | `DATABASE_URL` | PostgreSQL connection string. Default: `postgresql+psycopg://srs:srs@db:5432/srs` (dev only) |
+| `SYSTEM_ADMIN_BOOTSTRAP_EMAIL` | First user with this email is promoted to system_admin on login |
 
 ### Auth (pick one provider)
 
@@ -67,7 +58,7 @@ Add the callback URL in your provider's app registration before starting.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SYSTEM_ADMIN_BOOTSTRAP_EMAIL` | `skv.sree@outlook.com` | First user with this email is promoted to system_admin on login |
+| `SYSTEM_ADMIN_BOOTSTRAP_EMAIL` | `johdoe@email.com` | First user with this email is promoted to system_admin on login |
 | `OPENAI_API_KEY` | empty | Enables AI-assisted card generation from PDFs/DOCXs |
 | `OPENAI_MODEL` | `gpt-4.1-mini` | OpenAI model for AI features |
 | `BULK_IMPORT_API_KEY` | empty | API key for bulk deck import via `POST /api/v1/import/*` |
@@ -76,6 +67,18 @@ Add the callback URL in your provider's app registration before starting.
 | `TEST_COOLDOWN_SECONDS` | `0` | Minimum seconds between test attempts |
 | `FORCE_SECURE_COOKIES` | `false` | Set to `true` to add `Secure` flag on session cookies (use in production) |
 | `ALLOWED_ORIGINS` | `*` | Comma-separated allowed origins for CSRF protection on form POSTs |
+| `FORCE_SECURE_COOKIES` | set `true` as default. When true adds `Secure` flag on session cookies  |
+| `ALLOWED_ORIGINS` | set `*` as default. Set to your domain (prevents CSRF on POST endpoints)  |
+| `DEBUG` | set `false` as default  |
+
+
+## Security checklist before going live
+
+- [ ] Set a strong, random `SECRET_KEY` (min 32 chars)
+- [ ] Use HTTPS in production (handled by your reverse proxy)
+- [ ] Set a strong `BULK_IMPORT_API_KEY` if using bulk import
+- [ ] Do not commit `.env` — keep secrets out of version control
+
 
 ---
 
@@ -101,7 +104,7 @@ Point your reverse proxy (Caddy, Nginx, etc.) to `http://localhost:18000`.
 
 Caddy example (`Caddyfile`):
 ```
-edu.your-domain.com {
+your-domain.com {
     reverse_proxy localhost:18000
 }
 ```
