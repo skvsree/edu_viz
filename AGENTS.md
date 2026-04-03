@@ -6,11 +6,9 @@
 - UX direction is intentionally calm, minimal, and professional rather than "gamified".
 
 ## Branch strategy
-- `main`: safer/stable line.
+- `main`: active development branch — all new features land here.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
-- `phase-3`: active branch — deck overview navigation, simplified test flow, UI streamlining.
-- Unless told otherwise, new work should happen on `phase-3`.
-- Keep `phase-3`, `origin/phase-3`, and deployment aligned when deploying.
+- Unless told otherwise, new work happens on `main` and gets deployed from there.
 
 ## Stack / architecture
 - Python 3.12
@@ -71,10 +69,10 @@
 ## Deployment notes
 - Live deployment path: `/opt/edu_viz`.
 - Runtime uses Docker Compose.
-- Common deploy flow is effectively:
-  1. update repo on `phase-3`
-  2. sync to `/opt/edu_viz`
-  3. rebuild/restart with `docker compose up --build -d`
+- Common deploy flow:
+  1. Pull/merge to `main`
+  2. Deploy with `docker compose up --build -d`
+  3. Test on `https://qa.edu.selviz.in`
 - `entrypoint.sh` waits for Postgres, runs `alembic upgrade head`, then starts Uvicorn.
 - Static assets are cache-busted through `static_asset_url()` in `app/api/routers/pages.py`, which hashes file contents and serves `/assets/<version>/...` URLs.
 - Because of hashed asset URLs, CSS/image changes normally do not need manual cache purges after deploy.
@@ -145,7 +143,13 @@
 ### Dashboard
 - Home page shows simplified deck cards with deck name + Review (green outline) and Test (purple outline) buttons
 - Clicking the deck card opens the deck overview page
-- Real-time deck search with case-insensitive filtering by deck name
+- Real-time deck search with case-insensitive filtering by deck name and tags
+
+### Browse Decks Search
+- Available at `/decks/browse`
+- Search normalizes query using `normalize_deck_name()` before comparing
+- Matches both deck `normalized_name` and associated tag `normalized_name`
+- Uses `OR` condition with grouping to avoid duplicate results
 
 ### Deck Overview
 - New hub page at `/decks/{id}` — entry point when user clicks a deck from dashboard
