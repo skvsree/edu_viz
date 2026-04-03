@@ -21,6 +21,24 @@ docker compose up --build -d
 
 Open http://localhost:8000 and log in via Microsoft or Google.
 
+### Using the pre-built image (no build step)
+
+```bash
+git clone https://github.com/skvsree/edu_viz.git
+cd edu_viz
+cp .env.example .env
+# edit .env with your values
+docker compose -f docker-compose.pull.yml up -d
+```
+
+Or pull manually:
+
+```bash
+docker pull ghcr.io/skvsree/edu_viz:latest
+```
+
+To pin a specific version, use a tag (e.g. `ghcr.io/skvsree/edu_viz:v1.2.3`).
+
 ---
 
 ## Configuration (.env)

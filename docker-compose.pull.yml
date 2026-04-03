@@ -1,0 +1,46 @@
+# Production-ready: pulls pre-built image from GHCR.
+# Use instead of docker-compose.yml when you don't need local development.
+#
+#   docker compose -f docker-compose.pull.yml up -d
+
+services:
+  app:
+    image: ghcr.io/skvsree/edu_viz:latest
+    env_file:
+      - .env
+    depends_on:
+      - pgbouncer
+    ports:
+      - "18000:8000"
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: srs
+      DB_PASSWORD: srs
+      DB_NAME: srs
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 20
+      SERVER_IDLE_TIMEOUT: 600
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:5432"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: srs
+      POSTGRES_USER: srs
+      POSTGRES_PASSWORD: srs
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
