@@ -1101,8 +1101,27 @@ def delete_deck(
     db.execute(delete(Deck).where(Deck.id == deck.id))
     db.commit()
 
+    # Cleanup media files for this deck (if any)
+    _cleanup_deck_media(str(deck.id))
+
     success_message = quote_plus("Deck deleted")
     return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
+
+
+def _cleanup_deck_media(deck_id: str) -> None:
+    """
+    Remove media directory for a deck after deletion.
+    Uses shutil for safe directory removal (MIT licensed).
+    """
+    import shutil
+    from pathlib import Path
+
+    media_path = Path(__file__).resolve().parents[2] / "static" / "media" / deck_id
+    if media_path.exists() and media_path.is_dir():
+        try:
+            shutil.rmtree(media_path)
+        except OSError:
+            pass  # Best effort cleanup
 
 
 @router.get("/decks/{deck_id}", response_class=HTMLResponse)
@@ -1334,6 +1353,100 @@ def import_cards_csv(
         url=f"/decks/{deck.id}/flashcards?import_success={success_message}",
         status_code=303,
     )
+
+
+# =============================================================================
+# Anki Import
+# =============================================================================
+
+@router.get("/decks/{deck_id}/anki-import", response_class=HTMLResponse)
+def anki_import_page(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        raise HTTPException(status_code=403, detail="You do not have permission to import to this deck")
+
+    return templates.TemplateResponse(
+        "cards/anki_import.html",
+        {
+            "request": request,
+            "user": user,
+            "deck": deck,
+            "title": f"Import Anki Deck | {deck.name}",
+        },
+    )
+
+
+@router.post("/decks/{deck_id}/anki-import")
+def anki_import_upload(
+    request: Request,
+    deck_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        raise HTTPException(status_code=403, detail="You do not have permission to import to this deck")
+
+    # Validate file
+    if not file.filename or not file.filename.endswith('.apkg'):
+        return templates.TemplateResponse(
+            "cards/anki_import.html",
+            {
+                "request": request,
+                "user": user,
+                "deck": deck,
+                "title": f"Import Anki Deck | {deck.name}",
+                "import_error": "File must be a .apkg file",
+            },
+            status_code=400,
+        )
+
+    # Import using AnkiImportService
+    from app.services.anki_import import AnkiImportError, AnkiImportService
+
+    try:
+        service = AnkiImportService(db, deck)
+        result = service.import_apkg(file.file)
+    except AnkiImportError as e:
+        return templates.TemplateResponse(
+            "cards/anki_import.html",
+            {
+                "request": request,
+                "user": user,
+                "deck": deck,
+                "title": f"Import Anki Deck | {deck.name}",
+                "import_error": str(e),
+            },
+            status_code=400,
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            "cards/anki_import.html",
+            {
+                "request": request,
+                "user": user,
+                "deck": deck,
+                "title": f"Import Anki Deck | {deck.name}",
+                "import_error": f"Import failed: {e}",
+            },
+            status_code=500,
+        )
+
+    success_msg = quote_plus(
+        f"Imported {result.cards_imported} cards, {result.media_files} media files"
+        + (f", {result.duplicates_skipped} duplicates skipped" if result.duplicates_skipped > 0 else "")
+    )
+    return RedirectResponse(url=f"/decks/{deck.id}?import_success={success_msg}", status_code=303)
 
 
 @router.get("/review", response_class=HTMLResponse)

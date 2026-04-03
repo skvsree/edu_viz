@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">
+          <a href="/decks/{{ deck.id }}" class="back-link">&#8592; {{ deck.name }}</a>
+        </p>
+        <h1 class="section-title">Import Anki Deck</h1>
+      </div>
+    </div>
+
+    <div class="anki-import-info" style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(136, 192, 208, 0.1); border-radius: 8px;">
+      <p class="panel-label">Supported formats</p>
+      <ul style="margin: 0.5rem 0 0 1.25rem; color: var(--text, #f1f5f9);">
+        <li>Basic cards (front/back)</li>
+        <li>Cloze deletion cards (<code>{{"{{c1::text}}"}}</code> syntax)</li>
+        <li>Cards with images (PNG, JPG, GIF, SVG)</li>
+      </ul>
+    </div>
+
+    <form method="post" action="/decks/{{ deck.id }}/anki-import" enctype="multipart/form-data" class="stack-md" id="anki-import-form">
+      <div>
+        <label for="apkg-file">Select .apkg file</label>
+        <input type="file" id="apkg-file" name="file" accept=".apkg" required style="padding: 0.75rem; border: 1px dashed var(--border-color, #3b4252); border-radius: 8px; width: 100%; background: var(--surface, #2e3440); color: var(--text, #f1f5f9);" />
+        <p class="muted" style="margin-top: 0.5rem;">Maximum file size: 100MB</p>
+      </div>
+
+      <div id="import-progress" style="display: none;">
+        <div class="progress-bar" style="height: 8px; background: var(--surface, #2e3440); border-radius: 4px; overflow: hidden;">
+          <div id="progress-fill" style="height: 100%; background: linear-gradient(90deg, #88c0d0, #81a1c1); width: 0%; transition: width 0.3s ease;"></div>
+        </div>
+        <p id="progress-text" class="muted" style="margin-top: 0.5rem; text-align: center;">Preparing import...</p>
+      </div>
+
+      <div id="import-results" style="display: none; margin-top: 1rem;"></div>
+
+      <div class="deck-card__actions">
+        <button type="submit" class="button" id="import-btn">Import Deck</button>
+        <a href="/decks/{{ deck.id }}" class="button button-secondary">Cancel</a>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <p class="panel-label">Previous imports</p>
+    <p class="muted">Cards imported via Anki are marked with source: "anki-import"</p>
+    <div class="deck-card__actions" style="margin-top: 1rem;">
+      <a href="/decks/{{ deck.id }}/flashcards?q=anki-import" class="button button-secondary button-small">View Anki Cards</a>
+    </div>
+  </section>
+</section>
+
+<script>
+  (() => {
+    const form = document.getElementById('anki-import-form');
+    const progressDiv = document.getElementById('import-progress');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    const resultsDiv = document.getElementById('import-results');
+    const importBtn = document.getElementById('import-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = new FormData(form);
+      const file = formData.get('file');
+      
+      if (!file || !file.name.endsWith('.apkg')) {
+        alert('Please select a valid .apkg file');
+        return;
+      }
+
+      // Show progress
+      progressDiv.style.display = 'block';
+      resultsDiv.style.display = 'none';
+      importBtn.disabled = true;
+      progressFill.style.width = '30%';
+      progressText.textContent = 'Uploading file...';
+
+      try {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const percent = 30 + (e.loaded / e.total) * 30;
+            progressFill.style.width = percent + '%';
+            progressText.textContent = `Uploading... ${Math.round(e.loaded / 1024 / 1024 * 10) / 10}MB / ${Math.round(e.total / 1024 / 1024 * 10) / 10}MB`;
+          }
+        });
+
+        xhr.addEventListener('load', () => {
+          progressFill.style.width = '100%';
+          progressText.textContent = 'Processing...';
+
+          setTimeout(() => {
+            progressDiv.style.display = 'none';
+            importBtn.disabled = false;
+
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const data = JSON.parse(xhr.responseText);
+              resultsDiv.style.display = 'block';
+              resultsDiv.innerHTML = `
+                <div class="status-banner status-banner--success">
+                  <strong>Import complete!</strong>
+                  <span>${data.cards_imported} cards imported, ${data.media_files} media files extracted${data.duplicates_skipped > 0 ? `, ${data.duplicates_skipped} duplicates skipped` : ''}</span>
+                </div>
+              `;
+              if (data.errors && data.errors.length > 0) {
+                resultsDiv.innerHTML += `
+                  <div class="status-banner status-banner--error" style="margin-top: 1rem;">
+                    <strong>Warnings:</strong>
+                    <ul style="margin: 0.5rem 0 0 1.25rem;">
+                      ${data.errors.slice(0, 5).map(e => `<li>${e}</li>`).join('')}
+                      ${data.errors.length > 5 ? `<li>...and ${data.errors.length - 5} more</li>` : ''}
+                    </ul>
+                  </div>
+                `;
+              }
+            } else {
+              const data = JSON.parse(xhr.responseText);
+              resultsDiv.style.display = 'block';
+              resultsDiv.innerHTML = `
+                <div class="status-banner status-banner--error">
+                  <strong>Import failed</strong>
+                  <span>${data.detail || 'Unknown error'}</span>
+                </div>
+              `;
+            }
+          }, 500);
+        });
+
+        xhr.addEventListener('error', () => {
+          progressDiv.style.display = 'none';
+          importBtn.disabled = false;
+          resultsDiv.style.display = 'block';
+          resultsDiv.innerHTML = `
+            <div class="status-banner status-banner--error">
+              <strong>Upload failed</strong>
+              <span>Network error occurred</span>
+            </div>
+          `;
+        });
+
+        xhr.open('POST', form.action);
+        xhr.send(formData);
+
+      } catch (err) {
+        progressDiv.style.display = 'none';
+        importBtn.disabled = false;
+        resultsDiv.style.display = 'block';
+        resultsDiv.innerHTML = `
+          <div class="status-banner status-banner--error">
+            <strong>Error</strong>
+            <span>${err.message}</span>
+          </div>
+        `;
+      }
+    });
+  })();
+</script>
+
+<style>
+.back-link {
+  color: var(--muted-color, #94a3b8);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+.back-link:hover {
+  color: var(--text, #f1f5f9);
+  text-decoration: underline;
+}
+</style>
+{% endblock %}

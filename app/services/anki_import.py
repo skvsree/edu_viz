@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Card, CardState, Deck
-from app.services.cloze_renderer import extract_cloze_numbers, is_cloze_content
+from app.services.cloze_renderer import extract_cloze_numbers, is_cloze_content, render_cloze_front
 from app.services.media_urls import extract_media_filenames, resolve_media_urls
 
 logger = logging.getLogger(__name__)
@@ -290,6 +290,9 @@ class AnkiImportService:
                     note.content_html,
                     str(self.deck.id)
                 )
+                # Pre-render cloze markers for cloze cards
+                if note.card_type == "cloze":
+                    note.content_html = render_cloze_front(note.content_html)
 
         return notes
 

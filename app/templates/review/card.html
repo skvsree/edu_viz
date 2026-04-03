@@ -2,11 +2,21 @@
   <div class="review-card__body">
     <div class="review-loading-ring"></div>
     {% if remaining is not none %}<p class="panel-label">{{ remaining }} card{% if remaining != 1 %}s{% endif %} left in this session</p>{% endif %}
-    <div class="review-card__text review-card__text--prompt">{{ card.front }}</div>
+    
+    {# Cloze card: use content_html with rendered cloze #}
+    {% if card.is_cloze and card.content_html %}
+      <div class="review-card__text review-card__text--prompt">{{ card.content_html | safe }}</div>
+    {% else %}
+      <div class="review-card__text review-card__text--prompt">{{ card.front }}</div>
+    {% endif %}
 
     <details class="review-answer">
       <summary>Reveal answer</summary>
-      <div class="review-card__text review-card__text--answer">{{ card.back }}</div>
+      {% if card.is_cloze and card.content_html %}
+        <div class="review-card__text review-card__text--answer">{{ card.content_html | safe }}</div>
+      {% else %}
+        <div class="review-card__text review-card__text--answer">{{ card.back }}</div>
+      {% endif %}
     </details>
   </div>
 

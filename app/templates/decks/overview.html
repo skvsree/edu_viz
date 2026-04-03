@@ -68,6 +68,7 @@
       </div>
       {% if can_edit %}
       <div class="overview-actions" style="margin-top: 12px;">
+        <a href="/decks/{{ deck.id }}/anki-import" class="button button-secondary button-small">Import Anki Deck</a>
         <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
         {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
       </div>
