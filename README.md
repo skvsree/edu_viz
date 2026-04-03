@@ -1,5 +1,7 @@
 # edu selviz
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 > **Built with OpenClaw + Nanobot.** This project was vibe-coded — designed, built, and deployed using AI agents with minimal hand-holding. See it live at [edu.selviz.in](https://edu.selviz.in).
 
 A self-hostable, server-rendered spaced repetition web app (AnkiWeb-like) built with:
