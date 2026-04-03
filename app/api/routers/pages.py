@@ -449,12 +449,18 @@ def browse_decks(
         .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
     )
 
-    # Search filter - normalize the query to match normalized deck names
+    # Search filter - normalize the query to match normalized deck names or tags
     if q:
         from app.services.access import normalize_deck_name
+        from sqlalchemy import or_
         normalized_q = normalize_deck_name(q)
         if normalized_q:
-            base_q = base_q.where(Deck.normalized_name.ilike(f"%{normalized_q}%"))
+            base_q = base_q.outerjoin(Deck.tags).where(
+                or_(
+                    Deck.normalized_name.ilike(f"%{normalized_q}%"),
+                    Tag.normalized_name.ilike(f"%{normalized_q}%")
+                )
+            ).group_by(Deck.id)
 
     # Count total
     count_q = select(func.count()).select_from(base_q.subquery())
