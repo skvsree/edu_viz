@@ -1,111 +1,208 @@
 # edu selviz
 
-A minimal, server-authoritative spaced repetition web app (AnkiWeb-like) built with:
-- FastAPI (Python)
+A self-hostable, server-rendered spaced repetition web app (AnkiWeb-like) built with:
+- FastAPI (Python 3.12)
 - PostgreSQL (source of truth)
 - HTMX + Jinja templates
-- FSRS-style scheduler adapter (placeholder, easy to swap)
+- FSRS-style scheduler adapter
+- Docker Compose (recommended) or bare Python
 
-## Authentication
+## Security checklist before going live
 
-edu selviz now treats Microsoft sign-in as a generic OpenID Connect integration, with
-**Microsoft Entra External ID** as the preferred target configuration.
+- [ ] Set a strong, random `SECRET_KEY` (min 32 chars)
+- [ ] Enable `FORCE_SECURE_COOKIES=true` to add `Secure` flag on session cookies
+- [ ] Configure `ALLOWED_ORIGINS` to your domain (prevents CSRF on POST endpoints)
+- [ ] Use HTTPS in production (handled by your reverse proxy)
+- [ ] Set `DEBUG=false` (or unset `DEBUG`)
+- [ ] Set a strong `BULK_IMPORT_API_KEY` if using bulk import
+- [ ] Do not commit `.env` — keep secrets out of version control
 
-### Preferred configuration
+---
 
-Copy `.env.example` to `.env` and set:
+## Quick start (Docker)
 
-- `MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_ID`
-- `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL` from the app registration / user flow OIDC metadata document
-- `MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_SECRET` if your app registration uses one
-- `MICROSOFT_ENTRA_EXTERNAL_ID_REDIRECT_URI`
-
-If you know the exact OpenID metadata endpoint for your Entra External ID setup,
-use `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL`. That is the preferred and least ambiguous option.
-
-If you do not have a metadata URL handy, `MICROSOFT_ENTRA_EXTERNAL_ID_AUTHORITY` can still be used as a fallback, and the app will derive discovery metadata from it.
-
-Keep the authorize endpoint and token/metadata authority aligned. Avoid mixing a broad Microsoft authority such as `https://login.microsoftonline.com/common` with a tenant-scoped metadata URL, because Azure can reject the callback code exchange with `AADSTS700005` in that mixed setup.
-
-### Legacy Azure AD B2C compatibility
-
-The app still accepts the older `AZURE_B2C_*` variables as a fallback while migrating.
-That keeps current deployments working until you switch over to the new env var names.
-
-## Run (Docker)
-
-1) Configure env:
 ```bash
+git clone https://github.com/skvsree/edu_viz.git
+cd edu_viz
 cp .env.example .env
-# edit .env and set Microsoft Entra External ID / OIDC vars
+# edit .env with your values (see .env.example for all options)
+docker compose up --build -d
 ```
 
-2) Start:
-```bash
-docker compose up --build
+Open http://localhost:8000 and log in via Microsoft or Google.
+
+---
+
+## Configuration (.env)
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `SECRET_KEY` | Random string (min 32 chars) used to sign session cookies. **Generate one with:** `python -c "import secrets; print(secrets.token_urlsafe(64))"` |
+| `DATABASE_URL` | PostgreSQL connection string. Default: `postgresql+psycopg://srs:srs@db:5432/srs` (dev only) |
+
+### Auth (pick one provider)
+
+**Microsoft Entra External ID** (preferred):
+
+| Variable | Description |
+|----------|-------------|
+| `MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_ID` | App registration client ID |
+| `MICROSOFT_ENTRA_EXTERNAL_ID_CLIENT_SECRET` | App registration secret |
+| `MICROSOFT_ENTRA_EXTERNAL_ID_METADATA_URL` | OIDC metadata URL, e.g. `https://login.microsoftonline.com/<tenant-id>/v2.0/.well-known/openid-configuration` |
+| `MICROSOFT_ENTRA_EXTERNAL_ID_REDIRECT_URI` | Callback URL, e.g. `https://your-domain.com/auth/callback` |
+
+**Google OAuth** (alternative):
+
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | Callback URL, e.g. `https://your-domain.com/auth/google/callback` |
+
+Add the callback URL in your provider's app registration before starting.
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SYSTEM_ADMIN_BOOTSTRAP_EMAIL` | `skv.sree@outlook.com` | First user with this email is promoted to system_admin on login |
+| `OPENAI_API_KEY` | empty | Enables AI-assisted card generation from PDFs/DOCXs |
+| `OPENAI_MODEL` | `gpt-4.1-mini` | OpenAI model for AI features |
+| `BULK_IMPORT_API_KEY` | empty | API key for bulk deck import via `POST /api/v1/import/*` |
+| `FOOTER_COPYRIGHT_TEXT` | `SelViz Software Solutions` | Shown in page footer |
+| `TEST_DAILY_LIMIT` | `0` (unlimited) | Max tests per user per day |
+| `TEST_COOLDOWN_SECONDS` | `0` | Minimum seconds between test attempts |
+| `FORCE_SECURE_COOKIES` | `false` | Set to `true` to add `Secure` flag on session cookies (use in production) |
+| `ALLOWED_ORIGINS` | `*` | Comma-separated allowed origins for CSRF protection on form POSTs |
+
+---
+
+## Docker Compose services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `app` | 18000 | FastAPI application server |
+| `pgbouncer` | 6432 | PostgreSQL connection pooler (transaction mode) |
+| `db` | 5432 | PostgreSQL 16 database |
+
+### Using an external database
+
+Remove `db` and `pgbouncer` from `docker-compose.yml`, then set `DATABASE_URL` to your external Postgres:
+
+```env
+DATABASE_URL=postgresql+psycopg://user:pass@your-postgres-host:5432/srs
 ```
 
-Open: http://localhost:8000
+### Reverse proxy (production)
 
-Login flow: click **Login** → Microsoft redirects back to `/auth/callback`.
+Point your reverse proxy (Caddy, Nginx, etc.) to `http://localhost:18000`.
 
-### Production
-Set:
-- `MICROSOFT_ENTRA_EXTERNAL_ID_REDIRECT_URI=https://edu.selviz.in/auth/callback`
+Caddy example (`Caddyfile`):
+```
+edu.your-domain.com {
+    reverse_proxy localhost:18000
+}
+```
 
-And add that exact Redirect URI in your Microsoft Entra app registration / External ID configuration.
+Set `MICROSOFT_ENTRA_EXTERNAL_ID_REDIRECT_URI` and `GOOGLE_REDIRECT_URI` to match your domain.
 
-## Run (local)
+---
+
+## Bare Python (local development)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# ensure DATABASE_URL points to a running postgres
+# create .env with your settings
+cp .env.example .env
+
+# run migrations
+alembic upgrade head
+
+# start dev server
 uvicorn app.main:app --reload
 ```
 
-## MVP features
-- Register/login (signed cookie session)
-- Persistent login/session lifetime defaults to 45 days for both the app auth cookie and OIDC state session
-- Decks
-- Cards
-- Review flow: `/review` → HTMX loads `/review/next` → rate via `/review/rate`
-- AI-assisted PDF/DOCX ingestion into flashcards + MCQs using OpenAI
-- Separate per-deck flashcard, MCQ, and AI upload pages, including MCQ JSON import and item editing
-- Deck-level Anki CSV export
-- System-admin-created tests with multiple user attempts and analysis reports
+Requires PostgreSQL 15+ running locally.
 
-## Phase 2 foundation
+---
 
-This branch starts the move from personal decks to organization-aware access:
+## First login (initial setup)
 
-- `users.role` now distinguishes `user`, `admin`, and `system_admin`
-- `users.organization_id` links users to exactly one organization when assigned
-- `decks` now support organization scope, global scope, soft delete metadata, and normalized names for scope-aware uniqueness
-- `tags` are organization-scoped and attached to decks through `deck_tags`
-- dashboard deck listings now use accessible deck rules and expose basic progress signals:
-  `Cards Reviewed`, `Cards Due`, `Accuracy`, and `Last Reviewed`
+1. Start the app and open the login page.
+2. Authenticate with your configured provider (Microsoft/Google).
+3. The first user who logs in is promoted to **system_admin**.
+4. Subsequent users start as **user** role.
+5. As system_admin, visit `/settings` to create organizations, manage users, and create decks.
 
-Current implementation notes:
+---
 
-- existing users are backfilled to one personal organization each and promoted to `admin` during migration so pre-Phase-2 data keeps working
-- newly created users still auto-register on first OIDC login, but default to the `user` role and have no organization until a system admin assigns one
-- the configured bootstrap email (`SYSTEM_ADMIN_BOOTSTRAP_EMAIL`, default `skv.sree@outlook.com`) is promoted to `system_admin` on login, and any existing matching user is re-promoted on app startup
-- deck create/edit/import remains available only to `admin` and `system_admin`
-- accuracy is currently calculated as the share of reviews rated `3` or `4`
+## Roles
 
-## Migrations (Alembic)
+| Role | Permissions |
+|------|-------------|
+| `system_admin` | Full access — manage all orgs, users, decks |
+| `admin` | Manage decks in their organization, manage card content |
+| `user` | Review and take tests on assigned/organization decks |
 
-This project uses Alembic for schema migrations.
+---
 
-### Docker
-Migrations run automatically on container start (see `entrypoint.sh`).
+## Key routes
 
-### Local
+| Route | Description |
+|-------|-------------|
+| `GET /` | Home |
+| `GET /dashboard` | Personal dashboard with starred decks |
+| `GET /decks/browse` | Browse and search all accessible decks |
+| `GET /decks/{id}` | Deck overview (cards, MCQs, tests) |
+| `GET /review` | Spaced repetition review session |
+| `GET /decks/{id}/ai-upload` | AI-assisted PDF/DOCX card upload |
+| `GET /settings` | Admin settings (orgs, users) |
+| `GET /analytics` | Study analytics (admin) |
+| `GET /decks/{id}/anki-export.csv` | Export deck as Anki-compatible CSV |
+
+---
+
+## Database migrations
+
+Migrations run automatically on container start (`entrypoint.sh`).
+
+Manual run:
 ```bash
-# ensure DATABASE_URL points to a running postgres
 alembic upgrade head
-uvicorn app.main:app --reload
+```
+
+---
+
+## Development
+
+```bash
+# run tests
+pytest
+
+# run with coverage
+pytest --cov=app tests/
+```
+
+---
+
+## Project structure
+
+```
+app/
+  api/routers/     # FastAPI route handlers (pages, content, auth)
+  core/            # Config, DB setup
+  models/          # SQLAlchemy models
+  services/        # Business logic (access, scheduling, AI, auth)
+  templates/       # Jinja2 HTML templates
+  static/          # CSS, JS, images
+alembic/versions/  # DB migrations
+docker-compose.yml
+Dockerfile
+entrypoint.sh
+requirements.txt
 ```

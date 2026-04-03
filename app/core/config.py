@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://srs:srs@localhost:5432/srs"
-    secret_key: str = "dev-secret"
+    secret_key: str = ""
     app_session_cookie_name: str = "eduviz_session"
     app_session_max_age_seconds: int = 45 * 24 * 60 * 60
     oidc_state_session_max_age_seconds: int = 45 * 24 * 60 * 60
@@ -59,5 +59,29 @@ class Settings(BaseSettings):
     azure_b2c_client_secret: str | None = None
     azure_b2c_redirect_uri: str | None = None
 
+    @property
+    def is_secure_cookies(self) -> bool:
+        return self.force_secure_cookies
+
+    force_secure_cookies: bool = False
+
+    @property
+    def cookie_secure(self) -> bool:
+        return self.force_secure_cookies
+
+    allowed_origins: str = "*"
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        if self.allowed_origins == "*":
+            return ["*"]
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
 
 settings = Settings(_env_parse_none_str="")
+
+if not settings.secret_key:
+    raise ValueError(
+        "SECRET_KEY is not set. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
