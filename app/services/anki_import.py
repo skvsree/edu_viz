@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Card, CardState, Deck
-from app.services.cloze_renderer import extract_cloze_numbers, is_cloze_content, render_cloze_front
+from app.services.cloze_renderer import extract_cloze_numbers, is_cloze_content, render_cloze_front, render_cloze_back
 from app.services.media_urls import extract_media_filenames, resolve_media_urls
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,8 @@ class AnkiCard:
     front: str
     back: str
     card_type: str = "basic"  # "basic" or "cloze"
-    content_html: Optional[str] = None
+    content_html: Optional[str] = None  # Front side (or full for basic cards)
+    content_html_back: Optional[str] = None  # Back side for cloze cards
     media_files: list[str] = field(default_factory=list)
     cloze_number: Optional[int] = None
     source_label: str = "anki-import"
@@ -290,8 +291,9 @@ class AnkiImportService:
                     note.content_html,
                     str(self.deck.id)
                 )
-                # Pre-render cloze markers for cloze cards
+                # Pre-render cloze markers for cloze cards (front = hidden, back = revealed)
                 if note.card_type == "cloze":
+                    note.content_html_back = render_cloze_back(note.content_html)
                     note.content_html = render_cloze_front(note.content_html)
 
         return notes
@@ -328,6 +330,7 @@ class AnkiImportService:
             back=card_data.back,
             card_type=card_data.card_type,
             content_html=card_data.content_html,
+            content_html_back=card_data.content_html_back,
             media_files=card_data.media_files if card_data.media_files else None,
             cloze_number=card_data.cloze_number,
             source_label=card_data.source_label,

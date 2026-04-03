@@ -1391,6 +1391,8 @@ def anki_import_upload(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    from fastapi.responses import JSONResponse
+
     deck = db.get(Deck, deck_id)
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
@@ -1399,15 +1401,8 @@ def anki_import_upload(
 
     # Validate file
     if not file.filename or not file.filename.endswith('.apkg'):
-        return templates.TemplateResponse(
-            "cards/anki_import.html",
-            {
-                "request": request,
-                "user": user,
-                "deck": deck,
-                "title": f"Import Anki Deck | {deck.name}",
-                "import_error": "File must be a .apkg file",
-            },
+        return JSONResponse(
+            {"success": False, "error": "File must be a .apkg file"},
             status_code=400,
         )
 
@@ -1418,35 +1413,24 @@ def anki_import_upload(
         service = AnkiImportService(db, deck)
         result = service.import_apkg(file.file)
     except AnkiImportError as e:
-        return templates.TemplateResponse(
-            "cards/anki_import.html",
-            {
-                "request": request,
-                "user": user,
-                "deck": deck,
-                "title": f"Import Anki Deck | {deck.name}",
-                "import_error": str(e),
-            },
+        return JSONResponse(
+            {"success": False, "error": str(e)},
             status_code=400,
         )
     except Exception as e:
-        return templates.TemplateResponse(
-            "cards/anki_import.html",
-            {
-                "request": request,
-                "user": user,
-                "deck": deck,
-                "title": f"Import Anki Deck | {deck.name}",
-                "import_error": f"Import failed: {e}",
-            },
+        return JSONResponse(
+            {"success": False, "error": f"Import failed: {e}"},
             status_code=500,
         )
 
-    success_msg = quote_plus(
-        f"Imported {result.cards_imported} cards, {result.media_files} media files"
-        + (f", {result.duplicates_skipped} duplicates skipped" if result.duplicates_skipped > 0 else "")
-    )
-    return RedirectResponse(url=f"/decks/{deck.id}?import_success={success_msg}", status_code=303)
+    return JSONResponse({
+        "success": True,
+        "cards_imported": result.cards_imported,
+        "media_files": result.media_files,
+        "duplicates_skipped": result.duplicates_skipped,
+        "errors": result.errors,
+        "redirect_url": f"/decks/{deck.id}?import_success={quote_plus(f'Imported {result.cards_imported} cards')}",
+    })
 
 
 @router.get("/review", response_class=HTMLResponse)

@@ -100,31 +100,47 @@
 
             if (xhr.status >= 200 && xhr.status < 300) {
               const data = JSON.parse(xhr.responseText);
-              resultsDiv.style.display = 'block';
-              resultsDiv.innerHTML = `
-                <div class="status-banner status-banner--success">
-                  <strong>Import complete!</strong>
-                  <span>${data.cards_imported} cards imported, ${data.media_files} media files extracted${data.duplicates_skipped > 0 ? `, ${data.duplicates_skipped} duplicates skipped` : ''}</span>
-                </div>
-              `;
-              if (data.errors && data.errors.length > 0) {
-                resultsDiv.innerHTML += `
-                  <div class="status-banner status-banner--error" style="margin-top: 1rem;">
-                    <strong>Warnings:</strong>
-                    <ul style="margin: 0.5rem 0 0 1.25rem;">
-                      ${data.errors.slice(0, 5).map(e => `<li>${e}</li>`).join('')}
-                      ${data.errors.length > 5 ? `<li>...and ${data.errors.length - 5} more</li>` : ''}
-                    </ul>
+              if (data.success) {
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = `
+                  <div class="status-banner status-banner--success">
+                    <strong>Import complete!</strong>
+                    <span>${data.cards_imported} cards imported, ${data.media_files} media files extracted${data.duplicates_skipped > 0 ? `, ${data.duplicates_skipped} duplicates skipped` : ''}</span>
+                  </div>
+                `;
+                if (data.errors && data.errors.length > 0) {
+                  resultsDiv.innerHTML += `
+                    <div class="status-banner status-banner--warning" style="margin-top: 1rem;">
+                      <strong>Warnings:</strong>
+                      <ul style="margin: 0.5rem 0 0 1.25rem;">
+                        ${data.errors.slice(0, 5).map(e => `<li>${e}</li>`).join('')}
+                        ${data.errors.length > 5 ? `<li>...and ${data.errors.length - 5} more</li>` : ''}
+                      </ul>
+                    </div>
+                  `;
+                }
+                // Redirect after showing results
+                setTimeout(() => { window.location.href = data.redirect_url; }, 1500);
+              } else {
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = `
+                  <div class="status-banner status-banner--error">
+                    <strong>Import failed</strong>
+                    <span>${data.error || 'Unknown error'}</span>
                   </div>
                 `;
               }
             } else {
-              const data = JSON.parse(xhr.responseText);
+              let errorMsg = 'Upload failed';
+              try {
+                const data = JSON.parse(xhr.responseText);
+                errorMsg = data.error || data.detail || errorMsg;
+              } catch {}
               resultsDiv.style.display = 'block';
               resultsDiv.innerHTML = `
                 <div class="status-banner status-banner--error">
                   <strong>Import failed</strong>
-                  <span>${data.detail || 'Unknown error'}</span>
+                  <span>${errorMsg}</span>
                 </div>
               `;
             }
