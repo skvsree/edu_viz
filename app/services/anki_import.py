@@ -164,36 +164,38 @@ class AnkiImportService:
             with zf.open(collection_name) as col_file:
                 db_data = col_file.read()
 
-            conn = sqlite3.connect(":memory:")
-            conn.execute("ATTACH DATABASE ':memory:' AS media_db")
-            # Create temp table with the collection data
-            conn.execute(f"CREATE TABLE collection(data TEXT)")
-            # Use a file-based temp connection since we can't attach memory to memory
-            temp_file = io.BytesIO(db_data)
-            temp_conn = sqlite3.connect(temp_file.read())
-            for row in temp_conn.execute("SELECT * FROM col"):
-                conn.execute("INSERT INTO col VALUES (?)", (row[0],))
-
-            # Parse col table (it's JSON)
-            cursor = conn.execute("SELECT * FROM col LIMIT 1")
-            col_data = cursor.fetchone()[0] if cursor else None
-
-            if col_data:
-                col_json = json.loads(col_data)
-                decks = col_json.get("decks", {})
-
-                # Parse models for field names
-                models = col_json.get("models", {})
+            # Use a temporary file for SQLite - it works better with the format
+            import tempfile
+            import os
+            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
+                tmp.write(db_data)
+                tmp_path = tmp.name
+            
+            conn = sqlite3.connect(tmp_path)
+            try:
+                # Parse col table - new format has separate columns for models/decks
+                cursor = conn.execute("SELECT * FROM col LIMIT 1")
+                row = cursor.fetchone()
+                
+                # Handle both old format (single JSON in first column) and new format (columns)
+                if isinstance(row[0], (str, bytes, bytearray)):
+                    # Old format: first column is JSON string
+                    col_json = json.loads(row[0])
+                    models_json = col_json.get("models", {})
+                    decks_json = col_json.get("decks", {})
+                else:
+                    # New format: models is column 9, decks is column 10
+                    models_json = json.loads(row[9]) if row[9] else {}
+                    decks_json = json.loads(row[10]) if row[10] else {}
 
                 # Get notes
                 try:
-                    temp_conn = sqlite3.connect(io.BytesIO(db_data))
-                    for row in temp_conn.execute("SELECT id, mid, flds, tags FROM notes"):
-                        note_id, model_id, flds, tags = row
+                    for note_row in conn.execute("SELECT id, mid, flds, tags FROM notes"):
+                        note_id, model_id, flds, tags = note_row
                         fields = flds.split('\x1f') if flds else []
 
                         # Get model info
-                        model = models.get(str(model_id), {})
+                        model = models_json.get(str(model_id), {})
                         field_names = [f.get('name', '') for f in model.get('flds', [])]
 
                         # Detect cloze
@@ -224,15 +226,17 @@ class AnkiImportService:
                 except Exception as e:
                     logger.warning(f"Error reading notes: {e}")
 
-            # Parse media map from collection
-            try:
-                temp_conn = sqlite3.connect(io.BytesIO(db_data))
-                for row in temp_conn.execute("SELECT * FROM media"):
-                    if row:
-                        key, value = row[0], row[1]
-                        media_map[str(key)] = value
-            except:
-                pass
+                # Parse media map from collection
+                try:
+                    for media_row in conn.execute("SELECT * FROM media"):
+                        if media_row:
+                            key, value = media_row[0], media_row[1]
+                            media_map[str(key)] = value
+                except:
+                    pass
+            finally:
+                conn.close()
+                os.unlink(tmp_path)
 
         return {"notes": notes, "media": media_map}
 
