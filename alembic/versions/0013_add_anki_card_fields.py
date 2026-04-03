@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.add_column('cards', sa.Column('content_html', sa.Text(), nullable=True))
-    op.add_column('cards', sa.Column('media_files', postgresql.JSONB(astext=sa.Text()), nullable=True))
+    op.add_column('cards', sa.Column('media_files', postgresql.JSONB(), nullable=True))
     op.add_column('cards', sa.Column('cloze_number', sa.Integer(), nullable=True))
 
 

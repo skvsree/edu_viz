@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 # revision identifiers
-revision = '0014_add_card_content_html_back'
-down_revision = '0013_add_anki_card_fields'
+revision = '0014'
+down_revision = '0013'
 branch_labels = None
 depends_on = None
 

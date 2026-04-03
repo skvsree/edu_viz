@@ -13,8 +13,8 @@ from sqlalchemy import text
 
 
 # revision identifiers
-revision = '0015_backfill_cloze_content_html_back'
-down_revision = '0014_add_card_content_html_back'
+revision = '0015'
+down_revision = '0014'
 branch_labels = None
 depends_on = None
 
