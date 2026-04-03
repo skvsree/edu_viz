@@ -3,8 +3,8 @@
     <div class="review-loading-ring"></div>
     {% if remaining is not none %}<p class="panel-label">{{ remaining }} card{% if remaining != 1 %}s{% endif %} left in this session</p>{% endif %}
     
-    {# Use content_html for imported cards (Anki), fallback to plain text #}
-    {% if card.content_html %}
+    {# Cloze cards: use pre-rendered content_html with hidden gaps #}
+    {% if card.is_cloze and card.content_html %}
       <div class="review-card__text review-card__text--prompt">{{ card.content_html | safe }}</div>
     {% else %}
       <div class="review-card__text review-card__text--prompt">{{ card.front }}</div>
@@ -12,11 +12,14 @@
 
     <details class="review-answer">
       <summary>Reveal answer</summary>
-      {# Cloze cards use content_html_back (revealed), others use back text or content_html for imported #}
-      {% if card.is_cloze and card.content_html_back %}
-        <div class="review-card__text review-card__text--answer">{{ card.content_html_back | safe }}</div>
-      {% elif card.content_html %}
-        <div class="review-card__text review-card__text--answer">{{ card.content_html | safe }}</div>
+      {# Cloze cards: use content_html_back (revealed), fall back to rendering back side #}
+      {% if card.is_cloze %}
+        {% if card.content_html_back %}
+          <div class="review-card__text review-card__text--answer">{{ card.content_html_back | safe }}</div>
+        {% else %}
+          {# Fallback: render cloze back from front content_html (for legacy cards) #}
+          <div class="review-card__text review-card__text--answer">{{ card.content_html | safe if card.content_html else card.back }}</div>
+        {% endif %}
       {% else %}
         <div class="review-card__text review-card__text--answer">{{ card.back }}</div>
       {% endif %}
