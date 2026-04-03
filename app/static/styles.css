@@ -2241,6 +2241,133 @@ ul {
   color: #64748b;
 }
 
+[data-theme="light"] .hero-brand__media {
+  background: radial-gradient(circle at top, rgba(109, 94, 252, 0.12), rgba(241, 245, 249, 0.92));
+  border-color: rgba(109, 94, 252, 0.2);
+  box-shadow: 0 18px 36px rgba(109, 94, 252, 0.12);
+}
+
+[data-theme="light"] .hero-brand__copy .eyebrow {
+  color: #6d5efc;
+}
+
+[data-theme="light"] .hero-brand__copy .section-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .hero-brand__copy .muted {
+  color: #64748b;
+}
+
+[data-theme="light"] .hero-brand__caption {
+  color: #64748b;
+}
+
+[data-theme="light"] .provider-card {
+  background: #fff;
+  border-color: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  color: #1e293b;
+}
+
+[data-theme="light"] .provider-card:hover {
+  background: #f8fafc;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .provider-card .muted {
+  color: #64748b;
+}
+
+/* Provider cards - dark theme defaults */
+.provider-card {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.provider-label--microsoft {
+  color: #93c5fd;
+}
+
+.provider-label--google {
+  color: #86efac;
+}
+
+.provider-title {
+  color: #f8fafc;
+}
+
+.provider-desc {
+  color: #cbd5e1;
+}
+
+.provider-btn {
+  background: #1e3a8a;
+  color: #fff;
+  border: 1px solid rgba(96, 165, 250, 0.85);
+}
+
+.provider-card--google .provider-btn {
+  background: #166534;
+  border-color: rgba(74, 222, 128, 0.85);
+}
+
+/* Provider cards - light theme overrides */
+[data-theme="light"] .provider-card {
+  background: #fff;
+  border-color: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .provider-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .provider-label--microsoft {
+  color: #2563eb;
+}
+
+[data-theme="light"] .provider-label--google {
+  color: #16a34a;
+}
+
+[data-theme="light"] .provider-title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .provider-desc {
+  color: #64748b;
+}
+
+[data-theme="light"] .provider-btn {
+  background: #eff6ff;
+  color: #1e40af;
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+[data-theme="light"] .provider-card--google .provider-btn {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.4);
+}
+
+[data-theme="light"] .brand-mark__copy small {
+  color: #64748b;
+}
+
+[data-theme="light"] .topbar-nav a {
+  color: #64748b;
+}
+
+[data-theme="light"] .topbar-nav a:hover {
+  color: var(--primary);
+}
+
+[data-theme="light"] .user-menu__text {
+  color: #64748b;
+}
+
 [data-theme="light"] .page-content {
   background: transparent;
 }
