@@ -286,3 +286,45 @@ app/templates/
 - Review page styling is separate from the main shell — do not pull in the full topbar/nav into review mode.
 - Modal flows in dashboard/settings depend on query params + client-side dialog wiring; test both direct page loads and click-open interactions.
 - Static assets use `static_asset_url()` for cache-busting; always reference CSS/images/icons through this helper.
+
+## Anki Import System (feature/anki-import)
+
+### Overview
+Extended EduViz to import Anki .apkg decks with rich content support.
+
+### Files Created
+- `alembic/versions/0013_add_anki_card_fields.py` - Migration for new card fields
+- `app/services/anki_import.py` - AnkiImportService for parsing .apkg files
+- `app/services/cloze_renderer.py` - Cloze text rendering ({{c1::text}} syntax)
+- `app/services/media_urls.py` - Media URL resolution for images
+- `docs/ANKI_IMPORT_PLAN.md` - Full implementation plan
+
+### Files Modified
+- `app/models/card.py` - Added content_html, media_files, cloze_number fields
+- `app/api/routers/bulk_import.py` - Added POST /api/v1/import/decks/{id}/anki-import
+- `requirements.txt` - Added genanki>=0.14.0
+
+### New Card Fields
+- `content_html`: Full HTML with cloze/image markup
+- `media_files`: JSON array of media filenames
+- `cloze_number`: Cloze index (1, 2, 3...) or NULL
+
+### API Endpoint
+```
+POST /api/v1/import/decks/{deck_id}/anki-import
+Content-Type: multipart/form-data
+file: <.apkg binary>
+
+Response: {
+  "success": true,
+  "cards_imported": 8917,
+  "media_files": 302,
+  "duplicates_skipped": 0,
+  "errors": []
+}
+```
+
+### Phase 2 (Pending)
+- Review template update (cloze rendering)
+- Import UI page
+- Media cleanup on deck delete
