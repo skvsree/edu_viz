@@ -7,7 +7,12 @@
     {% if card.is_cloze and card.content_html %}
       <div class="review-card__text review-card__text--prompt">{{ card.content_html | safe }}</div>
     {% else %}
-      <div class="review-card__text review-card__text--prompt">{{ card.front }}</div>
+      {# Basic cards: render HTML if present in content_html, else plain front #}
+      {% if card.content_html %}
+        <div class="review-card__text review-card__text--prompt">{{ card.content_html | safe }}</div>
+      {% else %}
+        <div class="review-card__text review-card__text--prompt">{{ card.front | safe }}</div>
+      {% endif %}
     {% endif %}
 
     <details class="review-answer">
@@ -21,7 +26,12 @@
           <div class="review-card__text review-card__text--answer">{{ card.content_html | safe if card.content_html else card.back }}</div>
         {% endif %}
       {% else %}
-        <div class="review-card__text review-card__text--answer">{{ card.back }}</div>
+        {# Basic cards: render HTML if present in content_html_back, else plain back #}
+        {% if card.content_html_back %}
+          <div class="review-card__text review-card__text--answer">{{ card.content_html_back | safe }}</div>
+        {% else %}
+          <div class="review-card__text review-card__text--answer">{{ card.back | safe }}</div>
+        {% endif %}
       {% endif %}
     </details>
   </div>
