@@ -229,3 +229,11 @@ Dockerfile
 entrypoint.sh
 requirements.txt
 ```
+
+---
+
+<p align="center">
+  <a href="https://github.com/skvsree/edu_viz"><img src="https://img.shields.io/badge/GitHub-Repo-blue?logo=github" alt="GitHub"></a>
+</p>
+
+Questions, bugs, or feature requests? [Open an issue](https://github.com/skvsree/edu_viz/issues) on GitHub.
