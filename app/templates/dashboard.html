@@ -50,16 +50,18 @@
     {% if deck_stats %}
       <div class="deck-grid deck-grid--dashboard" id="favorites-grid">
         {% for item in deck_stats %}
-          <article class="deck-card deck-card--simple" data-name="{{ item.deck.name | lower }}" data-href="/decks/{{ item.deck.id }}" data-deck-id="{{ item.deck.id }}">
-            <div class="deck-card__content">
-              <button type="button" class="deck-star-btn deck-star-btn--favorited" data-deck-id="{{ item.deck.id }}" title="Remove from favorites" aria-label="Remove {{ item.deck.name }} from favorites">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <article class="deck-card deck-card--simple" data-name="{{ item.deck.name | lower }}" data-deck-id="{{ item.deck.id }}">
+            <div class="deck-card__header">
+              <a href="/decks/{{ item.deck.id }}" class="deck-card__title-link">
+                <h3 class="deck-card__title">{{ item.deck.name }}</h3>
+              </a>
+              <button type="button" class="deck-favorite-btn deck-favorite-btn--active" data-deck-id="{{ item.deck.id }}" title="Remove from favorites" aria-label="Remove from favorites">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
               </button>
-              <h3 class="deck-card__title">{{ item.deck.name }}</h3>
             </div>
-            <div class="deck-card__actions deck-card__actions--inline">
-              <a href="/review?deck_id={{ item.deck.id }}" class="button button-secondary button-small button-review" onclick="event.stopPropagation();">Review</a>
-              <a href="/decks/{{ item.deck.id }}/tests" class="button button-secondary button-small button-test" onclick="event.stopPropagation();">Test</a>
+            <div class="deck-card__actions">
+              <a href="/review?deck_id={{ item.deck.id }}" class="button button-secondary button-small">Review</a>
+              <a href="/decks/{{ item.deck.id }}/tests" class="button button-secondary button-small">Test</a>
             </div>
           </article>
         {% endfor %}
@@ -347,23 +349,18 @@
     const FAVORITES_API = "/api/v1/favorites/decks/";
 
     function getSvgStar(filled) {
-      if (filled) {
-        return `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
-      }
-      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+      const fillAttr = filled ? 'fill="currentColor"' : 'fill="none"';
+      return `<svg width="20" height="20" viewBox="0 0 24 24" ${fillAttr} stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
     }
 
-    function updateStarBtn(btn, isFavorited) {
+    function updateFavoriteBtn(btn, isFavorited) {
       btn.innerHTML = getSvgStar(isFavorited);
-      btn.classList.toggle("deck-star-btn--favorited", isFavorited);
+      btn.classList.toggle("deck-favorite-btn--active", isFavorited);
       btn.title = isFavorited ? "Remove from favorites" : "Add to favorites";
-      btn.setAttribute("aria-label", isFavorited
-        ? (btn.getAttribute("aria-label") || "").replace("Add", "Remove").replace("to favorites", "from favorites")
-        : (btn.getAttribute("aria-label") || "").replace("Remove", "Add").replace("from favorites", "to favorites")
-      );
+      btn.setAttribute("aria-label", isFavorited ? "Remove from favorites" : "Add to favorites");
     }
 
-    document.querySelectorAll(".deck-star-btn").forEach((btn) => {
+    document.querySelectorAll(".deck-favorite-btn").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -375,7 +372,7 @@
           const res = await fetch(FAVORITES_API + deckId + "/toggle", { method: "POST" });
           if (res.ok) {
             const data = await res.json();
-            updateStarBtn(btn, data.favorite);
+            updateFavoriteBtn(btn, data.favorite);
 
             // If unfavorited, remove the card from the dashboard
             if (!data.favorite) {
@@ -408,17 +405,6 @@
         }
       });
     });
-
-    // Click card to navigate
-    const grid = document.getElementById("favorites-grid");
-    if (grid) {
-      grid.querySelectorAll(".deck-card--simple").forEach((card) => {
-        card.style.cursor = "pointer";
-        card.addEventListener("click", () => {
-          window.location.href = card.dataset.href;
-        });
-      });
-    }
   })();
 </script>
 {% endblock %}

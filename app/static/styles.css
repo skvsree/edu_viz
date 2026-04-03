@@ -764,29 +764,80 @@ body::after {
   justify-content: flex-end;
 }
 
- .deck-star-btn {
-   background: none;
-   border: none;
-   cursor: pointer;
-   padding: 4px;
-   display: inline-flex;
-   color: var(--text-muted, #94a3b8);
-   flex-shrink: 0;
-   transition: filter 0.2s ease;
- }
- .deck-star-btn:hover {
-   filter: drop-shadow(0 0 6px currentColor);
- }
- .deck-star-btn--favorited {
-   color: #f59e0b;
- }
- .deck-star-btn--favorited:hover {
-   filter: drop-shadow(0 0 8px #f59e0b);
- }
- .deck-star-btn--favorited svg {
-   fill: currentColor;
-   stroke: none;
- }
+.deck-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.deck-card__title-link {
+  text-decoration: none;
+  color: inherit;
+  flex: 1;
+  min-width: 0;
+}
+
+.deck-card__title-link:hover .deck-card__title {
+  color: var(--primary);
+}
+
+.deck-favorite-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #64748b);
+  flex-shrink: 0;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.deck-favorite-btn:hover {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  transform: scale(1.1);
+}
+
+.deck-favorite-btn--active {
+  color: #f59e0b;
+}
+
+.deck-favorite-btn--active:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.deck-favorite-btn--active svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.deck-star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  color: var(--text-muted, #94a3b8);
+  flex-shrink: 0;
+  transition: filter 0.2s ease;
+}
+.deck-star-btn:hover {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+.deck-star-btn--favorited {
+  color: #f59e0b;
+}
+.deck-star-btn--favorited:hover {
+  filter: drop-shadow(0 0 8px #f59e0b);
+}
+.deck-star-btn--favorited svg {
+  fill: currentColor;
+  stroke: none;
+}
  .deck-star-btn:not(.deck-star-btn--favorited) svg {
    fill: none;
  }
@@ -2135,6 +2186,15 @@ ul {
 [data-theme="light"] .study-card p,
 [data-theme="light"] .muted {
   color: #64748b;
+}
+
+[data-theme="light"] .deck-favorite-btn {
+  color: #94a3b8;
+}
+
+[data-theme="light"] .deck-favorite-btn:hover {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
 }
 
 [data-theme="light"] .study-card__label {
