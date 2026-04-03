@@ -449,9 +449,12 @@ def browse_decks(
         .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
     )
 
-    # Search filter
+    # Search filter - normalize the query to match normalized deck names
     if q:
-        base_q = base_q.where(Deck.normalized_name.ilike(f"%{q}%"))
+        from app.services.access import normalize_deck_name
+        normalized_q = normalize_deck_name(q)
+        if normalized_q:
+            base_q = base_q.where(Deck.normalized_name.ilike(f"%{normalized_q}%"))
 
     # Count total
     count_q = select(func.count()).select_from(base_q.subquery())
