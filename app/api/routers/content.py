@@ -3,6 +3,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
+import sqlite3
+import tempfile
+import zipfile
+from pathlib import Path
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -24,6 +29,7 @@ from app.services.access import (
     can_open_test_center,
     can_use_ai_generation,
 )
+from app.services.ai_auth import get_env_ai_provider_name, resolve_ai_credential
 from app.services.ai_generation import AIGenerationError, generate_study_pack
 from app.services.content_extraction import ContentExtractionError, extract_text
 from app.services.mcq_import import McqImportError, parse_mcq_json
@@ -84,7 +90,11 @@ def ai_import_deck_content(
     source_file.file.close()
     try:
         text = extract_text(source_file.filename or "", payload)
-        pack = generate_study_pack(text)
+        resolution = resolve_ai_credential(db, user, "openai")
+        credential = resolution.credential
+        if not credential:
+            raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
+        pack = generate_study_pack(text, provider_name="openai", credential=credential)
     except (ContentExtractionError, AIGenerationError) as exc:
         message = quote_plus(str(exc))
         return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_error={message}", status_code=303)
@@ -109,6 +119,57 @@ def ai_import_deck_content(
     db.add_all([CardState(card_id=card.id) for card in new_cards])
     db.commit()
     return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_success={quote_plus(f'Generated {len(pack.flashcards)} flashcards and {len(pack.mcqs)} MCQs')}", status_code=303)
+
+
+@router.post("/decks/{deck_id}/generate-mcqs")
+def generate_mcqs_for_deck(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_ai_generation_access(user)
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    resolution = resolve_ai_credential(db, user, "openai")
+    credential = resolution.credential
+    if not credential:
+        return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus(resolution.reason or 'No AI credential configured for you or your organization.')}", status_code=303)
+
+    source_cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.asc())).scalars().all()
+    source_text = "\n\n".join(
+        part.strip()
+        for card in source_cards
+        for part in (card.front or "", card.back or "")
+        if part and part.strip()
+    )
+    if not source_text:
+        return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus('No study text found to generate MCQs.')}", status_code=303)
+
+    try:
+        pack = generate_study_pack(source_text, provider_name="openai", credential=credential)
+    except AIGenerationError as exc:
+        return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus(str(exc))}", status_code=303)
+
+    mcq_cards = [
+        Card(
+            deck_id=deck.id,
+            front=item.question,
+            back=item.explanation,
+            card_type="mcq",
+            mcq_options=item.options,
+            mcq_answer_index=item.answer_index,
+            source_label="ai-mcq",
+        )
+        for item in pack.mcqs
+    ]
+    if mcq_cards:
+        db.add_all(mcq_cards)
+        db.flush()
+        db.add_all([CardState(card_id=card.id) for card in mcq_cards])
+        db.commit()
+    return RedirectResponse(url=f"/decks/{deck.id}?import_success={quote_plus(f'Generated {len(mcq_cards)} MCQs')}", status_code=303)
 
 
 @router.post("/decks/{deck_id}/mcqs/import-json")
@@ -174,6 +235,57 @@ def sample_mcq_json_download():
     )
 
 
+def _build_anki_mcq_apkg(deck: Deck, cards: list[Card]) -> Path:
+    output_dir = Path(__file__).resolve().parent.parent.parent / "static" / "anki"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = re.sub(r'[^a-z0-9_-]+', '_', deck.name.lower()).strip('_') or "deck"
+    apkg_path = output_dir / f"{safe_name}_mcqs.apkg"
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE col (id integer primary key, crt integer, mod integer, scm integer, ver integer, dty integer, usn integer, ls integer, conf text, models text, decks text, dconf text, tags text)")
+        conn.execute("CREATE TABLE notes (id integer primary key, guid text, mid integer, mod integer, usn integer, tags text, flds text, sfld integer, csum integer, flags integer, data text)")
+        model_id = 1001
+        model = {
+            str(model_id): {
+                "id": model_id,
+                "name": "EduViz MCQ",
+                "flds": [{"name": "Question"}, {"name": "Options"}, {"name": "Answer"}, {"name": "Explanation"}],
+            }
+        }
+        deck_map = {str(1): {"id": 1, "name": deck.name, "mod": 0, "usn": 0, "collapsed": False, "browserCollapsed": False, "extendNew": 0, "extendRev": 0, "conf": 1, "desc": ""}}
+        conn.execute("INSERT INTO col VALUES (1, 0, 0, 0, 11, 0, 0, 0, '{}', ?, ?, '{}', '{}')", (json.dumps(model), json.dumps(deck_map)))
+        note_id = 1
+        for card in cards:
+            if card.card_type != "mcq":
+                continue
+            options = card.mcq_options or []
+            answer = options[card.mcq_answer_index] if card.mcq_answer_index is not None and 0 <= card.mcq_answer_index < len(options) else ""
+            flds = "\x1f".join([
+                card.front or "",
+                "<br>".join(options),
+                answer,
+                card.back or "",
+            ])
+            conn.execute(
+                "INSERT INTO notes VALUES (?, ?, ?, 0, 0, '', ?, 0, 0, 0, '')",
+                (note_id, f"guid{note_id}", model_id, flds),
+            )
+            note_id += 1
+        conn.commit()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdb = Path(tmpdir) / "collection.anki21"
+            backup = sqlite3.connect(tmpdb)
+            conn.backup(backup)
+            backup.close()
+            with zipfile.ZipFile(apkg_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                zf.write(tmpdb, arcname="collection.anki21")
+                zf.writestr("media", json.dumps({}))
+    finally:
+        conn.close()
+    return apkg_path
+
+
 @router.get("/decks/{deck_id}/anki-export.csv")
 def export_anki_csv(deck_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     deck = db.get(Deck, deck_id)
@@ -191,6 +303,21 @@ def export_anki_csv(deck_id: str, user: User = Depends(current_user), db: Sessio
         content=buffer.getvalue(),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/decks/{deck_id}/anki-mcqs.apkg")
+def export_anki_mcqs(deck_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    cards = db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "mcq").order_by(Card.created_at.asc())).scalars().all()
+    apkg_path = _build_anki_mcq_apkg(deck, cards)
+    return Response(
+        content=apkg_path.read_bytes(),
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{apkg_path.name}"'},
     )
 
 

@@ -210,9 +210,21 @@
 - For Deck objects, use `opt.id|string` for key extraction (not `opt.key|default(opt.id)` which returns 'undefined')
 
 ### Settings (admin)
-- Organizations management (`/settings/organizations`) — create, rename, assign users
-- Users management (`/settings/users`) — update role, assign organization
+- Organizations management (`/settings/organizations`) — create, edit via modals, delete (future)
+- Users management (`/settings/users`) — update role, assign organization, AI and test settings
 - Global deck toggle in deck edit flow (marks deck as globally accessible)
+
+#### Settings page UI patterns
+- **Organizations page**: deck-grid of org cards with stats (users, AI, tests). Create/edit via modals.
+  - Modal flow: `Enable AI generation` checkbox → conditional `Override global AI setting` → Provider + API key inputs
+  - Same pattern for `Enable tests` → `Daily test limit` input
+  - Modal pre-fills from data attributes on the Edit button
+- **Users page**: stacked form-cards per user matching the `form-card` pattern (section-heading outside form, form class="stack-md", each field in a `<div>` wrapper)
+  - AI settings section: `Enable AI generation` → `Override org AI` → Provider + API key (same flow as orgs)
+  - AI section only shown when org AI is enabled for that user
+  - AI status shown in grid: "Org AI off" or "Org AI on (user key)"
+  - "View users" from org page filters to that org via `?org=<org_id>` query param
+  - Filtered view shows "Showing users in [Org] — Show all" link
 
 ### Routes reference
 

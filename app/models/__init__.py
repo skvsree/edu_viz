@@ -17,6 +17,7 @@ from app.models.analytics import (
     AnalyticsEvent,
     AnalyticsEventType,
 )
+from app.models.ai_credentials import AICredentialScope
 
 __all__ = [
     "Organization",
@@ -37,5 +38,6 @@ __all__ = [
     "SystemAnalytics",
     "AnalyticsEvent",
     "AnalyticsEventType",
+    "AICredentialScope",
     "UserDeckFavorite",
 ]

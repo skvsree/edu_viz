@@ -39,7 +39,7 @@ def resolve_media_urls(html: str, deck_id: str) -> str:
 
         # Encode filename for safe URL
         filename = quote(src, safe='')
-        new_src = f'/assets/media/{deck_id}/{filename}'
+        new_src = f'/assets/v1/media/{deck_id}/{filename}'
 
         # Replace src attribute
         new_img = SRC_PATTERN.sub(f'src="{new_src}"', img_tag)

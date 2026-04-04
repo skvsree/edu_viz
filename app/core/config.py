@@ -12,9 +12,11 @@ class Settings(BaseSettings):
     system_admin_bootstrap_email: str = "skv.sree@outlook.com"
     footer_copyright_text: str = "SelViz Software Solutions"
 
+    ai_study_pack_provider: str = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
+    ai_secrets_fernet_key: str | None = None
     bulk_import_api_key: str | None = None
 
     # Default question count for auto-starting tests. When set (positive integer),

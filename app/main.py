@@ -47,6 +47,40 @@ STATIC_DIR = BASE_DIR / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+@app.get("/{filename}.{ext}")
+def serve_temp_media_file(filename: str, ext: str):
+    """Serve media files by original filename (e.g., /temp_file_hash.jpg)"""
+    from fastapi import HTTPException
+
+    media_root = STATIC_DIR / "media"
+    if not media_root.exists():
+        raise HTTPException(status_code=404)
+
+    search_name = f"{filename}.{ext}"
+    for deck_dir in media_root.iterdir():
+        if deck_dir.is_dir():
+            if (deck_dir / search_name).exists():
+                return FileResponse(deck_dir / search_name, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    raise HTTPException(status_code=404)
+
+
+@app.get("/assets/media/{filename:path}")
+def serve_media_file(filename: str):
+    """Serve media files by filename (e.g., /assets/media/temp_file_hash.jpg)"""
+    from fastapi import HTTPException
+
+    media_root = STATIC_DIR / "media"
+    if not media_root.exists():
+        raise HTTPException(status_code=404)
+
+    for deck_dir in media_root.iterdir():
+        if deck_dir.is_dir():
+            candidate = deck_dir / filename
+            if candidate.exists() and candidate.is_file():
+                return FileResponse(candidate, headers={"Cache-Control": "public, max-age=31536000, immutable"})
+    raise HTTPException(status_code=404)
+
+
 @app.get("/assets/{version}/{asset_path:path}")
 def versioned_static_asset(version: str, asset_path: str):
     static_root = STATIC_DIR.resolve()

@@ -36,6 +36,10 @@
     <script src="{{ static_asset_url('vendor/tom-select.complete.min.js') }}"></script>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
     <link rel="stylesheet" href="{{ static_asset_url('css/multiselect.css') }}" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/mhchem.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     {% block extra_head %}{% endblock %}
     {% block scripts %}{% endblock %}
   </head>
@@ -122,6 +126,41 @@
           }
         });
       })();
+    </script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '\\[', right: '\\]', display: true},
+            {left: '$$', right: '$$', display: true},
+            {left: '\\(', right: '\\)', display: false},
+            {left: '$', right: '$', display: false}
+          ],
+          throwOnError: false,
+          trust: true,
+          macros: {
+            "\\celsius": "{}^{\\circ}\\text{C}"
+          }
+        });
+      });
+      // Re-render KaTeX after HTMX content swap
+      document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (typeof renderMathInElement === 'function') {
+            renderMathInElement(event.target, {
+              delimiters: [
+                {left: '\\[', right: '\\]', display: true},
+                {left: '$$', right: '$$', display: true},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '$', right: '$', display: false}
+              ],
+              throwOnError: false,
+              trust: true,
+              macros: {
+                "\\celsius": "{}^{\\circ}\\text{C}"
+              }
+            });
+        }
+      });
     </script>
   </body>
 </html>

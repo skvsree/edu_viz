@@ -26,15 +26,62 @@
         }
       });
     </script>
+    <script>
+      function renderKaTeX(root) {
+        root = root || document.getElementById('review-area') || document.body;
+        if (typeof renderMathInElement === 'function') {
+          try {
+            renderMathInElement(root, {
+              delimiters: [
+                {left: '\\[', right: '\\]', display: true},
+                {left: '$$', right: '$$', display: true},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '$', right: '$', display: false}
+              ],
+              ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+              ignoredClasses: ['katex', 'math-content', 'cloze'],
+              throwOnError: false,
+              trust: true,
+              macros: {
+                "\\celsius": "{}^{\\circ}\\text{C}"
+              }
+            });
+          } catch(e) {
+            console.error('KaTeX render error:', e);
+          }
+        }
+      }
+      document.addEventListener("DOMContentLoaded", function() {
+        renderKaTeX(document.getElementById('review-area'));
+      });
+      document.body.addEventListener('htmx:afterSwap', function(event) {
+        if (event.target && event.target.id === 'review-area') {
+          renderKaTeX(event.target);
+        } else {
+          renderKaTeX(document.getElementById('review-area'));
+        }
+      });
+      document.body.addEventListener('htmx:afterSettle', function(event) {
+        if (event.target && event.target.id === 'review-area') {
+          renderKaTeX(event.target);
+        }
+      });
+    </script>
     <style>
       .review-card__body{position:relative}
       .review-loading-ring{display:none;width:44px;height:44px;border:4px solid rgba(120,113,108,.2);border-top-color:rgba(120,113,108,.9);border-radius:50%;animation:rlspin .7s linear infinite;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10}
       .review-loading .review-loading-ring{display:block!important}
       .review-loading .review-card__body{opacity:.4}
       @keyframes rlspin{to{transform:translate(-50%,-50%) rotate(360deg)}}
-      .review-body .button-rating[disabled]{opacity:.15!important;filter:grayscale(1)!important;border:3px dashed red!important}
-    </style>
+       .review-body .button-rating[disabled]{opacity:.15!important;filter:grayscale(1)!important;border:3px dashed red!important}
+       .math-content{display:block}
+       .hl{background:#fff3a3;padding:0 0.2em;border-radius:0.2em}
+     </style>
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/mhchem.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   </head>
   <body class="review-body">
     <div class="review-shell">

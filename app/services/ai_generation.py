@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-
-from openai import OpenAI
-
-from app.core.config import settings
+from typing import Protocol
 
 
 class AIGenerationError(RuntimeError):
@@ -32,6 +29,40 @@ class GeneratedStudyPack:
     mcqs: list[GeneratedMcq]
 
 
+@dataclass(slots=True)
+class AICredential:
+    provider: str
+    auth_type: str
+    secret: str
+    refresh_token: str | None = None
+    source: str = "env"
+
+
+class StudyPackProvider(Protocol):
+    name: str
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack: ...
+
+
+class OpenAIStudyPackProvider:
+    name = "openai"
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        if not credential or credential.provider != "openai":
+            raise AIGenerationError("OpenAI credential is required.")
+        if credential.auth_type not in {"api_key", "oauth"}:
+            raise AIGenerationError(f"Unsupported OpenAI auth type: {credential.auth_type}")
+
+        from openai import OpenAI
+
+        client = OpenAI(api_key=credential.secret)
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=_build_prompt(text),
+        )
+        return _parse_study_pack_json(response.output_text)
+
+
 def _build_prompt(text: str) -> str:
     sample = text[:12000]
     return (
@@ -47,22 +78,11 @@ def _build_prompt(text: str) -> str:
     )
 
 
-def generate_study_pack(text: str) -> GeneratedStudyPack:
-    if not settings.openai_generation_enabled:
-        raise AIGenerationError("OpenAI generation is disabled by configuration.")
-    if not settings.openai_api_key:
-        raise AIGenerationError("OpenAI API key is not configured.")
-
-    client = OpenAI(api_key=settings.openai_api_key)
-    response = client.responses.create(
-        model=settings.openai_model,
-        input=_build_prompt(text),
-    )
-    raw = response.output_text
+def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise AIGenerationError("OpenAI returned invalid JSON for study generation.") from exc
+        raise AIGenerationError("AI provider returned invalid JSON for study generation.") from exc
 
     flashcards = [
         GeneratedFlashcard(front=item["front"].strip(), back=item["back"].strip())
@@ -84,5 +104,15 @@ def generate_study_pack(text: str) -> GeneratedStudyPack:
             )
 
     if not flashcards and not mcqs:
-        raise AIGenerationError("OpenAI did not return usable flashcards or MCQs.")
+        raise AIGenerationError("AI provider did not return usable flashcards or MCQs.")
     return GeneratedStudyPack(flashcards=flashcards, mcqs=mcqs)
+
+
+def get_study_pack_provider(name: str) -> StudyPackProvider:
+    if name.strip().lower() == "openai":
+        return OpenAIStudyPackProvider()
+    raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
+
+
+def generate_study_pack(text: str, *, provider_name: str, credential: AICredential) -> GeneratedStudyPack:
+    return get_study_pack_provider(provider_name).generate(text, credential)

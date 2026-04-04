@@ -7,6 +7,8 @@ services:
       - pgbouncer
     ports:
       - "18000:8000"
+    volumes:
+      - media_data:/app/app/static/media
 
   pgbouncer:
     image: edoburu/pgbouncer:latest
@@ -39,3 +41,4 @@ services:
 
 volumes:
   pgdata:
+  media_data:

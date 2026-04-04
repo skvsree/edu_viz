@@ -14,10 +14,13 @@
         <p class="panel-label">Access management</p>
         <h1 class="section-title">Users</h1>
         <p class="muted section-copy">
-          {% if user.role == "system_admin" %}
-            Assign people to organizations, set their roles, and enable test access per user.
+          {% if filtered_org_name %}
+            Showing users in <strong>{{ filtered_org_name }}</strong>
+            <a href="/settings/users" class="button-link">Show all</a>
+          {% elif user.role == "system_admin" %}
+            Assign people to organizations and set their roles.
           {% else %}
-            Review the users in your organization, update roles, and control test access.
+            Review the users in your organization and update their roles.
           {% endif %}
         </p>
       </div>
@@ -29,53 +32,84 @@
     <div class="stack-md">
       {% for member in users %}
         <article class="card form-card">
-          <form method="post" action="/settings/users/{{ member.id }}/update" class="stack-md">
-            <div class="section-heading">
-              <div>
-                <p class="panel-label">User</p>
-                <h2 class="section-subtitle">{{ member.email or member.identity_sub }}</h2>
-              </div>
+          <div class="section-heading">
+            <div>
+              <p class="panel-label">User</p>
+              <h2 class="section-subtitle">{{ member.email or member.identity_sub }}</h2>
             </div>
-            <div class="dashboard-grid">
-              <div>
-                <label>Email / identity</label>
-                <input value="{{ member.email or member.identity_sub }}" disabled />
-              </div>
-              <div>
-                <label for="role-{{ member.id }}">Role</label>
-                <select id="role-{{ member.id }}" name="role" {% if not editable_roles.get(member.id|string) %}disabled{% endif %}>
-                  {% for option in editable_roles.get(member.id|string, []) %}
-                    <option value="{{ option }}" {% if member.role == option %}selected{% endif %}>{{ option }}</option>
+          </div>
+          <form method="post" action="/settings/users/{{ member.id }}/update" class="stack-md">
+            <div>
+              <label for="role-{{ member.id }}">Role</label>
+              <select id="role-{{ member.id }}" name="role" {% if not editable_roles.get(member.id|string) %}disabled{% endif %}>
+                {% for option in editable_roles.get(member.id|string, []) %}
+                  <option value="{{ option }}" {% if member.role == option %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="org-{{ member.id }}">Organization</label>
+              {% if user.role == "system_admin" %}
+                <select id="org-{{ member.id }}" name="organization_id">
+                  <option value="">Unassigned</option>
+                  {% for org in organizations %}
+                    <option value="{{ org.id }}" {% if member.organization_id == org.id %}selected{% endif %}>{{ org.name }}</option>
                   {% endfor %}
                 </select>
-              </div>
-              <div>
-                <label for="organization-{{ member.id }}">Organization</label>
-                {% if user.role == "system_admin" %}
-                  <select id="organization-{{ member.id }}" name="organization_id">
-                    <option value="">Unassigned</option>
-                    {% for organization in organizations %}
-                      <option value="{{ organization.id }}" {% if member.organization_id == organization.id %}selected{% endif %}>{{ organization.name }}</option>
-                    {% endfor %}
-                  </select>
-                {% else %}
-                  <input value="{{ member.organization.name if member.organization else 'Unassigned' }}" disabled />
-                {% endif %}
-              </div>
-              <div>
-                <label for="test-enabled-{{ member.id }}">Tests enabled</label>
-                {% if editable_roles.get(member.id|string) %}
-                  <label class="checkbox-row">
-                    <input id="test-enabled-{{ member.id }}" type="checkbox" name="is_test_enabled" value="true" {% if member.is_test_enabled %}checked{% endif %} />
-                    <span>Allow this user to see and take tests</span>
-                  </label>
-                {% else %}
-                  <input value="{{ 'Enabled' if member.is_test_enabled else 'Disabled' }}" disabled />
-                {% endif %}
-              </div>
+              {% else %}
+                <input value="{{ member.organization.name if member.organization else 'Unassigned' }}" disabled />
+              {% endif %}
             </div>
+            <div>
+              <label for="test-{{ member.id }}">Tests</label>
+              {% if editable_roles.get(member.id|string) %}
+                <label class="checkbox-row">
+                  <input id="test-{{ member.id }}" type="checkbox" name="is_test_enabled" value="true" {% if member.is_test_enabled %}checked{% endif %} />
+                  <span>Allow tests</span>
+                </label>
+              {% else %}
+                <input value="{{ 'Allowed' if member.is_test_enabled else 'Disabled' }}" disabled />
+              {% endif %}
+            </div>
+            <div>
+              <label>AI</label>
+              <span class="deck-card__meta">
+                {% if not user_org_ai_enabled.get(member.id|string) %}Org AI off{% else %}Org AI on{% endif %}
+                {% if user_ai_has_cred.get(member.id|string) %} (user key){% endif %}
+              </span>
+            </div>
+
+            {% if editable_roles.get(member.id|string) and user_org_ai_enabled.get(member.id|string) %}
+              <div data-ai-section class="stack-sm">
+                <label class="checkbox-row">
+                  <input type="checkbox" name="ai_enabled" value="true" data-ai-toggle {% if user_ai_has_cred.get(member.id|string) %}checked{% endif %} />
+                  <span>Enable AI generation</span>
+                </label>
+                <div data-ai-override-row class="stack-sm" hidden>
+                  <label class="checkbox-row">
+                    <input type="checkbox" name="ai_override_org" value="true" data-ai-override {% if user_ai_has_cred.get(member.id|string) %}checked{% endif %} />
+                    <span>Override org AI</span>
+                  </label>
+                  <div data-ai-settings hidden class="stack-sm">
+                    <div>
+                      <label for="ai-provider-{{ member.id }}">Provider</label>
+                      <select id="ai-provider-{{ member.id }}" name="provider">
+                        <option value="openai" {% if user_ai_provider.get(member.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label for="ai-secret-{{ member.id }}">API key</label>
+                      <input id="ai-secret-{{ member.id }}" name="ai_secret" type="password" placeholder="Enter API key" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+
             {% if editable_roles.get(member.id|string) %}
-              <div class="deck-card__actions"><button type="submit" class="button button-small">Save user</button></div>
+              <div class="deck-card__actions">
+                <button type="submit" class="button button-small">Save user</button>
+              </div>
             {% else %}
               <p class="muted">This account cannot be edited from your current role.</p>
             {% endif %}
@@ -87,4 +121,28 @@
     </div>
   </section>
 </section>
+
+<script>
+(() => {
+  document.querySelectorAll('[data-ai-toggle]').forEach((t) => {
+    const section = t.closest('[data-ai-section]');
+    const row = section?.querySelector('[data-ai-override-row]');
+    const override = row?.querySelector('[data-ai-override]');
+    const sync = () => {
+      if (row) row.hidden = !t.checked;
+      if (t.checked) syncOverride(override);
+    };
+    const syncOverride = () => {
+      const settings = row?.querySelector('[data-ai-settings]');
+      if (settings) settings.hidden = !override.checked;
+    };
+    sync();
+    t.addEventListener('change', sync);
+    if (override) {
+      syncOverride();
+      override.addEventListener('change', syncOverride);
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -66,7 +66,7 @@ class AnkiImportService:
     def __init__(self, db: Session, deck: Deck):
         self.db = db
         self.deck = deck
-        self.media_dir = Path("app/static/media") / str(deck.id)
+        self.media_dir = Path(__file__).resolve().parent.parent / "static" / "media" / str(deck.id)
         self._existing_front_backs: set[tuple[str, str]] = set()
         self._existing_html: set[str] = set()
 
@@ -105,6 +105,7 @@ class AnkiImportService:
 
         # Import cards
         cards_to_add = []
+        study_source_lines: list[str] = []
         for card_data in cards:
             # Check for duplicates
             if self._is_duplicate(card_data):
@@ -115,6 +116,7 @@ class AnkiImportService:
                 card = self._create_card(card_data)
                 cards_to_add.append(card)
                 result.cards_imported += 1
+                study_source_lines.extend([card_data.front, card_data.back])
             except Exception as e:
                 result.errors.append(f"Failed to create card: {e}")
 
@@ -128,6 +130,8 @@ class AnkiImportService:
             self.db.add_all(states)
 
             self.db.commit()
+
+        return result
 
         return result
 
@@ -170,6 +174,14 @@ class AnkiImportService:
             with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
                 tmp.write(db_data)
                 tmp_path = tmp.name
+            
+            # Read media map from zip (new format uses JSON file)
+            try:
+                media_content = zf.read('media')
+                media_map = json.loads(media_content)
+                logger.info(f"Loaded {len(media_map)} media mappings from zip")
+            except KeyError:
+                logger.warning("No media file in zip - media map will be empty")
             
             conn = sqlite3.connect(tmp_path)
             try:
@@ -226,14 +238,15 @@ class AnkiImportService:
                 except Exception as e:
                     logger.warning(f"Error reading notes: {e}")
 
-                # Parse media map from collection
-                try:
-                    for media_row in conn.execute("SELECT * FROM media"):
-                        if media_row:
-                            key, value = media_row[0], media_row[1]
-                            media_map[str(key)] = value
-                except:
-                    pass
+                # Parse media map from collection (old format fallback)
+                if not media_map:
+                    try:
+                        for media_row in conn.execute("SELECT * FROM media"):
+                            if media_row:
+                                key, value = media_row[0], media_row[1]
+                                media_map[str(key)] = value
+                    except:
+                        pass
             finally:
                 conn.close()
                 os.unlink(tmp_path)

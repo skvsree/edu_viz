@@ -70,7 +70,7 @@
       <div class="overview-actions" style="margin-top: 12px;">
         <a href="/decks/{{ deck.id }}/anki-import" class="button button-secondary button-small">Import Anki Deck</a>
         <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
-        {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
+        {% if can_use_ai_generation %}<form method="post" action="/decks/{{ deck.id }}/generate-mcqs" class="ai-action-form"><button type="submit" class="button button-secondary button-small button-ai"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Generate MCQs</span></button></form><a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small button-ai"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Upload</span></a>{% endif %}
       </div>
       {% endif %}
     </article>
