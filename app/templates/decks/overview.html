@@ -70,7 +70,7 @@
       <div class="overview-actions" style="margin-top: 12px;">
         <a href="/decks/{{ deck.id }}/anki-import" class="button button-secondary button-small">Import Anki Deck</a>
         <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
-        {% if can_use_ai_generation %}<form method="post" action="/decks/{{ deck.id }}/generate-mcqs" class="ai-action-form"><button type="submit" class="button button-secondary button-small button-ai"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Generate MCQs</span></button></form><a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small button-ai"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Upload</span></a>{% endif %}
+        {% if can_use_ai_generation %}<button type="button" id="generate-mcqs-btn" class="button button-secondary button-small button-ai" data-deck-id="{{ deck.id }}"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Generate MCQs</span></button><a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small button-ai"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Upload</span></a>{% endif %}
       </div>
       {% endif %}
     </article>
@@ -166,10 +166,138 @@
       </form>
     </article>
 
-  {% endif %}
+   {% endif %}
 </section>
 
+<!-- MCQ Generation Progress Modal -->
+<div id="mcq-progress-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Generating MCQs</h3>
+    </div>
+    <div class="modal-body">
+      <p id="mcq-progress-status">Initializing...</p>
+      <div class="progress-bar-container">
+        <div id="mcq-progress-bar" class="progress-bar" style="width: 0%"></div>
+      </div>
+      <p class="muted" style="margin-top: 8px;">
+        <span id="mcq-processed">0</span> / <span id="mcq-total">0</span> cards processed
+      </p>
+      <p class="muted" style="margin-top: 4px;">
+        MCQs generated: <strong id="mcq-count">0</strong>
+      </p>
+      <p id="mcq-provider" class="muted" style="margin-top: 8px;"></p>
+    </div>
+  </div>
+</div>
+
 <script>
+  (() => {
+    const btn = document.getElementById("overview-star-btn");
+    
+    // MCQ Generation SSE
+    const generateBtn = document.getElementById("generate-mcqs-btn");
+    const modal = document.getElementById("mcq-progress-modal");
+    const progressBar = document.getElementById("mcq-progress-bar");
+    const progressStatus = document.getElementById("mcq-progress-status");
+    const processedSpan = document.getElementById("mcq-processed");
+    const totalSpan = document.getElementById("mcq-total");
+    const mcqCountSpan = document.getElementById("mcq-count");
+    const providerSpan = document.getElementById("mcq-provider");
+    
+    if (generateBtn) {
+      generateBtn.addEventListener("click", async () => {
+        const deckId = generateBtn.dataset.deckId;
+        
+        // Show modal
+        modal.style.display = "flex";
+        progressStatus.textContent = "Connecting...";
+        progressBar.style.width = "0%";
+        processedSpan.textContent = "0";
+        mcqCountSpan.textContent = "0";
+        providerSpan.textContent = "";
+        generateBtn.disabled = true;
+        
+        let eventSource;
+        
+        try {
+          eventSource = new EventSource(`/decks/${deckId}/generate-mcqs/stream`, {
+            withCredentials: true
+          });
+          
+          eventSource.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              
+              if (event.type === "start" || data.event === "start") {
+                progressStatus.textContent = "Generating MCQs...";
+                totalSpan.textContent = data.total || 0;
+                providerSpan.textContent = `Provider: ${data.provider || "unknown"}`;
+              }
+              
+              if (event.type === "progress" || data.event === "progress") {
+                const processed = data.processed || 0;
+                const total = data.total || 1;
+                const percent = Math.round((processed / total) * 100);
+                progressBar.style.width = `${percent}%`;
+                processedSpan.textContent = processed;
+                mcqCountSpan.textContent = data.total_mcqs || 0;
+                progressStatus.textContent = `Processing batch... (${percent}%)`;
+              }
+              
+              if (event.type === "mcq_created" || data.event === "mcq_created") {
+                mcqCountSpan.textContent = data.total_saved || 0;
+              }
+              
+              if (event.type === "batch_error" || data.event === "batch_error") {
+                console.error("Batch error:", data.error);
+              }
+              
+              if (event.type === "complete" || data.event === "complete") {
+                progressBar.style.width = "100%";
+                progressStatus.textContent = `Complete! Created ${data.mcqs_created} MCQs`;
+                mcqCountSpan.textContent = data.mcqs_created || 0;
+                
+                // Refresh page after 2 seconds
+                setTimeout(() => {
+                  modal.style.display = "none";
+                  window.location.href = data.deck_url + "?import_success=" + encodeURIComponent(`Generated ${data.mcqs_created} MCQs`);
+                }, 2000);
+              }
+              
+              if (event.type === "error" || data.event === "error") {
+                progressStatus.textContent = "Error: " + (data.message || "Unknown error");
+                setTimeout(() => {
+                  modal.style.display = "none";
+                  generateBtn.disabled = false;
+                }, 3000);
+              }
+            } catch (e) {
+              console.error("Error parsing SSE data:", e);
+            }
+          };
+          
+          eventSource.onerror = () => {
+            progressStatus.textContent = "Connection lost. Retrying...";
+            eventSource.close();
+            
+            // Retry once after 3 seconds
+            setTimeout(() => {
+              modal.style.display = "none";
+              generateBtn.disabled = false;
+            }, 3000);
+          };
+          
+        } catch (err) {
+          console.error("SSE error:", err);
+          progressStatus.textContent = "Failed to start generation";
+          modal.style.display = "none";
+          generateBtn.disabled = false;
+        }
+      });
+    }
+  })();
+  
   (() => {
     const btn = document.getElementById("overview-star-btn");
     if (!btn) return;
