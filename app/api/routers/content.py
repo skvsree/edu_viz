@@ -90,11 +90,25 @@ def ai_import_deck_content(
     source_file.file.close()
     try:
         text = extract_text(source_file.filename or "", payload)
-        resolution = resolve_ai_credential(db, user, "openai")
+        # Determine provider: user > org > global
+        provider = "openai"
+        if user.id:
+            from app.services.ai_auth import get_scope_provider
+            user_provider = get_scope_provider(db, "user", user.id)
+            if user_provider:
+                provider = user_provider
+            elif user.organization_id:
+                from app.models import Organization
+                org = db.get(Organization, user.organization_id)
+                if org and org.is_ai_enabled:
+                    org_provider = get_scope_provider(db, "organization", org.id)
+                    if org_provider:
+                        provider = org_provider
+        resolution = resolve_ai_credential(db, user, provider)
         credential = resolution.credential
         if not credential:
             raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
-        pack = generate_study_pack(text, provider_name="openai", credential=credential)
+        pack = generate_study_pack(text, provider_name=credential.provider, credential=credential)
     except (ContentExtractionError, AIGenerationError) as exc:
         message = quote_plus(str(exc))
         return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_error={message}", status_code=303)
