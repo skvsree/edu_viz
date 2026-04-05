@@ -352,22 +352,3 @@ Response: {
 
 ### Current Branch: feature/anki-import
 - Recent commits: c7b7613 (Minimax/Claude providers), ce168a9 (dynamic provider + button visibility), 2ea17e4 (simplified AI_PROVIDER/AI_API_KEY env vars)
-
-### Local AI Providers (codex/opencode)
-- **OpenClaw** is an AI gateway running on port 18789 (host) that manages multiple AI providers
-- OpenClaw is already configured with `minimax` as default provider using MiniMax API key
-- `openclaw agent --local` runs a single agent turn via the gateway (uses minimax by default)
-- The codebase has `CodexStudyPackProvider` and `OpencodeStudyPackProvider` classes in `app/services/ai_generation.py`
-- These were refactored to use `LocalAIClientProvider._call_openclaw_agent()` which spawns `openclaw agent` subprocess
-- This allows using minimax (already configured) without needing per-user API keys in the app
-- Docker compose mounts `/usr/lib/node_modules` (contains openclaw) and `/root/.openclaw` (config)
-- Container needs Node.js v22+ but ships with v20 - CLI invocation needs fixing or use gateway API directly
-
-### OpenClaw Gateway (host)
-- Running on port 18789 (needs auth)
-- Config at `/root/.openclaw/openclaw.json`
-- Providers configured: minimax (global API key), openai-codex (OAuth), opencode-zen (API key)
-- Default model: `minimax/MiniMax-M2.7` (MiniMax-M2.7)
-- Agents: main (Malcolm), secretary, researcher, coder
-- Session store: `/root/.openclaw/agents/main/sessions/sessions.json`
-- Available via CLI: `openclaw agent --local --session-id <id> --message "<prompt>" --json`
