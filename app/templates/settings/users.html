@@ -77,6 +77,53 @@
                 {% endif %}
               </div>
             </div>
+            <div>
+              <label>AI</label>
+              <span class="deck-card__meta">
+                {% if not user_org_ai_enabled.get(member.id|string) %}Org AI off{% else %}Org AI on{% endif %}
+                {% if user_ai_has_cred.get(member.id|string) %} (user key){% endif %}
+              </span>
+            </div>
+
+            {% if editable_roles.get(member.id|string) and user_org_ai_enabled.get(member.id|string) %}
+              <div data-ai-section class="stack-sm">
+                <div class="toggle-row">
+                  <div class="toggle-row__label">
+                    <span class="toggle-row__title">AI generation</span>
+                    <span class="toggle-row__desc">Enable AI-powered content generation for this user</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" name="ai_enabled" value="true" data-ai-toggle {% if user_ai_has_cred.get(member.id|string) %}checked{% endif %} />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div data-ai-override-row class="stack-sm" hidden>
+                  <div class="toggle-row">
+                    <div class="toggle-row__label">
+                      <span class="toggle-row__title">Override org AI</span>
+                      <span class="toggle-row__desc">Use user-specific AI settings instead of org defaults</span>
+                    </div>
+                    <label class="toggle-switch">
+                      <input type="checkbox" name="ai_override_org" value="true" data-ai-override {% if user_ai_has_cred.get(member.id|string) %}checked{% endif %} />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div data-ai-settings hidden class="stack-sm">
+                    <div>
+                      <label for="ai-provider-{{ member.id }}">Provider</label>
+                      <select id="ai-provider-{{ member.id }}" name="provider">
+                        <option value="openai" {% if user_ai_provider.get(member.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label for="ai-secret-{{ member.id }}">API key</label>
+                      <input id="ai-secret-{{ member.id }}" name="ai_secret" type="password" placeholder="Enter API key" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endif %}
+            </div>
             {% if editable_roles.get(member.id|string) %}
               <div class="deck-card__actions"><button type="submit" class="button button-small">Save user</button></div>
             {% else %}
@@ -90,4 +137,27 @@
     </div>
   </section>
 </section>
+<script>
+(() => {
+  document.querySelectorAll('[data-ai-toggle]').forEach((t) => {
+    const section = t.closest('[data-ai-section]');
+    const row = section?.querySelector('[data-ai-override-row]');
+    const override = row?.querySelector('[data-ai-override]');
+    const sync = () => {
+      if (row) row.hidden = !t.checked;
+      if (t.checked) syncOverride(override);
+    };
+    const syncOverride = () => {
+      const settings = row?.querySelector('[data-ai-settings]');
+      if (settings) settings.hidden = !override.checked;
+    };
+    sync();
+    t.addEventListener('change', sync);
+    if (override) {
+      syncOverride();
+      override.addEventListener('change', syncOverride);
+    }
+  });
+})();
+</script>
 {% endblock %}

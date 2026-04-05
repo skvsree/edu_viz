@@ -1389,7 +1389,8 @@ label {
 }
 
 textarea,
-input {
+input,
+select {
   width: 100%;
   padding: 12px 14px;
   margin: 0;
@@ -1398,6 +1399,15 @@ input {
   background: rgba(30, 41, 59, 0.9);
   color: #f1f5f9;
   font: inherit;
+}
+
+select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
 }
 
 textarea {
@@ -2248,6 +2258,7 @@ ul {
 }
 
 [data-theme="light"] input,
+[data-theme="light"] select,
 [data-theme="light"] textarea {
   background: #fff;
   border-color: rgba(148, 163, 184, 0.5);
@@ -2272,6 +2283,30 @@ ul {
   line-height: 1;
   transition: background 0.15s, border-color 0.15s;
   flex-shrink: 0;
+}
+
+/* Light theme toggle overrides */
+[data-theme="light"] .toggle-row {
+  background: rgba(241, 245, 249, 0.92);
+  border-color: rgba(148, 163, 184, 0.32);
+}
+
+[data-theme="light"] .toggle-row__title {
+  color: #1e293b;
+}
+
+[data-theme="light"] .toggle-slider {
+  background: rgba(148, 163, 184, 0.38);
+}
+
+[data-theme="light"] .toggle-slider::before {
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .toggle-status {
+  background: rgba(148, 163, 184, 0.18);
+  color: #475569;
 }
 
 .theme-toggle:hover {
