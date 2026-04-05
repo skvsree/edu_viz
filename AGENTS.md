@@ -209,6 +209,15 @@
 - Multiselect stores selected keys in hidden input as comma-separated string
 - For Deck objects, use `opt.id|string` for key extraction (not `opt.key|default(opt.id)` which returns 'undefined')
 
+### AI Generation
+- Three providers: OpenAI, Minimax, Claude
+- Config via two env vars: `AI_PROVIDER` (openai|minimax|claude) and `AI_API_KEY`
+- Resolution hierarchy: user > org > global env
+- AI buttons only visible when org has `is_ai_enabled=true` and user is admin
+- Checked via `can_use_ai_generation(user)` in `app/services/access.py`
+- AI upload page (`/decks/{id}/ai-upload`) validates `can_use_ai_generation` + `can_manage_deck`
+- Both generate-mcqs and ai-import use dynamic provider resolution
+
 ### Settings (admin)
 - Organizations management (`/settings/organizations`) — create, edit via modals, delete (future)
 - Users management (`/settings/users`) — update role, assign organization, AI and test settings
@@ -340,3 +349,6 @@ Response: {
 - Review template update (cloze rendering)
 - Import UI page
 - Media cleanup on deck delete
+
+### Current Branch: feature/anki-import
+- Recent commits: c7b7613 (Minimax/Claude providers), ce168a9 (dynamic provider + button visibility), 2ea17e4 (simplified AI_PROVIDER/AI_API_KEY env vars)
