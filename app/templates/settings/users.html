@@ -62,15 +62,18 @@
                   <input value="{{ member.organization.name if member.organization else 'Unassigned' }}" disabled />
                 {% endif %}
               </div>
-              <div>
-                <label for="test-enabled-{{ member.id }}">Tests enabled</label>
+              <div class="toggle-row">
+                <div class="toggle-row__label">
+                  <span class="toggle-row__title">Tests enabled</span>
+                  <span class="toggle-row__desc">Allow this user to see and take tests</span>
+                </div>
                 {% if editable_roles.get(member.id|string) %}
-                  <label class="checkbox-row">
+                  <label class="toggle-switch">
                     <input id="test-enabled-{{ member.id }}" type="checkbox" name="is_test_enabled" value="true" {% if member.is_test_enabled %}checked{% endif %} />
-                    <span>Allow this user to see and take tests</span>
+                    <span class="toggle-slider"></span>
                   </label>
                 {% else %}
-                  <input value="{{ 'Enabled' if member.is_test_enabled else 'Disabled' }}" disabled />
+                  <span class="toggle-status">{{ 'Enabled' if member.is_test_enabled else 'Disabled' }}</span>
                 {% endif %}
               </div>
             </div>
