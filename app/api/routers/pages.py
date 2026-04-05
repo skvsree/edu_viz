@@ -465,7 +465,7 @@ def _dashboard_response(
             "can_manage_deck": can_manage_deck,
             "dashboard_error": dashboard_error if dashboard_error is not None else request.query_params.get("error"),
             "dashboard_success": dashboard_success if dashboard_success is not None else request.query_params.get("success"),
-            "active_modal": active_modal or request.query_params.get("modal"),
+            "active_modal": active_modal,  # Don't use query params - prevents unwanted modal on reload
             "modal_deck": modal_deck,
             "create_form": create_form or {"name": "", "description": "", "is_global": False},
             "edit_form": edit_form
