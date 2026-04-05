@@ -29,7 +29,7 @@ from app.services.access import (
     can_open_test_center,
     can_use_ai_generation,
 )
-from app.services.ai_auth import get_env_ai_provider_name, resolve_ai_credential
+from app.services.ai_auth import get_env_ai_provider_name, get_scope_provider, resolve_ai_credential
 from app.services.ai_generation import AIGenerationError, generate_study_pack
 from app.services.content_extraction import ContentExtractionError, extract_text
 from app.services.mcq_import import McqImportError, parse_mcq_json
@@ -90,20 +90,15 @@ def ai_import_deck_content(
     source_file.file.close()
     try:
         text = extract_text(source_file.filename or "", payload)
-        # Determine provider: user > org > global
-        provider = "openai"
-        if user.id:
-            from app.services.ai_auth import get_scope_provider
-            user_provider = get_scope_provider(db, "user", user.id)
-            if user_provider:
-                provider = user_provider
-            elif user.organization_id:
-                from app.models import Organization
-                org = db.get(Organization, user.organization_id)
-                if org and org.is_ai_enabled:
-                    org_provider = get_scope_provider(db, "organization", org.id)
-                    if org_provider:
-                        provider = org_provider
+        # Determine provider: user > org > global env
+        from app.models import Organization
+        provider = get_scope_provider(db, "user", user.id) if user.id else None
+        if not provider and user.organization_id:
+            org = db.get(Organization, user.organization_id)
+            if org and org.is_ai_enabled:
+                provider = get_scope_provider(db, "organization", org.id)
+        if not provider:
+            provider = get_env_ai_provider_name() or "openai"
         resolution = resolve_ai_credential(db, user, provider)
         credential = resolution.credential
         if not credential:
@@ -146,20 +141,15 @@ def generate_mcqs_for_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    # Try user-level provider first, then org, then global
-    provider = "openai"
-    if user.id:
-        from app.services.ai_auth import get_scope_provider
-        user_provider = get_scope_provider(db, "user", user.id)
-        if user_provider:
-            provider = user_provider
-        elif user.organization_id:
-            from app.models import Organization
-            org = db.get(Organization, user.organization_id)
-            if org and org.is_ai_enabled:
-                org_provider = get_scope_provider(db, "organization", org.id)
-                if org_provider:
-                    provider = org_provider
+    # Determine provider: user > org > global env
+    from app.models import Organization
+    provider = get_scope_provider(db, "user", user.id) if user.id else None
+    if not provider and user.organization_id:
+        org = db.get(Organization, user.organization_id)
+        if org and org.is_ai_enabled:
+            provider = get_scope_provider(db, "organization", org.id)
+    if not provider:
+        provider = get_env_ai_provider_name() or "openai"
 
     resolution = resolve_ai_credential(db, user, provider)
     credential = resolution.credential
