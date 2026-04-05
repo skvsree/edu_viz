@@ -551,3 +551,138 @@ def attempt_report_page(attempt_id: str, request: Request, user: User = Depends(
     if attempt.user_id != user.id and user.role != ROLE_SYSTEM_ADMIN:
         raise HTTPException(status_code=404)
     return templates.TemplateResponse("tests/report.html", {"request": request, "user": user, "attempt": attempt, "summary": summary, "title": f"Report | {attempt.test.title}"})
+
+
+def _send_sse_event(generator, event_type: str, data: dict):
+    """Send SSE event from generator."""
+    import json
+    yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/decks/{deck_id}/generate-mcqs/stream")
+async def generate_mcqs_stream(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate MCQs with SSE progress updates. Processes cards in batches."""
+    from fastapi.responses import StreamingResponse
+    import json
+    
+    _require_ai_generation_access(user)
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    # Determine provider
+    from app.models import Organization
+    provider = get_scope_provider(db, "user", user.id) if user.id else None
+    if not provider and user.organization_id:
+        org = db.get(Organization, user.organization_id)
+        if org and org.is_ai_enabled:
+            provider = get_scope_provider(db, "organization", org.id)
+    if not provider:
+        provider = get_env_ai_provider_name() or "openai"
+
+    resolution = resolve_ai_credential(db, user, provider)
+    credential = resolution.credential
+    if not credential:
+        async def error_gen():
+            yield f"event: error\ndata: {json.dumps({'message': resolution.reason or 'No AI credential'})}\n\n"
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    source_cards = db.execute(
+        select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.asc())
+    ).scalars().all()
+    
+    if not source_cards:
+        async def error_gen():
+            yield f"event: error\ndata: {json.dumps({'message': 'No cards found'})}\n\n"
+        return StreamingResponse(error_gen(), media_type="text/event-stream")
+
+    async def generate_stream():
+        total_cards = len(source_cards)
+        all_mcqs = []
+        BATCH_SIZE = 10  # Cards per batch
+        
+        # Send start event
+        yield f"event: start\ndata: {json.dumps({'total': total_cards, 'provider': provider})}\n\n"
+        
+        # Process in batches
+        for i in range(0, total_cards, BATCH_SIZE):
+            batch = source_cards[i:i + BATCH_SIZE]
+            batch_text = "\n\n".join(
+                part.strip()
+                for card in batch
+                for part in (card.front or "", card.back or "")
+                if part and part.strip()
+            )
+            
+            if not batch_text.strip():
+                continue
+            
+            try:
+                # Build prompt with specific count based on batch size
+                num_mcqs = max(3, len(batch) * 2)  # ~2 MCQs per card
+                prompt = (
+                    "Return strict JSON with keys flashcards and mcqs. "
+                    f"Generate exactly 0 flashcards and exactly {num_mcqs} MCQs. "
+                    "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
+                    "Cover key definitions, mechanisms, cause-effect links, comparisons, classifications, formulas, and exam-relevant traps. "
+                    "Make the MCQs NEET-style, concept-focused, and not trivial.\n\n"
+                    f"{batch_text[:10000]}"
+                )
+                from app.services.ai_generation import _parse_study_pack_json
+                from app.services.ai_generation import get_study_pack_provider
+                provider = get_study_pack_provider(credential.provider)
+                # Direct API call with custom prompt
+                import requests
+                response = requests.post(
+                    "https://api.minimax.io/v1/text/chatcompletion_v2",
+                    headers={"Authorization": f"Bearer {credential.secret}", "Content-Type": "application/json"},
+                    json={
+                        "model": "MiniMax-M2",
+                        "messages": [
+                            {"role": "system", "content": "Answer briefly. Do not explain reasoning. Give only final answer in JSON."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_completion_tokens": 8192,
+                        "temperature": 0.2,
+                    },
+                    timeout=180,
+                )
+                if response.status_code != 200:
+                    raise Exception(f"API error: {response.status_code}")
+                data = response.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if not content:
+                    raise Exception("Empty response")
+                pack = _parse_study_pack_json(content)
+                all_mcqs.extend(pack.mcqs)
+                yield f"event: progress\ndata: {json.dumps({'processed': min(i + BATCH_SIZE, total_cards), 'total': total_cards, 'mcqs_generated': len(pack.mcqs), 'total_mcqs': len(all_mcqs)})}\n\n"
+            except AIGenerationError as exc:
+                yield f"event: batch_error\ndata: {json.dumps({'batch': i // BATCH_SIZE + 1, 'error': str(exc)})}\n\n"
+        
+        # Save MCQs to database
+        mcq_cards = [
+            Card(
+                deck_id=deck.id,
+                front=item.question,
+                back=item.explanation,
+                card_type="mcq",
+                mcq_options=item.options,
+                mcq_answer_index=item.answer_index,
+                source_label="ai-mcq",
+            )
+            for item in all_mcqs
+        ]
+        
+        if mcq_cards:
+            db.add_all(mcq_cards)
+            db.flush()
+            db.add_all([CardState(card_id=card.id) for card in mcq_cards])
+            db.commit()
+        
+        yield f"event: complete\ndata: {json.dumps({'mcqs_created': len(mcq_cards), 'deck_url': f'/decks/{deck.id}'})}\n\n"
+    
+    return StreamingResponse(generate_stream(), media_type="text/event-stream")

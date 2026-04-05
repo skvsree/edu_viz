@@ -136,15 +136,14 @@ class ClaudeStudyPackProvider:
         return _parse_study_pack_json(content)
 
 
-def _build_prompt(text: str) -> str:
-    sample = text[:12000]
+def _build_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
+    sample = text[:10000]
     return (
         "You are preparing study material for Indian medical entrance exam revision. "
         "Return strict JSON with keys flashcards and mcqs. "
+        f"Generate exactly {num_flashcards} flashcards and exactly {num_mcqs} MCQs. "
         "flashcards: array of objects with front and back. "
         "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
-        "Generate a comprehensive, high-value study pack from this source text. "
-        "Include as many useful flashcards and MCQs as the material naturally supports without padding or repetition. "
         "Cover key definitions, mechanisms, cause-effect links, comparisons, classifications, formulas, and exam-relevant traps. "
         "Make the MCQs NEET-style, concept-focused, and not trivial.\n\n"
         f"{sample}"
@@ -231,6 +230,50 @@ class OpencodeStudyPackProvider:
         if not content:
             raise AIGenerationError("Minimax returned empty response.")
         return _parse_study_pack_json(content)
+
+def generate_study_pack(text: str, *, provider_name: str, credential: AICredential) -> GeneratedStudyPack:
+    return get_study_pack_provider(provider_name).generate(text, credential)
+
+
+class CodexStudyPackProvider:
+    """Codex CLI provider for study pack generation."""
+    name = "codex"
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        import subprocess
+        import tempfile
+        import os
+        
+        prompt = _build_prompt(text)
+        
+        # Create temp file with prompt
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write(prompt)
+            prompt_file = f.name
+        
+        try:
+            result = subprocess.run(
+                ["codex", "exec", f"Return JSON only (no explanation): {prompt}"],
+                cwd="/opt/edu_viz",
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            output = result.stdout
+            if not output:
+                output = result.stderr
+        except subprocess.TimeoutExpired:
+            raise AIGenerationError("Codex CLI timed out.")
+        except FileNotFoundError:
+            raise AIGenerationError("Codex CLI not found. Install with: npm install -g @openai/codex")
+        finally:
+            os.unlink(prompt_file)
+        
+        if not output or "error" in output.lower():
+            raise AIGenerationError(f"Codex CLI error: {output[:200]}")
+        
+        return _parse_study_pack_json(output)
+
 
 def generate_study_pack(text: str, *, provider_name: str, credential: AICredential) -> GeneratedStudyPack:
     return get_study_pack_provider(provider_name).generate(text, credential)
