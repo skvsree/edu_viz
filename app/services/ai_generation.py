@@ -174,6 +174,83 @@ def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
     return GeneratedStudyPack(flashcards=flashcards, mcqs=mcqs)
 
 
+
+
+# Module-level logger for LocalAIClientProvider
+import logging
+logger = logging.getLogger(__name__)
+
+
+class LocalAIClientProvider:
+    """Base class for local AI providers using openclaw agent."""
+
+    def _call_openclaw_agent(self, prompt: str, session_id: str) -> str:
+        """Call openclaw agent and return the response text."""
+        import subprocess
+        import json
+
+        try:
+            result = subprocess.run(
+                [
+                    "openclaw", "agent",
+                    "--local",
+                    "--session-id", session_id,
+                    "--message", prompt,
+                    "--json"
+                ],
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if result.returncode != 0:
+                logger.error(f"[OpenClaw] error: {result.stderr}")
+                raise AIGenerationError(f"OpenClaw agent failed: {result.stderr[:200]}")
+
+            output = result.stdout
+            # Parse JSON response
+            try:
+                data = json.loads(output)
+                texts = [p.get("text", "") for p in data.get("payloads", []) if p.get("text")]
+                return " ".join(texts)
+            except json.JSONDecodeError:
+                # Return raw output if not JSON
+                return output
+        except FileNotFoundError:
+            raise AIGenerationError(
+                "OpenClaw CLI not found. Install openclaw from https://openclaw.ai"
+            )
+        except subprocess.TimeoutExpired:
+            raise AIGenerationError("OpenClaw agent timed out after 180 seconds.")
+
+
+class CodexStudyPackProvider(LocalAIClientProvider):
+    """Codex provider using OpenClaw agent with MiniMax (no API key needed if configured)."""
+    name = "codex"
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        prompt = _build_prompt(text)
+        import uuid
+        output = self._call_openclaw_agent(prompt, f"codex-{uuid.uuid4().hex[:8]}")
+        logger.info(f"[Codex] output: {output[:500]}")
+        if not output.strip():
+            raise AIGenerationError("Codex returned empty response.")
+        return _parse_study_pack_json(output)
+
+
+class OpencodeStudyPackProvider(LocalAIClientProvider):
+    """OpenCode provider using OpenClaw agent with MiniMax (no API key needed if configured)."""
+    name = "opencode"
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        prompt = _build_prompt(text)
+        import uuid
+        output = self._call_openclaw_agent(prompt, f"opencode-{uuid.uuid4().hex[:8]}")
+        logger.info(f"[Opencode] output: {output[:500]}")
+        if not output.strip():
+            raise AIGenerationError("Opencode returned empty response.")
+        return _parse_study_pack_json(output)
+
+
 def get_study_pack_provider(name: str) -> StudyPackProvider:
     name = name.strip().lower()
     if name == "openai":
@@ -182,6 +259,10 @@ def get_study_pack_provider(name: str) -> StudyPackProvider:
         return MinimaxStudyPackProvider()
     if name == "claude":
         return ClaudeStudyPackProvider()
+    if name == "codex":
+        return CodexStudyPackProvider()
+    if name == "opencode":
+        return OpencodeStudyPackProvider()
     raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
 
 
