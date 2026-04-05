@@ -78,18 +78,21 @@ class MinimaxStudyPackProvider:
 
         import requests
         response = requests.post(
-            "https://api.minimax.io/v1/text/chatcompletion_pro",
+            "https://api.minimax.io/v1/text/chatcompletion_v2",
             headers={
                 "Authorization": f"Bearer {credential.secret}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "MiniMax-Text-01",
-                "messages": [{"role": "user", "content": _build_prompt(text)}],
-                "max_tokens": 8192,
-                "temperature": 0.7,
+                "model": "MiniMax-M2",
+                "messages": [
+                    {"role": "system", "content": "Answer briefly. Do not explain reasoning. Give only final answer in JSON."},
+                    {"role": "user", "content": _build_prompt(text)},
+                ],
+                "max_completion_tokens": 8192,
+                "temperature": 0.2,
             },
-            timeout=120,
+            timeout=180,
         )
         if response.status_code != 200:
             raise AIGenerationError(f"Minimax API error: {response.status_code} - {response.text[:200]}")
@@ -205,7 +208,7 @@ class OpencodeStudyPackProvider:
 
         import requests
         response = requests.post(
-            "https://api.minimax.io/v1/text/chatcompletion_v2?GroupId=RqdqdwGe0gBWoGFh",
+            "https://api.minimax.io/v1/text/chatcompletion_v2",
             headers={
                 "Authorization": f"Bearer {credential.secret}",
                 "Content-Type": "application/json",
