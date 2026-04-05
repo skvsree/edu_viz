@@ -59,9 +59,33 @@
               <span class="toggle-row__desc">Enable AI-powered content generation for this organization</span>
             </div>
             <label class="toggle-switch">
-              <input type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} />
+              <input type="checkbox" name="is_ai_enabled" value="true" data-inline-ai-toggle {% if edit_form.is_ai_enabled %}checked{% endif %} />
               <span class="toggle-slider"></span>
             </label>
+          </div>
+          <div data-inline-ai-section class="stack-sm" {% if not edit_form.is_ai_enabled %}hidden{% endif %}>
+            <div class="toggle-row">
+              <div class="toggle-row__label">
+                <span class="toggle-row__title">Override global AI</span>
+                <span class="toggle-row__desc">Use org-specific AI settings instead of global defaults</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" name="ai_override_global" value="true" data-inline-ai-override {% if modal_has_cred %}checked{% endif %} />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div data-inline-ai-settings class="stack-sm" {% if not modal_has_cred %}hidden{% endif %}>
+              <div>
+                <label for="inline-ai-provider">Provider</label>
+                <select id="inline-ai-provider" name="provider">
+                  <option value="openai" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
+                </select>
+              </div>
+              <div>
+                <label for="inline-ai-secret">API key</label>
+                <input id="inline-ai-secret" name="ai_secret" type="password" placeholder="Enter API key" />
+              </div>
+            </div>
           </div>
           <div class="deck-card__actions">
             <button type="submit" class="button">Save organization</button>
@@ -83,7 +107,7 @@
             <span class="deck-card__meta">AI {{ "Enabled" if organization.is_ai_enabled else "Disabled" }}</span>
           </div>
           <div class="deck-card__actions">
-            <a href="/settings/users" class="button button-secondary button-small">View users</a>
+            <a href="/settings/users?org={{ organization.id }}" class="button button-secondary button-small">View users</a>
             <a
               href="/settings/organizations?modal=edit&edit_org={{ organization.id }}"
               class="button button-secondary button-small"
@@ -132,9 +156,33 @@
             <span class="toggle-row__desc">Enable AI-powered content generation for this organization</span>
           </div>
           <label class="toggle-switch">
-            <input id="organization-ai-enabled-edit" type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} />
+            <input id="organization-ai-enabled-edit" type="checkbox" name="is_ai_enabled" value="true" data-org-ai-toggle {% if edit_form.is_ai_enabled %}checked{% endif %} />
             <span class="toggle-slider"></span>
           </label>
+        </div>
+        <div data-org-ai-section class="stack-sm" {% if not edit_form.is_ai_enabled %}hidden{% endif %}>
+          <div class="toggle-row">
+            <div class="toggle-row__label">
+              <span class="toggle-row__title">Override global AI</span>
+              <span class="toggle-row__desc">Use org-specific AI settings instead of global defaults</span>
+            </div>
+            <label class="toggle-switch">
+              <input id="organization-ai-override-edit" type="checkbox" name="ai_override_global" value="true" data-org-ai-override {% if modal_has_cred %}checked{% endif %} />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div data-org-ai-settings class="stack-sm" {% if not modal_has_cred %}hidden{% endif %}>
+            <div>
+              <label for="organization-ai-provider-edit">Provider</label>
+              <select id="organization-ai-provider-edit" name="provider">
+                <option value="openai" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
+              </select>
+            </div>
+            <div>
+              <label for="organization-ai-secret-edit">API key</label>
+              <input id="organization-ai-secret-edit" name="ai_secret" type="password" placeholder="Enter API key" />
+            </div>
+          </div>
         </div>
         <button type="submit" class="button">Save organization</button>
       </form>
@@ -198,6 +246,48 @@
 
   document.querySelectorAll('[data-modal-close]').forEach((trigger) => trigger.addEventListener('click', () => closeModal(trigger.dataset.modalClose)));
   document.querySelectorAll('.modal[data-open-on-load="true"]').forEach((dialog) => openModal(dialog.id));
+
+  // Sync org AI toggle with override/settings sections (modal)
+  const orgAiToggle = document.querySelector('[data-org-ai-toggle]');
+  if (orgAiToggle) {
+    const section = orgAiToggle.closest('[data-org-ai-section]');
+    const overrideRow = section?.querySelector('[data-org-ai-override]');
+    const settings = section?.querySelector('[data-org-ai-settings]');
+    const sync = () => {
+      if (section) section.hidden = !orgAiToggle.checked;
+      if (orgAiToggle.checked) syncOverride();
+    };
+    const syncOverride = () => {
+      if (settings) settings.hidden = !overrideRow?.checked;
+    };
+    sync();
+    orgAiToggle.addEventListener('change', sync);
+    if (overrideRow) {
+      syncOverride();
+      overrideRow.addEventListener('change', syncOverride);
+    }
+  }
+
+  // Sync inline form AI toggle
+  const inlineAiToggle = document.querySelector('[data-inline-ai-toggle]');
+  if (inlineAiToggle) {
+    const section = inlineAiToggle.closest('[data-inline-ai-section]');
+    const overrideRow = section?.querySelector('[data-inline-ai-override]');
+    const settings = section?.querySelector('[data-inline-ai-settings]');
+    const sync = () => {
+      if (section) section.hidden = !inlineAiToggle.checked;
+      if (inlineAiToggle.checked) syncOverride();
+    };
+    const syncOverride = () => {
+      if (settings) settings.hidden = !overrideRow?.checked;
+    };
+    sync();
+    inlineAiToggle.addEventListener('change', sync);
+    if (overrideRow) {
+      syncOverride();
+      overrideRow.addEventListener('change', syncOverride);
+    }
+  }
 })();
 </script>
 {% endblock %}
