@@ -277,3 +277,12 @@ requirements.txt
 </p>
 
 Questions, bugs, or feature requests? [Open an issue](https://github.com/skvsree/edu_viz/issues) on GitHub.
+
+---
+
+## Security
+
+- Path traversal protection on media endpoints
+- XSS protection with sanitized HTML filter
+- Cookie Secure flag controlled via `FORCE_SECURE_COOKIES` env var
+- OIDC auth with Microsoft Entra + Google OAuth
