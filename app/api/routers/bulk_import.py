@@ -6,8 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from fastapi import File, UploadFile
 
 from app.api.deps import require_bulk_import_api_key
 from app.core.db import get_db

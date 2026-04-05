@@ -12,7 +12,7 @@ from app.core.config import settings
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
     from sqlalchemy.sql.elements import ColumnElement
-    from app.models import Deck, User, TestAttempt
+    from app.models import Deck, User
 
 ROLE_USER = "user"
 ROLE_ADMIN = "admin"
