@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass
-from typing import Protocol
 
 logger = logging.getLogger(__name__)
+
+import json
+from dataclasses import dataclass
+from typing import Protocol
 
 
 class AIGenerationError(RuntimeError):
@@ -230,6 +231,8 @@ class OpencodeStudyPackProvider:
             raise AIGenerationError("Minimax returned empty response.")
         return _parse_study_pack_json(content)
 
+def generate_study_pack(text: str, *, provider_name: str, credential: AICredential) -> GeneratedStudyPack:
+    return get_study_pack_provider(provider_name).generate(text, credential)
 
 
 class CodexStudyPackProvider:

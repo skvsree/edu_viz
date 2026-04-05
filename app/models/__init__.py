@@ -40,6 +40,5 @@ __all__ = [
     "AnalyticsEvent",
     "AnalyticsEventType",
     "AICredentialScope",
-    "MCQGeneration",
-    "MCQGenerationStatus",
+    "UserDeckFavorite",
 ]

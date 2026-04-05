@@ -1,15 +1,16 @@
 import uuid
 from datetime import datetime, timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
 from app.api.routers.pages import templates
 from app.core.db import get_db
-from app.models import AnalyticsEvent, OrganizationAnalytics, SystemAnalytics, User, UserAnalytics
+from app.models import AnalyticsEvent, AnalyticsEventType, OrganizationAnalytics, SystemAnalytics, User, UserAnalytics
 
 router = APIRouter(tags=["analytics"])
 

@@ -9,7 +9,7 @@ Usage:
   Returns updated control (chips + dropdown) as HTML partial
 """
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from app.api.routers.pages import templates

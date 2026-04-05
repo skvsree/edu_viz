@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 from uuid import UUID
-
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -25,6 +25,7 @@ from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     ROLE_USER,
     can_access_deck,
+    can_access_tests,
     can_manage_deck,
     can_manage_decks,
     can_open_test_center,
@@ -73,20 +74,6 @@ STATIC_DIR = APP_DIR / "static"
 COMPONENTS_DIR = APP_DIR / "components"
 COMPONENT_TEMPLATES_DIR = COMPONENTS_DIR / "multiselect" / "templates"
 templates = Jinja2Templates(directory=[str(TEMPLATES_DIR), str(COMPONENT_TEMPLATES_DIR)])
-
-def _sanitize_html(text: str | None) -> str:
-    """Sanitize HTML allowing safe formatting tags only."""
-    if not text:
-        return ""
-    import bleach
-    # Allow safe formatting tags
-    allowed_tags = ['b', 'i', 'u', 'em', 'strong', 'code', 'br', 'p', 'div', 'span', 'sub', 'sup', 'ul', 'ol', 'li']
-    allowed_attrs = {'span': ['class']}
-    return bleach.clean(text, tags=allowed_tags, attributes=allowed_attrs, strip=True)
-
-
-templates.env.filters["sanitize"] = _sanitize_html
-
 
 
 @lru_cache(maxsize=256)

@@ -4,8 +4,10 @@ Anki .apkg import service for EduViz.
 Parses Anki deck files, extracts media, and imports cards.
 """
 
+import io
 import json
 import logging
+import os
 import re
 import shutil
 import sqlite3
@@ -192,11 +194,11 @@ class AnkiImportService:
                     # Old format: first column is JSON string
                     col_json = json.loads(row[0])
                     models_json = col_json.get("models", {})
-                    _ = col_json.get("decks", {})
+                    decks_json = col_json.get("decks", {})
                 else:
                     # New format: models is column 9, decks is column 10
                     models_json = json.loads(row[9]) if row[9] else {}
-                    _ = json.loads(row[10]) if row[10] else {}
+                    decks_json = json.loads(row[10]) if row[10] else {}
 
                 # Get notes
                 try:
@@ -206,7 +208,7 @@ class AnkiImportService:
 
                         # Get model info
                         model = models_json.get(str(model_id), {})
-                        _ = [f.get('name', '') for f in model.get('flds', [])]
+                        field_names = [f.get('name', '') for f in model.get('flds', [])]
 
                         # Detect cloze
                         front = fields[0] if len(fields) > 0 else ""
@@ -243,7 +245,7 @@ class AnkiImportService:
                             if media_row:
                                 key, value = media_row[0], media_row[1]
                                 media_map[str(key)] = value
-                    except Exception:
+                    except:
                         pass
             finally:
                 conn.close()
