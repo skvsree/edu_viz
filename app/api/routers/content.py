@@ -608,7 +608,6 @@ async def generate_mcqs_stream(
         BATCH_SIZE = 10  # Cards per batch
         
         # Create or update MCQGeneration record
-        from app.models import MCQGenerationStatus
         mcq_gen = MCQGeneration(
             deck_id=deck.id,
             status=MCQGenerationStatus.IN_PROGRESS.value,
@@ -651,7 +650,6 @@ async def generate_mcqs_stream(
                     f"{batch_text[:10000]}"
                 )
                 from app.services.ai_generation import _parse_study_pack_json
-                from app.services.ai_generation import get_study_pack_provider
                 # Direct API call with custom prompt
                 import requests
                 response = requests.post(
