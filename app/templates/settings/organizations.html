@@ -13,7 +13,7 @@
       <div>
         <p class="panel-label">System administration</p>
         <h1 class="section-title">Organizations</h1>
-        <p class="muted section-copy">Create organizations and manage their settings so users can be assigned correctly.</p>
+        <p class="muted section-copy">Create organizations, manage AI availability, and keep names tidy so users can be assigned correctly.</p>
       </div>
       <div class="dashboard-actions">
         <a href="/settings" class="button button-secondary button-small">Back to settings</a>
@@ -21,30 +21,77 @@
       </div>
     </div>
 
+    {% if active_modal == "create" %}
+      <article class="card form-card">
+        <form method="post" action="/settings/organizations" class="stack-md">
+          <div>
+            <label for="organization-name-inline">Organization name</label>
+            <input id="organization-name-inline" name="name" value="{{ create_form.name }}" maxlength="255" required />
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row__label">
+              <span class="toggle-row__title">AI generation</span>
+              <span class="toggle-row__desc">Enable AI-powered content generation for this organization</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" name="is_ai_enabled" value="true" {% if create_form.is_ai_enabled %}checked{% endif %} />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="deck-card__actions">
+            <button type="submit" class="button">Create organization</button>
+            <a href="/settings/organizations" class="button button-secondary">Cancel</a>
+          </div>
+        </form>
+      </article>
+    {% endif %}
+
+    {% if active_modal == "edit" and modal_organization %}
+      <article class="card form-card">
+        <form method="post" action="/settings/organizations/{{ modal_organization.id }}/update" class="stack-md">
+          <div>
+            <label for="organization-name-edit-inline">Organization name</label>
+            <input id="organization-name-edit-inline" name="name" value="{{ edit_form.name }}" maxlength="255" required />
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-row__label">
+              <span class="toggle-row__title">AI generation</span>
+              <span class="toggle-row__desc">Enable AI-powered content generation for this organization</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="deck-card__actions">
+            <button type="submit" class="button">Save organization</button>
+            <a href="/settings/organizations" class="button button-secondary">Cancel</a>
+          </div>
+        </form>
+      </article>
+    {% endif %}
+
     <div class="deck-grid deck-grid--dashboard">
-      {% for org in organizations %}
+      {% for organization in organizations %}
         <article class="deck-card deck-card--dashboard">
           <div class="deck-card__content">
             <p class="deck-card__eyebrow">Organization</p>
-            <h3 class="deck-card__title">{{ org.name }}</h3>
+            <h3 class="deck-card__title">{{ organization.name }}</h3>
           </div>
           <div class="deck-card__stats">
-            <span class="deck-card__meta">Users {{ org_user_counts.get(org.id|string, 0) }}</span>
-            <span class="deck-card__meta">AI {{ "On" if org.is_ai_enabled else "Off" }}{% if org_ai_has_cred.get(org.id|string) %} (custom key){% elif org.is_ai_enabled and env_ai_available %} (global key){% endif %}</span>
-            <span class="deck-card__meta">Tests {{ "On" if org.is_test_enabled else "Off" }}{% if org.test_daily_limit > 0 %} ({{ org.test_daily_limit }}/day){% endif %}</span>
+            <span class="deck-card__meta">Users {{ org_user_counts.get(organization.id|string, 0) }}</span>
+            <span class="deck-card__meta">AI {{ "Enabled" if organization.is_ai_enabled else "Disabled" }}</span>
           </div>
           <div class="deck-card__actions">
-            <a href="/settings/users?org={{ org.id }}" class="button button-secondary button-small">View users</a>
+            <a href="/settings/users" class="button button-secondary button-small">View users</a>
             <a
-              href="/settings/organizations?modal=edit&edit_org={{ org.id }}"
+              href="/settings/organizations?modal=edit&edit_org={{ organization.id }}"
               class="button button-secondary button-small"
               data-modal-open="edit-organization-modal"
-              data-organization-id="{{ org.id }}"
-              data-organization-name="{{ org.name }}"
-              data-organization-ai-enabled="{{ 'true' if org.is_ai_enabled else 'false' }}"
-              data-organization-test-enabled="{{ 'true' if org.is_test_enabled else 'false' }}"
-              data-organization-ai-has-cred="{{ 'true' if org_ai_has_cred.get(org.id|string) else 'false' }}"
-              data-organization-update-action="/settings/organizations/{{ org.id }}/update"
+              data-organization-id="{{ organization.id }}"
+              data-organization-name="{{ organization.name }}"
+              data-organization-ai-enabled="{{ 'true' if organization.is_ai_enabled else 'false' }}"
+              data-organization-update-action="/settings/organizations/{{ organization.id }}/update"
             >
               Edit
             </a>
@@ -52,174 +99,105 @@
         </article>
       {% endfor %}
     </div>
-
   </section>
-
-  {# --- MODALS --- #}
 
   <dialog id="create-organization-modal" class="modal" {% if active_modal == "create" %}data-open-on-load="true"{% endif %}>
     <div class="modal__surface" role="document">
-      <div class="section-heading">
-        <div><p class="panel-label">Add organization</p><h2 class="section-subtitle">Create a new organization</h2></div>
-        <button type="button" class="button button-secondary button-small" data-modal-close="create-organization-modal">Close</button>
-      </div>
+      <div class="section-heading"><div><p class="panel-label">Add organization</p><h2 class="section-subtitle">Create a new organization</h2></div><button type="button" class="button button-secondary button-small" data-modal-close="create-organization-modal">Close</button></div>
       <form method="post" action="/settings/organizations" class="stack-md">
-        <div>
-          <label for="org-name">Organization name</label>
-          <input id="org-name" name="name" value="{{ create_form.name }}" maxlength="255" required />
-        </div>
-        <label class="checkbox-row">
-          <input type="checkbox" name="is_ai_enabled" value="true" {% if create_form.is_ai_enabled %}checked{% endif %} data-ai-toggle />
-          <span>Enable AI generation</span>
-        </label>
-        <div data-ai-override-row hidden class="stack-sm">
-          <label class="checkbox-row">
-            <input type="checkbox" name="ai_override_global" value="true" data-ai-override />
-            <span>Override global AI setting</span>
-          </label>
-          <div data-ai-settings hidden class="stack-sm">
-            <div>
-              <label for="ai-provider-create">Provider</label>
-              <select id="ai-provider-create" name="provider"><option value="openai" selected>OpenAI</option></select>
-            </div>
-            <div>
-              <label for="ai-secret-create">API key</label>
-              <input id="ai-secret-create" name="ai_secret" type="password" placeholder="Enter API key" />
-            </div>
+        <div><label for="organization-name">Organization name</label><input id="organization-name" name="name" value="{{ create_form.name }}" maxlength="255" required /></div>
+        <div class="toggle-row">
+          <div class="toggle-row__label">
+            <span class="toggle-row__title">AI generation</span>
+            <span class="toggle-row__desc">Enable AI-powered content generation for this organization</span>
           </div>
-        </div>
-        <label class="checkbox-row">
-          <input type="checkbox" name="is_test_enabled" value="true" {% if create_form.is_test_enabled %}checked{% endif %} />
-          <span>Enable tests</span>
-        </label>
-        <div>
-          <label for="test-limit">Daily test limit (0 = global limit)</label>
-          <input id="test-limit" name="test_daily_limit" type="number" value="{{ create_form.test_daily_limit or 0 }}" min="0" max="{{ test_global_limit }}" />
+          <label class="toggle-switch">
+            <input type="checkbox" name="is_ai_enabled" value="true" {% if create_form.is_ai_enabled %}checked{% endif %} />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
         <button type="submit" class="button">Create organization</button>
       </form>
     </div>
   </dialog>
 
-  <dialog id="edit-organization-modal" class="modal" {% if active_modal == "edit" and modal_organization %}data-open-on-load="true"{% endif %}>
+  <dialog id="edit-organization-modal" class="modal" data-default-action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% endif %}" {% if active_modal == "edit" and modal_organization %}data-open-on-load="true"{% endif %}>
     <div class="modal__surface" role="document">
-      <div class="section-heading">
-        <div><p class="panel-label">Edit organization</p><h2 class="section-subtitle" id="edit-modal-title">{{ modal_organization.name if modal_organization else 'Update organization' }}</h2></div>
-        <button type="button" class="button button-secondary button-small" data-modal-close="edit-organization-modal">Close</button>
-      </div>
-      <form method="post" action="#" class="stack-md" id="edit-modal-form" data-default-action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% endif %}">
-        <div>
-          <label for="org-name-edit">Organization name</label>
-          <input id="org-name-edit" name="name" value="{{ edit_form.name }}" maxlength="255" required />
-        </div>
-        <label class="checkbox-row">
-          <input id="modal-ai-enabled" type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} data-ai-toggle />
-          <span>Enable AI generation</span>
-        </label>
-        <div data-ai-override-row hidden class="stack-sm">
-          <label class="checkbox-row">
-            <input id="modal-ai-override" type="checkbox" name="ai_override_global" value="true" data-ai-override />
-            <span>Override global AI setting</span>
-          </label>
-          <div data-ai-settings hidden class="stack-sm">
-            <div>
-              <label for="modal-ai-provider">Provider</label>
-              <select id="modal-ai-provider" name="provider"><option value="openai">OpenAI</option></select>
-            </div>
-            <div>
-              <label for="modal-ai-secret">API key</label>
-              <input id="modal-ai-secret" name="ai_secret" type="password" placeholder="Enter API key" />
-            </div>
+      <div class="section-heading"><div><p class="panel-label">Edit organization</p><h2 class="section-subtitle">{{ modal_organization.name if modal_organization else 'Update organization' }}</h2></div><button type="button" class="button button-secondary button-small" data-modal-close="edit-organization-modal">Close</button></div>
+      <form method="post" action="{% if modal_organization %}/settings/organizations/{{ modal_organization.id }}/update{% else %}#{% endif %}" class="stack-md" data-edit-form>
+        <div><label for="organization-name-edit">Organization name</label><input id="organization-name-edit" name="name" value="{{ edit_form.name }}" maxlength="255" required /></div>
+        <div class="toggle-row">
+          <div class="toggle-row__label">
+            <span class="toggle-row__title">AI generation</span>
+            <span class="toggle-row__desc">Enable AI-powered content generation for this organization</span>
           </div>
-        </div>
-        <label class="checkbox-row">
-          <input id="modal-test-enabled" type="checkbox" name="is_test_enabled" value="true" {% if edit_form.is_test_enabled %}checked{% endif %} />
-          <span>Enable tests</span>
-        </label>
-        <div>
-          <label for="test-limit-edit">Daily test limit (0 = global limit)</label>
-          <input id="test-limit-edit" name="test_daily_limit" type="number" value="{{ modal_organization.test_daily_limit or 0 }}" min="0" max="{{ test_global_limit }}" />
+          <label class="toggle-switch">
+            <input id="organization-ai-enabled-edit" type="checkbox" name="is_ai_enabled" value="true" {% if edit_form.is_ai_enabled %}checked{% endif %} />
+            <span class="toggle-slider"></span>
+          </label>
         </div>
         <button type="submit" class="button">Save organization</button>
       </form>
     </div>
   </dialog>
 </section>
-
 <script>
 (() => {
   const dialogs = Array.from(document.querySelectorAll('.modal'));
-  const supportsModal = typeof HTMLDialogElement !== 'undefined';
+  const supportsModalDialog = typeof HTMLDialogElement !== 'undefined' && typeof HTMLDialogElement.prototype.showModal === 'function';
 
   const openModal = (id) => {
-    const d = document.getElementById(id);
-    if (d && supportsModal && !d.open) d.showModal();
-  };
-  const closeModal = (id) => {
-    const d = document.getElementById(id);
-    if (d?.open) d.close();
+    const dialog = document.getElementById(id);
+    if (dialog && supportsModalDialog && !dialog.open) {
+      dialog.showModal();
+    }
   };
 
-  dialogs.forEach((d) => {
-    d.addEventListener('click', (e) => {
-      const s = d.querySelector('.modal__surface');
-      if (s && !s.contains(e.target)) closeModal(d.id);
+  const closeModal = (id) => {
+    const dialog = document.getElementById(id);
+    if (dialog?.open) {
+      dialog.close();
+    }
+  };
+
+  dialogs.forEach((dialog) => {
+    dialog.addEventListener('click', (event) => {
+      const surface = dialog.querySelector('.modal__surface');
+      if (surface && !surface.contains(event.target)) {
+        closeModal(dialog.id);
+      }
     });
   });
 
-  document.querySelectorAll('[data-modal-close]').forEach((t) => t.addEventListener('click', () => closeModal(t.dataset.modalClose)));
-  document.querySelectorAll('.modal[data-open-on-load="true"]').forEach((d) => openModal(d.id));
-
-  // AI toggle: show/hide override row
-  const syncAiToggle = (toggle) => {
-    const row = toggle.closest('form')?.querySelector('[data-ai-override-row]');
-    if (row) row.hidden = !toggle.checked;
-    if (toggle.checked) syncAiOverride(toggle.closest('form')?.querySelector('[data-ai-override]'));
-  };
-
-  // AI override toggle: show/hide provider + secret
-  const syncAiOverride = (override) => {
-    const settings = override?.closest('form')?.querySelector('[data-ai-settings]');
-    if (settings) settings.hidden = !override.checked;
-  };
-
-  document.querySelectorAll('[data-ai-toggle]').forEach((t) => {
-    syncAiToggle(t);
-    t.addEventListener('change', () => syncAiToggle(t));
-  });
-  document.querySelectorAll('[data-ai-override]').forEach((t) => {
-    syncAiOverride(t);
-    t.addEventListener('change', () => syncAiOverride(t));
-  });
-
-  // Modal edit: pre-fill from trigger data attributes
   document.querySelectorAll('[data-modal-open]').forEach((trigger) => {
-    trigger.addEventListener('click', (e) => {
-      if (!supportsModal) return;
-      e.preventDefault();
+    trigger.addEventListener('click', (event) => {
+      if (!supportsModalDialog) {
+        return;
+      }
+
+      event.preventDefault();
       const modalId = trigger.dataset.modalOpen;
       if (modalId === 'edit-organization-modal') {
         const dialog = document.getElementById(modalId);
-        const form = dialog?.querySelector('#edit-modal-form');
-        const aiToggle = dialog?.querySelector('[data-ai-toggle]');
-        const aiOverride = dialog?.querySelector('[data-ai-override]');
-        if (form) form.action = trigger.dataset.organizationUpdateAction || form.dataset.defaultAction || '#';
-        const nameEl = dialog?.querySelector('#org-name-edit');
-        if (nameEl) nameEl.value = trigger.dataset.organizationName || '';
-        const testEl = dialog?.querySelector('#modal-test-enabled');
-        if (testEl) testEl.checked = (trigger.dataset.organizationTestEnabled || 'false') === 'true';
-        if (aiToggle) {
-          aiToggle.checked = (trigger.dataset.organizationAiEnabled || 'false') === 'true';
-          syncAiToggle(aiToggle);
+        const form = dialog?.querySelector('[data-edit-form]');
+        const nameInput = dialog?.querySelector('#organization-name-edit');
+        const aiInput = dialog?.querySelector('#organization-ai-enabled-edit');
+        if (form) {
+          form.action = trigger.dataset.organizationUpdateAction || dialog?.dataset.defaultAction || '#';
         }
-        if (aiOverride) {
-          aiOverride.checked = (trigger.dataset.organizationAiHasCred || 'false') === 'true';
-          syncAiOverride(aiOverride);
+        if (nameInput) {
+          nameInput.value = trigger.dataset.organizationName || '';
+        }
+        if (aiInput) {
+          aiInput.checked = (trigger.dataset.organizationAiEnabled || 'false') === 'true';
         }
       }
       openModal(modalId);
     });
   });
+
+  document.querySelectorAll('[data-modal-close]').forEach((trigger) => trigger.addEventListener('click', () => closeModal(trigger.dataset.modalClose)));
+  document.querySelectorAll('.modal[data-open-on-load="true"]').forEach((dialog) => openModal(dialog.id));
 })();
 </script>
 {% endblock %}
