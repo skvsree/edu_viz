@@ -63,6 +63,72 @@ class OpenAIStudyPackProvider:
         return _parse_study_pack_json(response.output_text)
 
 
+class MinimaxStudyPackProvider:
+    name = "minimax"
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        if not credential or credential.provider != "minimax":
+            raise AIGenerationError("Minimax credential is required.")
+        if credential.auth_type not in {"api_key"}:
+            raise AIGenerationError(f"Unsupported Minimax auth type: {credential.auth_type}")
+
+        import requests
+        response = requests.post(
+            "https://api.minimax.chat/v1/text/chatcompletion_pro",
+            headers={
+                "Authorization": f"Bearer {credential.secret}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "MiniMax-Text-01",
+                "messages": [{"role": "user", "content": _build_prompt(text)}],
+                "max_tokens": 8192,
+                "temperature": 0.7,
+            },
+            timeout=120,
+        )
+        if response.status_code != 200:
+            raise AIGenerationError(f"Minimax API error: {response.status_code} - {response.text[:200]}")
+        data = response.json()
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if not content:
+            raise AIGenerationError("Minimax returned empty response.")
+        return _parse_study_pack_json(content)
+
+
+class ClaudeStudyPackProvider:
+    name = "claude"
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        if not credential or credential.provider != "claude":
+            raise AIGenerationError("Claude credential is required.")
+        if credential.auth_type not in {"api_key"}:
+            raise AIGenerationError(f"Unsupported Claude auth type: {credential.auth_type}")
+
+        import requests
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": credential.secret,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 8192,
+                "messages": [{"role": "user", "content": _build_prompt(text)}],
+            },
+            timeout=120,
+        )
+        if response.status_code != 200:
+            raise AIGenerationError(f"Claude API error: {response.status_code} - {response.text[:200]}")
+        data = response.json()
+        content = data.get("content", [{}])[0].get("text", "")
+        if not content:
+            raise AIGenerationError("Claude returned empty response.")
+        return _parse_study_pack_json(content)
+
+
 def _build_prompt(text: str) -> str:
     sample = text[:12000]
     return (
@@ -109,8 +175,13 @@ def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
 
 
 def get_study_pack_provider(name: str) -> StudyPackProvider:
-    if name.strip().lower() == "openai":
+    name = name.strip().lower()
+    if name == "openai":
         return OpenAIStudyPackProvider()
+    if name == "minimax":
+        return MinimaxStudyPackProvider()
+    if name == "claude":
+        return ClaudeStudyPackProvider()
     raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
 
 

@@ -132,7 +132,22 @@ def generate_mcqs_for_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    resolution = resolve_ai_credential(db, user, "openai")
+    # Try user-level provider first, then org, then global
+    provider = "openai"
+    if user.id:
+        from app.services.ai_auth import get_scope_provider
+        user_provider = get_scope_provider(db, "user", user.id)
+        if user_provider:
+            provider = user_provider
+        elif user.organization_id:
+            from app.models import Organization
+            org = db.get(Organization, user.organization_id)
+            if org and org.is_ai_enabled:
+                org_provider = get_scope_provider(db, "organization", org.id)
+                if org_provider:
+                    provider = org_provider
+
+    resolution = resolve_ai_credential(db, user, provider)
     credential = resolution.credential
     if not credential:
         return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus(resolution.reason or 'No AI credential configured for you or your organization.')}", status_code=303)
@@ -148,7 +163,7 @@ def generate_mcqs_for_deck(
         return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus('No study text found to generate MCQs.')}", status_code=303)
 
     try:
-        pack = generate_study_pack(source_text, provider_name="openai", credential=credential)
+        pack = generate_study_pack(source_text, provider_name=credential.provider, credential=credential)
     except AIGenerationError as exc:
         return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus(str(exc))}", status_code=303)
 

@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     ai_study_pack_provider: str = "openai"
     openai_api_key: str | None = None
+    minimax_api_key: str | None = None
+    claude_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
     ai_secrets_fernet_key: str | None = None
