@@ -51,23 +51,13 @@ def decrypt_secret(token: str) -> str:
 
 def _env_credential(provider: str) -> ResolvedAICredential | None:
     provider = provider.strip().lower()
-    if provider == "openai" and settings.openai_api_key:
-        return ResolvedAICredential(provider="openai", auth_type="api_key", secret=settings.openai_api_key, source="env")
-    if provider == "minimax" and settings.minimax_api_key:
-        return ResolvedAICredential(provider="minimax", auth_type="api_key", secret=settings.minimax_api_key, source="env")
-    if provider == "claude" and settings.claude_api_key:
-        return ResolvedAICredential(provider="claude", auth_type="api_key", secret=settings.claude_api_key, source="env")
+    if settings.ai_api_key and provider == settings.ai_provider.strip().lower():
+        return ResolvedAICredential(provider=settings.ai_provider.strip().lower(), auth_type="api_key", secret=settings.ai_api_key, source="env")
     return None
 
 
 def get_env_ai_provider_name() -> str | None:
-    if settings.openai_api_key:
-        return "openai"
-    if settings.minimax_api_key:
-        return "minimax"
-    if settings.claude_api_key:
-        return "claude"
-    return None
+    return settings.ai_provider.strip().lower() if settings.ai_api_key else None
 
 
 def is_env_ai_available(provider: str = "openai") -> bool:

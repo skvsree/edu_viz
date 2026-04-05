@@ -13,9 +13,8 @@ class Settings(BaseSettings):
     footer_copyright_text: str = "SelViz Software Solutions"
 
     ai_study_pack_provider: str = "openai"
-    openai_api_key: str | None = None
-    minimax_api_key: str | None = None
-    claude_api_key: str | None = None
+    ai_api_key: str | None = None
+    ai_provider: str = "openai"
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
     ai_secrets_fernet_key: str | None = None
