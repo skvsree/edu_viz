@@ -78,7 +78,7 @@ class MinimaxStudyPackProvider:
 
         import requests
         response = requests.post(
-            "https://api.minimax.chat/v1/text/chatcompletion_pro",
+            "https://api.minimax.io/v1/text/chatcompletion_pro",
             headers={
                 "Authorization": f"Bearer {credential.secret}",
                 "Content-Type": "application/json",
@@ -205,7 +205,7 @@ class OpencodeStudyPackProvider:
 
         import requests
         response = requests.post(
-            "https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=RqdqdwGe0gBWoGFh",
+            "https://api.minimax.io/v1/text/chatcompletion_v2?GroupId=RqdqdwGe0gBWoGFh",
             headers={
                 "Authorization": f"Bearer {credential.secret}",
                 "Content-Type": "application/json",
