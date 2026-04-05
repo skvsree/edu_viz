@@ -6,7 +6,6 @@ from pathlib import Path
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
-from html import escape
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -76,33 +75,14 @@ COMPONENT_TEMPLATES_DIR = COMPONENTS_DIR / "multiselect" / "templates"
 templates = Jinja2Templates(directory=[str(TEMPLATES_DIR), str(COMPONENT_TEMPLATES_DIR)])
 
 def _sanitize_html(text: str | None) -> str:
-    """Allow only safe HTML tags for card content (no scripting)."""
+    """Sanitize HTML allowing safe formatting tags only."""
     if not text:
         return ""
-    # Escape HTML first, then allow specific safe tags
-    escaped = escape(text, quote=True)
-    # Allow basic formatting tags
-    allowed = {
-        'b': ['b', 'strong'],
-        'i': ['i', 'em'],
-        'u': ['u'],
-        'code': ['code'],
-        'span': ['span'],
-        'br': ['br', 'br/'],
-        'p': ['p'],
-        'div': ['div'],
-        'sub': ['sub'],
-        'sup': ['sup'],
-    }
-    # For MVP: strip all HTML, keep only text
-    # This prevents XSS while supporting basic content
-    import re
-    # Remove script, style, and event handlers
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
-    return text
+    import bleach
+    # Allow safe formatting tags
+    allowed_tags = ['b', 'i', 'u', 'em', 'strong', 'code', 'br', 'p', 'div', 'span', 'sub', 'sup', 'ul', 'ol', 'li']
+    allowed_attrs = {'span': ['class']}
+    return bleach.clean(text, tags=allowed_tags, attributes=allowed_attrs, strip=True)
 
 
 templates.env.filters["sanitize"] = _sanitize_html
