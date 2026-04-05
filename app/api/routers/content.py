@@ -565,9 +565,11 @@ async def generate_mcqs_stream(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Generate MCQs with SSE progress updates. Processes cards in batches."""
+    """Generate MCQs with SSE progress updates. Tracks progress in mcq_generations table."""
     from fastapi.responses import StreamingResponse
+    from app.models import MCQGeneration, MCQGenerationStatus
     import json
+    from datetime import datetime
     
     _require_ai_generation_access(user)
     deck = db.get(Deck, deck_id)
@@ -605,8 +607,22 @@ async def generate_mcqs_stream(
         all_mcqs = []
         BATCH_SIZE = 10  # Cards per batch
         
+        # Create or update MCQGeneration record
+        from app.models import MCQGenerationStatus
+        mcq_gen = MCQGeneration(
+            deck_id=deck.id,
+            status=MCQGenerationStatus.IN_PROGRESS.value,
+            total_cards=total_cards,
+            processed_cards=0,
+            mcqs_generated=0,
+            started_at=datetime.utcnow(),
+        )
+        db.add(mcq_gen)
+        db.commit()
+        generation_id = str(mcq_gen.id)
+        
         # Send start event
-        yield f"event: start\ndata: {json.dumps({'total': total_cards, 'provider': provider})}\n\n"
+        yield f"event: start\ndata: {json.dumps({'generation_id': generation_id, 'total': total_cards, 'provider': provider})}\n\n"
         
         # Process in batches
         for i in range(0, total_cards, BATCH_SIZE):
@@ -619,6 +635,8 @@ async def generate_mcqs_stream(
             )
             
             if not batch_text.strip():
+                mcq_gen.processed_cards = min(i + BATCH_SIZE, total_cards)
+                db.commit()
                 continue
             
             try:
@@ -634,7 +652,6 @@ async def generate_mcqs_stream(
                 )
                 from app.services.ai_generation import _parse_study_pack_json
                 from app.services.ai_generation import get_study_pack_provider
-                provider = get_study_pack_provider(credential.provider)
                 # Direct API call with custom prompt
                 import requests
                 response = requests.post(
@@ -659,30 +676,83 @@ async def generate_mcqs_stream(
                     raise Exception("Empty response")
                 pack = _parse_study_pack_json(content)
                 all_mcqs.extend(pack.mcqs)
-                yield f"event: progress\ndata: {json.dumps({'processed': min(i + BATCH_SIZE, total_cards), 'total': total_cards, 'mcqs_generated': len(pack.mcqs), 'total_mcqs': len(all_mcqs)})}\n\n"
-            except AIGenerationError as exc:
-                yield f"event: batch_error\ndata: {json.dumps({'batch': i // BATCH_SIZE + 1, 'error': str(exc)})}\n\n"
+                
+                # Update progress in DB
+                mcq_gen.processed_cards = min(i + BATCH_SIZE, total_cards)
+                mcq_gen.mcqs_generated = len(all_mcqs)
+                db.commit()
+                
+                yield f"event: progress\ndata: {json.dumps({'generation_id': generation_id, 'processed': min(i + BATCH_SIZE, total_cards), 'total': total_cards, 'mcqs_generated': len(pack.mcqs), 'total_mcqs': len(all_mcqs)})}\n\n"
+                
+                # Save MCQs immediately after each batch
+                if pack.mcqs:
+                    mcq_cards = [
+                        Card(
+                            deck_id=deck.id,
+                            front=item.question,
+                            back=item.explanation,
+                            card_type="mcq",
+                            mcq_options=item.options,
+                            mcq_answer_index=item.answer_index,
+                            source_label=f"ai-mcq:gen:{generation_id}",
+                        )
+                        for item in pack.mcqs
+                    ]
+                    db.add_all(mcq_cards)
+                    db.flush()
+                    db.add_all([CardState(card_id=card.id) for card in mcq_cards])
+                    db.commit()
+                    yield f"event: mcq_created\ndata: {json.dumps({'generation_id': generation_id, 'count': len(mcq_cards), 'total_saved': len(all_mcqs)})}\n\n"
+                    
+            except Exception as exc:
+                yield f"event: batch_error\ndata: {json.dumps({'generation_id': generation_id, 'batch': i // BATCH_SIZE + 1, 'error': str(exc)})}\n\n"
         
-        # Save MCQs to database
-        mcq_cards = [
-            Card(
-                deck_id=deck.id,
-                front=item.question,
-                back=item.explanation,
-                card_type="mcq",
-                mcq_options=item.options,
-                mcq_answer_index=item.answer_index,
-                source_label="ai-mcq",
-            )
-            for item in all_mcqs
-        ]
+        # Mark as completed
+        mcq_gen.status = MCQGenerationStatus.COMPLETED.value
+        mcq_gen.completed_at = datetime.utcnow()
+        db.commit()
         
-        if mcq_cards:
-            db.add_all(mcq_cards)
-            db.flush()
-            db.add_all([CardState(card_id=card.id) for card in mcq_cards])
-            db.commit()
-        
-        yield f"event: complete\ndata: {json.dumps({'mcqs_created': len(mcq_cards), 'deck_url': f'/decks/{deck.id}'})}\n\n"
+        yield f"event: complete\ndata: {json.dumps({'generation_id': generation_id, 'mcqs_created': len(all_mcqs), 'deck_url': f'/decks/{deck.id}'})}\n\n"
     
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
+
+
+@router.get("/decks/{deck_id}/mcq-generation-status")
+def get_mcq_generation_status(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Get current MCQ generation status for a deck."""
+    from app.models import MCQGeneration
+    
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    
+    generations = db.execute(
+        select(MCQGeneration).where(MCQGeneration.deck_id == deck.id).order_by(MCQGeneration.created_at.desc())
+    ).scalars().all()
+    
+    # Get latest generation
+    latest = generations[0] if generations else None
+    
+    # Count existing MCQs for this deck
+    mcq_count = db.execute(
+        select(Card.id).where(Card.deck_id == deck.id, Card.card_type == "mcq")
+    ).scalars().all()
+    
+    return {
+        "total_generations": len(generations),
+        "latest": {
+            "id": str(latest.id) if latest else None,
+            "status": latest.status if latest else "not_started",
+            "total_cards": latest.total_cards if latest else 0,
+            "processed_cards": latest.processed_cards if latest else 0,
+            "mcqs_generated": latest.mcqs_generated if latest else 0,
+            "error_message": latest.error_message if latest else None,
+            "started_at": latest.started_at.isoformat() if latest and latest.started_at else None,
+            "completed_at": latest.completed_at.isoformat() if latest and latest.completed_at else None,
+        } if latest else None,
+        "total_mcqs_in_deck": len(mcq_count),
+    }

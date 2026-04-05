@@ -4,6 +4,7 @@ from app.models.deck import Deck
 from app.models.user_deck_favorite import UserDeckFavorite
 from app.models.card import Card
 from app.models.card_state import CardState
+from app.models.mcq_generation import MCQGeneration, MCQGenerationStatus
 from app.models.review import Review
 from app.models.tag import Tag, deck_tags
 from app.models.test import Test
