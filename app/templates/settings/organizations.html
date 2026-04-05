@@ -248,46 +248,30 @@
   document.querySelectorAll('.modal[data-open-on-load="true"]').forEach((dialog) => openModal(dialog.id));
 
   // Sync org AI toggle with override/settings sections (modal)
-  const orgAiToggle = document.querySelector('[data-org-ai-toggle]');
-  if (orgAiToggle) {
-    const section = orgAiToggle.closest('[data-org-ai-section]');
-    const overrideRow = section?.querySelector('[data-org-ai-override]');
-    const settings = section?.querySelector('[data-org-ai-settings]');
-    const sync = () => {
-      if (section) section.hidden = !orgAiToggle.checked;
-      if (orgAiToggle.checked) syncOverride();
-    };
-    const syncOverride = () => {
-      if (settings) settings.hidden = !overrideRow?.checked;
-    };
-    sync();
-    orgAiToggle.addEventListener('change', sync);
-    if (overrideRow) {
-      syncOverride();
-      overrideRow.addEventListener('change', syncOverride);
-    }
+  function initAiSync(toggleSelector, sectionAttr, overrideAttr, settingsAttr) {
+    document.querySelectorAll(toggleSelector).forEach((toggle) => {
+      const form = toggle.closest('form');
+      const section = form?.querySelector(`[${sectionAttr}]`);
+      const overrideRow = section?.querySelector(`[${overrideAttr}]`);
+      const settings = section?.querySelector(`[${settingsAttr}]`);
+      const sync = () => {
+        if (section) section.hidden = !toggle.checked;
+        if (toggle.checked) syncOverride();
+      };
+      const syncOverride = () => {
+        if (settings) settings.hidden = !overrideRow?.checked;
+      };
+      sync();
+      toggle.addEventListener('change', sync);
+      if (overrideRow) {
+        syncOverride();
+        overrideRow.addEventListener('change', syncOverride);
+      }
+    });
   }
 
-  // Sync inline form AI toggle
-  const inlineAiToggle = document.querySelector('[data-inline-ai-toggle]');
-  if (inlineAiToggle) {
-    const section = inlineAiToggle.closest('[data-inline-ai-section]');
-    const overrideRow = section?.querySelector('[data-inline-ai-override]');
-    const settings = section?.querySelector('[data-inline-ai-settings]');
-    const sync = () => {
-      if (section) section.hidden = !inlineAiToggle.checked;
-      if (inlineAiToggle.checked) syncOverride();
-    };
-    const syncOverride = () => {
-      if (settings) settings.hidden = !overrideRow?.checked;
-    };
-    sync();
-    inlineAiToggle.addEventListener('change', sync);
-    if (overrideRow) {
-      syncOverride();
-      overrideRow.addEventListener('change', syncOverride);
-    }
-  }
+  initAiSync('[data-org-ai-toggle]', 'data-org-ai-section', 'data-org-ai-override', 'data-org-ai-settings');
+  initAiSync('[data-inline-ai-toggle]', 'data-inline-ai-section', 'data-inline-ai-override', 'data-inline-ai-settings');
 })();
 </script>
 {% endblock %}
