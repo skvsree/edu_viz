@@ -81,8 +81,8 @@ Add the callback URL in your provider's app registration before starting.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SYSTEM_ADMIN_BOOTSTRAP_EMAIL` | `johdoe@email.com` | First user with this email is promoted to system_admin on login |
-| `OPENAI_API_KEY` | empty | Enables AI-assisted card generation from PDFs/DOCXs |
-| `OPENAI_MODEL` | `gpt-4.1-mini` | OpenAI model for AI features |
+| `AI_PROVIDER` | `openai` | AI provider: `openai`, `minimax`, or `claude` |
+| `AI_API_KEY` | empty | API key for AI content generation |
 | `BULK_IMPORT_API_KEY` | empty | API key for bulk deck import via `POST /api/v1/import/*` |
 | `FOOTER_COPYRIGHT_TEXT` | `SelViz Software Solutions` | Shown in page footer |
 | `TEST_DAILY_LIMIT` | `0` (unlimited) | Max tests per user per day |
@@ -163,6 +163,44 @@ Requires PostgreSQL 15+ running locally.
 3. The first user who logs in is promoted to **system_admin**.
 4. Subsequent users start as **user** role.
 5. As system_admin, visit `/settings` to create organizations, manage users, and create decks.
+
+---
+
+## AI Content Generation (Alpha)
+
+> **Alpha feature** — API and behavior may change in future releases.
+
+AI-assisted card generation creates flashcards and MCQs from existing study content.
+
+### Supported Providers
+
+| Provider | Description |
+|----------|-------------|
+| OpenAI | GPT-4.1-mini (default) |
+| Minimax | MiniMax-Text-01 |
+| Claude | Claude Sonnet 4 |
+
+### Configuration
+
+1. Set the provider: `AI_PROVIDER=openai` (or `minimax`/`claude`)
+2. Set the API key: `AI_API_KEY=<your-key>`
+3. Enable AI generation in organization settings (`/settings/organizations`)
+
+### Provider Override
+
+Organizations and users can override the global AI provider:
+
+- **Organization-level**: Edit org → Enable AI → Override global → Select provider + enter API key
+- **User-level**: Edit user → Enable AI → Override org → Select provider + enter API key
+
+Resolution order: user > organization > global env
+
+### Usage
+
+- **AI Generate MCQs**: Creates MCQs from existing flashcards in a deck
+- **AI Upload**: Upload PDF/DOCX to generate flashcards and MCQs
+
+AI buttons are only visible when the organization has AI generation enabled.
 
 ---
 
