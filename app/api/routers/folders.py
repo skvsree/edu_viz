@@ -6,7 +6,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import sql as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -401,11 +402,19 @@ def get_folder_tree(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Get folder tree structure for folder picker."""
+    """Get folder tree structure for folder picker (own + org-shared)."""
     def build_tree(parent_id: UUID | None) -> list[dict]:
         folders = db.execute(
             select(Folder)
-            .where(Folder.parent_id == parent_id, Folder.user_id == user.id)
+            .where(
+                Folder.parent_id == parent_id,
+                or_(
+                    Folder.user_id == user.id,
+                    Folder.organization_id == user.organization_id,
+                    # Legacy folders with no org — treat as org-scoped
+                    sa.and_(Folder.organization_id.is_(None), user.organization_id.isnot(None)),
+                ),
+            )
             .order_by(Folder.name.asc())
         ).scalars().all()
 
