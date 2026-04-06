@@ -1,23 +1,18 @@
 {% macro browse_item(deck, favorite_deck_ids, can_manage=False) %}
-<article class="browse-item deck-item-card"
+<article class="browse-item browse-item--deck"
   data-item-type="deck"
   data-item-id="{{ deck.id }}"
   data-deck-id="{{ deck.id }}"
 >
   {% if can_manage %}
-    <div class="item-cb-wrap" style="position:absolute; top:0.5rem; right:0.5rem;">
+    <div class="item-cb-wrap">
       <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
     </div>
   {% endif %}
 
-  <a href="/decks/{{ deck.id }}" class="deck-item-card__link" style="display:flex; flex-direction:column; align-items:center; gap:0.35rem; text-decoration:none; color:var(--text); width:100%;">
-    <span class="deck-item-icon">🗂️</span>
+  <a href="/decks/{{ deck.id }}" class="deck-item-card__link">
+    <span class="deck-item-icon">📄</span>
     <span class="deck-item-name">{{ deck.name }}</span>
   </a>
-
-  <div class="deck-item-card__actions">
-    <a href="/review?deck_id={{ deck.id }}" class="browse-btn browse-btn--xs browse-btn--ghost">Review</a>
-    <a href="/decks/{{ deck.id }}/tests" class="browse-btn browse-btn--xs browse-btn--ghost">Test</a>
-  </div>
 </article>
 {% endmacro %}

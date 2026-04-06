@@ -151,12 +151,6 @@
               <span class="browse-item__icon">📁</span>
               <span class="browse-item__name">{{ f.name }}</span>
             </a>
-            {% if can_manage_decks %}
-              <div class="browse-item__actions">
-                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost" data-action="rename-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">✏️</button>
-                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost browse-btn--danger" data-action="delete-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">🗑️</button>
-              </div>
-            {% endif %}
           </div>
         {% endfor %}
         {% for deck in root_decks %}
@@ -179,12 +173,6 @@
               <span class="browse-item__icon">📁</span>
               <span class="browse-item__name">{{ f.name }}</span>
             </a>
-            {% if can_manage_decks %}
-              <div class="browse-item__actions">
-                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost" data-action="rename-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">✏️</button>
-                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost browse-btn--danger" data-action="delete-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">🗑️</button>
-              </div>
-            {% endif %}
           </div>
         {% endfor %}
         {% for deck in root_decks %}
@@ -312,6 +300,14 @@
 .browse-item:hover { box-shadow:0 2px 8px rgba(0,0,0,0.07); }
 .browse-item.is-selected { border-color:var(--accent); background:var(--active-bg); }
 
+/* Folder cards — colored */
+.browse-item--folder { background:#eff6ff; border-color:#bfdbfe; }
+.browse-item--folder:hover { background:#dbeafe; }
+.browse-item--folder.is-selected { border-color:var(--accent); background:#dbeafe; }
+
+/* Deck cards */
+.browse-item--deck { background:var(--card-bg); }
+
 /* Top-right checkbox */
 .browse-item > .item-cb-wrap {
   position:absolute; top:0.5rem; right:0.5rem;
@@ -319,14 +315,16 @@
 .item-cb { width:20px; height:20px; accent-color:var(--accent); cursor:pointer; }
 .item-cb-wrap { display:flex; align-items:center; justify-content:center; }
 
-/* Folder card */
+/* Cards */
 .browse-item__icon { font-size:2.5rem; line-height:1; }
 .browse-item__name { font-weight:600; font-size:0.85rem; color:var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 0.25rem; }
-.browse-item__actions { display:flex; gap:0.25rem; margin-top:0.25rem; position:absolute; bottom:0.5rem; left:50%; transform:translateX(-50%); }
 
-/* Hover overlay for folder link */
-.browse-item--folder .browse-item__folder-link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.4rem; }
-.browse-item--folder .browse-item__folder-link:hover .browse-item__icon { opacity:0.7; }
+/* Link wrappers */
+.browse-item__folder-link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.4rem; width:100%; justify-content:center; }
+.browse-item__folder-link:hover .browse-item__icon { opacity:0.7; }
+
+.deck-item-card__link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.35rem; width:100%; justify-content:center; }
+.deck-item-card__link:hover .deck-item-icon { opacity:0.7; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────── */
 .browse-btn {
