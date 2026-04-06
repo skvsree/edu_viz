@@ -6,7 +6,7 @@
 {% block content %}
 <div class="browse-layout">
 
-  {# ── Sidebar: folder tree ─────────────────────────────────────────────── #}
+  {# ── Sidebar ───────────────────────────────────────────────────────── #}
   {% if can_manage_decks %}
   <aside class="browse-sidebar">
     <div class="sidebar-header">
@@ -15,29 +15,25 @@
       </a>
     </div>
 
-    {# New folder button #}
     <div style="padding: 0.5rem 1rem;">
-      <button type="button" class="button button-small" id="add-folder-btn"
-        data-parent-id="{% if current_folder %}{{ current_folder.id }}{% endif %}">
+      <button type="button" class="browse-btn browse-btn--sm" id="add-folder-btn">
         + New folder
       </button>
     </div>
 
-    {# Inline folder create form #}
-    <div id="inline-folder-create" style="display:none; padding: 0.5rem 1rem;">
+    <div id="inline-folder-create" style="display:none; padding: 0 1rem 0.5rem;">
       <form method="post" action="/folders" class="inline-folder-form">
         <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
         <input type="text" name="name" id="new-folder-name"
-          placeholder="Folder name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
-          style="width:100%; margin-bottom:0.25rem;" />
+          placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
+          style="width:100%; margin-bottom:0.25rem; padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.8rem;" />
         <div style="display:flex; gap:0.25rem;">
-          <button type="submit" class="button button-small">Create</button>
-          <button type="button" class="button button-secondary button-small" id="cancel-folder-create">✕</button>
+          <button type="submit" class="browse-btn browse-btn--sm">Create</button>
+          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="cancel-folder-create">✕</button>
         </div>
       </form>
     </div>
 
-    {# Folder list (recursive or flat) #}
     {% if root_folders %}
       <ul class="folder-tree-list">
         {% for f in root_folders %}
@@ -47,11 +43,6 @@
               <span class="folder-tree-name">{{ f.name }}</span>
               <span class="folder-count">{{ f.deck_count }}</span>
             </a>
-            {# Inline rename/delete for non-root folders in sidebar #}
-            <div class="folder-tree-actions" data-folder-id="{{ f.id }}" data-folder-name="{{ f.name }}">
-              <button type="button" class="tree-action-btn" data-action="rename" title="Rename">✏️</button>
-              <button type="button" class="tree-action-btn" data-action="delete" title="Delete">🗑️</button>
-            </div>
           </li>
         {% endfor %}
       </ul>
@@ -59,7 +50,7 @@
   </aside>
   {% endif %}
 
-  {# ── Main content ────────────────────────────────────────────────────── #}
+  {# ── Main ──────────────────────────────────────────────────────────── #}
   <main class="browse-main">
 
     {# Breadcrumb #}
@@ -81,88 +72,89 @@
     <div class="browse-header">
       <div>
         <h1 class="browse-title">
-          {% if current_folder %}{{ current_folder.name }}{% else %}Browse Decks{% endif %}
+          {% if current_folder %}{{ current_folder.name }}{% else %}Browse{% endif %}
         </h1>
-        <p class="muted">
+        <p class="muted" style="font-size:0.8rem; margin:0;">
           {% if current_folder %}
-            {{ subfolders|length }} folders, {{ root_decks|length }} decks
+            {{ subfolders|length }} folders · {{ root_decks|length }} decks
           {% else %}
-            {{ root_folders|length }} folders, {{ root_decks|length }} root decks
+            {{ root_folders|length }} folders · {{ root_decks|length }} decks
           {% endif %}
         </p>
       </div>
-      <div class="browse-actions">
-        {# Search #}
-        <form method="get" action="/decks/browse" class="deck-search-inline">
+      <div class="browse-header-right">
+        <form method="get" action="/decks/browse" class="browse-search">
           <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
-          <input type="text" name="q" value="{{ q }}" placeholder="Search decks..." autocomplete="off" />
-          <button type="submit" class="button button-small">Search</button>
-          {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="button button-secondary button-small">Clear</a>{% endif %}
+          <input type="text" name="q" value="{{ q }}" placeholder="Search..." autocomplete="off" class="browse-search-input" />
+          <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost">Go</button>
+          {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">Clear</a>{% endif %}
         </form>
-        {# Select mode toggle #}
-        {% if can_manage_decks %}
-          <button type="button" class="button button-secondary button-small" id="select-mode-btn">
-            {% if current_folder %}Select items{% else %}Select decks{% endif %}
-          </button>
-        {% endif %}
       </div>
     </div>
 
-    {# ── Select mode bar (hidden until select mode is active) ──────────── #}
-    <div id="select-mode-bar" class="select-mode-bar" style="display:none;">
-      <span id="select-mode-count">0 selected</span>
-      <div class="select-mode-bar__actions">
-        <button type="button" class="button button-small" id="move-selected-btn" disabled>Move to folder</button>
-        <button type="button" class="button button-ghost button-small" id="delete-selected-btn" disabled>Delete</button>
-        <button type="button" class="button button-secondary button-small" id="cancel-select-btn">Cancel</button>
+    {# ── Action bar ──────────────────────────────────────────────────── #}
+    {% if can_manage_decks %}
+    <div class="browse-action-bar" id="browse-action-bar">
+      <span class="browse-action-bar__count" id="selection-count">
+        <span id="sel-count-num">0</span> selected
+      </span>
+      <div class="browse-action-bar__actions">
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="move-btn" disabled>
+          ↗️ Move to folder
+        </button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost browse-btn--danger" id="delete-btn" disabled>
+          🗑️ Delete
+        </button>
       </div>
     </div>
+    {% endif %}
 
-    {# ── Folder create inline (when at folder view) ───────────────────── #}
+    {# ── Folder view: create subfolder ────────────────────────────────── #}
     {% if can_manage_decks and current_folder %}
-    <div id="inline-folder-create-main" style="margin-bottom: 1rem;">
-      <button type="button" class="button button-small" id="add-folder-btn-2"
-        data-parent-id="{{ current_folder.id }}">+ New subfolder</button>
-      <div id="inline-folder-create-2" style="display:none; margin-top:0.5rem;">
-        <form method="post" action="/folders" class="inline-folder-form">
+    <div style="margin-bottom: 0.75rem;">
+      <button type="button" class="browse-btn browse-btn--sm" id="add-subfolder-btn">+ New subfolder</button>
+      <div id="inline-subfolder-create" style="display:none; margin-top:0.5rem;">
+        <form method="post" action="/folders" class="inline-folder-form" style="display:flex; gap:0.5rem; align-items:center;">
           <input type="hidden" name="parent_id" value="{{ current_folder.id }}" />
-          <input type="text" name="name" id="new-folder-name-2"
-            placeholder="Subfolder name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
-            style="width:200px;" />
-          <button type="submit" class="button button-small">Create</button>
-          <button type="button" class="button button-secondary button-small" id="cancel-folder-create-2">Cancel</button>
+          <input type="text" name="name" id="subfolder-name"
+            placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
+            style="padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.8rem; width:160px;" />
+          <button type="submit" class="browse-btn browse-btn--sm">Create</button>
+          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="cancel-subfolder">Cancel</button>
         </form>
       </div>
     </div>
     {% endif %}
 
-    {# ── Content grid ──────────────────────────────────────────────────── #}
+    {# ── Content grid ────────────────────────────────────────────────── #}
     {% if q %}
-      {# Search results #}
+      {# Search results — flat list #}
       {% if decks %}
-        <div class="browse-grid" id="browse-grid">
+        <div class="browse-grid">
           {% for deck in decks %}
             {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
           {% endfor %}
         </div>
         {% if total_pages > 1 %}
-          <div class="pagination-wrap">
-            {% if page > 1 %}<a href="?q={{ q }}&page={{ page-1 }}" class="button button-secondary">← Prev</a>{% endif %}
-            <span>{{ total }} results</span>
-            {% if page < total_pages %}<a href="?q={{ q }}&page={{ page+1 }}" class="button button-secondary">Next →</a>{% endif %}
+          <div class="browse-pagination">
+            {% if page > 1 %}<a href="?q={{ q }}&page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>{% endif %}
+            <span style="font-size:0.8rem; color:var(--muted-color);">{{ total }} results</span>
+            {% if page < total_pages %}<a href="?q={{ q }}&page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>{% endif %}
           </div>
         {% endif %}
       {% else %}
-        <div class="empty-state"><h3>No decks match "{{ q }}"</h3></div>
+        <div class="browse-empty"><h3>No decks match "{{ q }}"</h3></div>
       {% endif %}
 
     {% elif current_folder %}
-      {# Folder view: subfolders first, then decks #}
-      <div class="browse-grid" id="browse-grid">
-        {# Subfolders (selectable) #}
+      {# Folder view: subfolders + decks #}
+      <div class="browse-grid">
         {% for f in subfolders %}
           <div class="browse-item browse-item--folder"
-            data-item-type="folder" data-item-id="{{ f.id }}" data-item-name="{{ f.name }}">
+            data-item-type="folder" data-item-id="{{ f.id }}">
+            <label class="browse-item-check">
+              <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+            </label>
             <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
               <span class="browse-item__icon">📁</span>
               <span class="browse-item__name">{{ f.name }}</span>
@@ -170,28 +162,28 @@
             <div class="browse-item__meta">{{ f.deck_count }} decks · {{ f.subfolder_count }} folders</div>
             {% if can_manage_decks %}
               <div class="browse-item__actions">
-                <input type="checkbox" class="item-select-checkbox" data-item-type="folder" data-item-id="{{ f.id }}" value="{{ f.id }}" style="display:none;" />
-                <button type="button" class="button button-ghost button-tiny" data-action="rename-folder" data-folder-id="{{ f.id }}" data-folder-name="{{ f.name }}" title="Rename">✏️</button>
-                <button type="button" class="button button-ghost button-tiny" data-action="delete-folder" data-folder-id="{{ f.id }}" data-folder-name="{{ f.name }}" title="Delete">🗑️</button>
+                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost" data-action="rename-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">✏️</button>
+                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost browse-btn--danger" data-action="delete-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">🗑️</button>
               </div>
             {% endif %}
           </div>
         {% endfor %}
-        {# Decks in this folder #}
         {% for deck in root_decks %}
           {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
         {% endfor %}
       </div>
       {% if not subfolders and not root_decks %}
-        <div class="empty-state"><h3>This folder is empty</h3></div>
+        <div class="browse-empty"><h3>This folder is empty</h3></div>
       {% endif %}
 
     {% else %}
       {# Root view: root folders + root decks #}
-      <div class="browse-grid" id="browse-grid">
-        {# Root folders (open on click, not selectable in select mode) #}
+      <div class="browse-grid">
         {% for f in root_folders %}
           <div class="browse-item browse-item--folder">
+            <label class="browse-item-check">
+              <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+            </label>
             <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
               <span class="browse-item__icon">📁</span>
               <span class="browse-item__name">{{ f.name }}</span>
@@ -199,21 +191,20 @@
             <div class="browse-item__meta">{{ f.deck_count }} decks · {{ f.subfolder_count }} folders</div>
             {% if can_manage_decks %}
               <div class="browse-item__actions">
-                <button type="button" class="button button-ghost button-tiny" data-action="rename-folder" data-folder-id="{{ f.id }}" data-folder-name="{{ f.name }}" title="Rename">✏️</button>
-                <button type="button" class="button button-ghost button-tiny" data-action="delete-folder" data-folder-id="{{ f.id }}" data-folder-name="{{ f.name }}" title="Delete">🗑️</button>
+                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost" data-action="rename-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">✏️</button>
+                <button type="button" class="browse-btn browse-btn--xs browse-btn--ghost browse-btn--danger" data-action="delete-folder" data-id="{{ f.id }}" data-name="{{ f.name }}">🗑️</button>
               </div>
             {% endif %}
           </div>
         {% endfor %}
-        {# Root-level decks (no folder) #}
         {% for deck in root_decks %}
           {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
         {% endfor %}
       </div>
       {% if not root_folders and not root_decks %}
-        <div class="empty-state">
+        <div class="browse-empty">
           <h3>No decks yet</h3>
-          <p class="muted">Create folders or add decks to get started.</p>
+          <p class="muted">Create folders or add decks.</p>
         </div>
       {% endif %}
     {% endif %}
@@ -221,8 +212,9 @@
   </main>
 </div>
 
-{# ── Folder picker modal ───────────────────────────────────────────────── #}
+{# ── Modals ────────────────────────────────────────────────────────── #}
 {% if can_manage_decks %}
+  {# Folder picker #}
   <dialog id="folder-picker-modal" class="modal">
     <div class="modal__surface">
       <header class="modal__header">
@@ -230,7 +222,7 @@
         <button type="button" class="modal__close" data-modal-close="folder-picker-modal">✕</button>
       </header>
       <div class="modal__body">
-        <label class="folder-picker-option">
+        <label class="folder-picker-opt">
           <input type="radio" name="target_folder" value="" checked />
           <span>📁 Root (no folder)</span>
         </label>
@@ -238,276 +230,276 @@
         <p id="folder-picker-error" class="error-text" style="display:none;"></p>
       </div>
       <footer class="modal__footer">
-        <button type="button" class="button" id="folder-picker-confirm" disabled>Move</button>
-        <button type="button" class="button button-secondary" data-modal-close="folder-picker-modal">Cancel</button>
+        <button type="button" class="browse-btn browse-btn--sm" id="picker-confirm">Move</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="folder-picker-modal">Cancel</button>
       </footer>
     </div>
   </dialog>
 
-  {# Inline folder rename #}
-  <div id="inline-folder-rename" style="display:none; margin-bottom: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 8px;">
-    <form method="post" action="" id="folder-rename-form" class="inline-folder-form" style="display:flex; gap:0.5rem; align-items:center;">
-      <input type="text" name="name" id="rename-folder-input"
-        placeholder="New name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
-        style="width:200px;" />
-      <button type="submit" class="button button-small">Rename</button>
-      <button type="button" class="button button-secondary button-small" id="cancel-folder-rename">Cancel</button>
-    </form>
-  </div>
+  {# Rename folder #}
+  <dialog id="rename-modal" class="modal">
+    <div class="modal__surface">
+      <header class="modal__header">
+        <h2 class="modal__title">Rename folder</h2>
+        <button type="button" class="modal__close" data-modal-close="rename-modal">✕</button>
+      </header>
+      <form method="post" id="rename-form" class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <input type="hidden" name="folder_id" id="rename-folder-id" />
+        <input type="text" name="name" id="rename-folder-name"
+          placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
+          style="padding:0.5rem; border:1px solid var(--border-color); border-radius:8px; background:var(--input-bg); color:var(--text); font-size:0.9rem;" />
+      </form>
+      <footer class="modal__footer">
+        <button type="submit" form="rename-form" class="browse-btn browse-btn--sm">Save</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="rename-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
 {% endif %}
 
-{# ── Folder picker tree (hidden, populated by JS from folder_tree) ──────── #}
 <script type="application/json" id="folder-tree-data">{{ folder_tree | tojson }}</script>
 
 <style>
-.browse-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+/* ── Layout ────────────────────────────────────────────────────────── */
+.browse-layout { display:flex; gap:1.5rem; align-items:flex-start; }
 .browse-sidebar {
-  width: 220px; flex-shrink: 0;
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 12px;
-  overflow: hidden;
+  width:210px; flex-shrink:0;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  border-radius:12px; overflow:hidden;
 }
-.sidebar-header { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color, #e0e0e0); }
-.sidebar-root-link { font-weight: 600; color: var(--text-color, #333); text-decoration: none; }
-.sidebar-root-link.active { color: var(--accent-color, #4a90d9); }
-.folder-tree-list { list-style: none; padding: 0; margin: 0; }
-.folder-tree-item {
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: 1px solid var(--border-color, #e0e0e0);
-}
+.sidebar-header { padding:0.75rem 1rem; border-bottom:1px solid var(--border-color); }
+.sidebar-root-link { font-weight:600; color:var(--text); text-decoration:none; font-size:0.875rem; }
+.sidebar-root-link:hover, .sidebar-root-link.active { color:var(--accent); }
+
+.folder-tree-list { list-style:none; padding:0; margin:0; }
+.folder-tree-item { border-bottom:1px solid var(--border-color); }
+.folder-tree-item:last-child { border-bottom:none; }
 .folder-tree-link {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.5rem 1rem; flex: 1; text-decoration: none;
-  color: var(--text-color, #333); font-size: 0.875rem;
+  display:flex; align-items:center; gap:0.5rem;
+  padding:0.5rem 1rem; text-decoration:none;
+  color:var(--text); font-size:0.8rem;
 }
-.folder-tree-link:hover { background: var(--hover-bg, #f5f5f5); }
-.folder-tree-item.active .folder-tree-link { background: var(--active-bg, #e8f0fb); font-weight: 600; }
-.folder-icon { font-size: 1rem; }
-.folder-count { font-size: 0.75rem; color: var(--muted-color, #888); margin-left: auto; }
-.folder-tree-actions { display: none; padding-right: 0.5rem; }
-.folder-tree-item.active .folder-tree-actions { display: flex; gap: 0.25rem; }
-.tree-action-btn { background: none; border: none; cursor: pointer; padding: 0; font-size: 0.8rem; opacity: 0.6; }
-.tree-action-btn:hover { opacity: 1; }
+.folder-tree-link:hover { background:var(--hover-bg); }
+.folder-tree-item.active .folder-tree-link { color:var(--accent); font-weight:600; }
+.folder-icon { font-size:0.9rem; }
+.folder-count { font-size:0.7rem; color:var(--muted-color); margin-left:auto; }
 
-.browse-main { flex: 1; min-width: 0; }
-.browse-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
-.browse-title { font-size: 1.5rem; font-weight: 700; margin: 0; }
-.browse-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.deck-search-inline { display: flex; gap: 0.25rem; }
+/* ── Main ───────────────────────────────────────────────────────────── */
+.browse-main { flex:1; min-width:0; }
+.browse-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem; flex-wrap:wrap; }
+.browse-title { font-size:1.25rem; font-weight:700; margin:0; }
+.browse-header-right { display:flex; gap:0.5rem; align-items:center; }
+.browse-search { display:flex; gap:0.25rem; align-items:center; }
+.browse-search-input {
+  padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:8px;
+  background:var(--input-bg); color:var(--text); font-size:0.8rem; width:140px;
+}
 
-.browse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+/* ── Action bar ─────────────────────────────────────────────────────── */
+.browse-action-bar {
+  display:flex; align-items:center; gap:0.75rem;
+  padding:0.5rem 0.75rem; margin-bottom:0.75rem;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  border-radius:10px; flex-wrap:wrap;
+}
+.browse-action-bar__count { font-size:0.8rem; color:var(--muted-color); min-width:60px; }
+#sel-count-num { font-weight:700; color:var(--accent); }
+.browse-action-bar__actions { display:flex; gap:0.375rem; margin-left:auto; }
 
+/* ── Grid ────────────────────────────────────────────────────────────── */
+.browse-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:0.75rem; }
 .browse-item {
-  background: var(--card-bg, #fff);
-  border: 1px solid var(--border-color, #e0e0e0);
-  border-radius: 10px; padding: 0.875rem;
-  display: flex; flex-direction: column; gap: 0.25rem;
-  transition: box-shadow 0.15s;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  border-radius:10px; padding:0.75rem;
+  display:flex; flex-direction:column; gap:0.2rem;
+  transition:box-shadow 0.15s, border-color 0.15s;
 }
-.browse-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-.browse-item--selected { border-color: var(--accent-color, #4a90d9); background: var(--active-bg, #e8f0fb); }
+.browse-item:hover { box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+.browse-item.is-selected { border-color:var(--accent); background:var(--active-bg); }
 
-.browse-item__folder-link { display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: var(--text-color, #333); font-weight: 600; }
-.browse-item__folder-link:hover { color: var(--accent-color, #4a90d9); }
-.browse-item__icon { font-size: 1.25rem; }
-.browse-item__name { font-weight: 600; }
-.browse-item__meta { font-size: 0.8rem; color: var(--muted-color, #888); }
-.browse-item__actions { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.25rem; }
+.browse-item-check { display:flex; align-items:center; margin-bottom:0.25rem; }
+.item-cb { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; }
 
-.item-select-checkbox { margin-right: 0.5rem; }
-.browse-item--selected .item-select-checkbox { accent-color: var(--accent-color, #4a90d9); }
+.browse-item__folder-link { display:flex; align-items:center; gap:0.5rem; text-decoration:none; color:var(--text); font-weight:600; font-size:0.875rem; }
+.browse-item__folder-link:hover { color:var(--accent); }
+.browse-item__icon { font-size:1.1rem; }
+.browse-item__name { }
+.browse-item__meta { font-size:0.75rem; color:var(--muted-color); margin-top:0.1rem; }
+.browse-item__actions { display:flex; gap:0.25rem; margin-top:0.375rem; }
 
-/* Deck item styles */
-.deck-item-card { cursor: default; }
-.deck-item-card__header { display: flex; align-items: flex-start; gap: 0.5rem; }
-.deck-item-card__title-link { flex: 1; text-decoration: none; color: var(--text-color, #333); }
-.deck-item-card__title { font-weight: 600; margin: 0; font-size: 0.9rem; }
-.deck-item-card__desc { font-size: 0.8rem; color: var(--muted-color, #888); margin: 0; }
-.deck-item-card__actions { display: flex; gap: 0.25rem; margin-top: 0.5rem; flex-wrap: wrap; }
-
-.select-mode-bar {
-  display: flex; align-items: center; gap: 1rem;
-  background: var(--accent-color, #4a90d9); color: #fff;
-  padding: 0.5rem 1rem; border-radius: 8px; margin-bottom: 1rem;
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.browse-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  gap:4px; cursor:pointer; border-radius:8px;
+  font-size:0.8rem; font-weight:500; text-decoration:none;
+  transition:background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space:nowrap;
 }
-.select-mode-bar__actions { display: flex; gap: 0.5rem; }
-#select-mode-count { font-weight: 600; }
+.browse-btn--sm {
+  padding:0.35rem 0.75rem; min-height:unset; border:none;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  color:var(--text);
+}
+.browse-btn--sm:hover { background:var(--hover-bg); }
+.browse-btn--xs {
+  padding:0.2rem 0.5rem; min-height:unset; border:none;
+  background:transparent; border:1px solid transparent;
+  color:var(--muted-color); font-size:0.75rem;
+}
+.browse-btn--xs:hover { border-color:var(--border-color); background:var(--hover-bg); }
+.browse-btn--ghost {
+  background:transparent; border-color:var(--border-color); color:var(--text);
+}
+.browse-btn--ghost:hover { border-color:var(--accent); color:var(--accent); }
+.browse-btn--danger { color:inherit; }
+.browse-btn--danger:hover { border-color:#d32f2f; color:#d32f2f; }
+.browse-btn[disabled] { opacity:0.4; cursor:not-allowed; pointer-events:none; }
 
-.pagination-wrap { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
-.empty-state { text-align: center; padding: 3rem; color: var(--muted-color, #888); }
-.error-text { color: #d32f2f; font-size: 0.875rem; margin-top: 0.5rem; }
+/* ── Deck items ─────────────────────────────────────────────────────── */
+.deck-item-card__header { display:flex; align-items:flex-start; gap:0.375rem; }
+.item-cb.deck-cb { width:16px; height:16px; accent-color:var(--accent); cursor:pointer; flex-shrink:0; margin-top:0.1rem; }
+.deck-item-card__title-link { flex:1; text-decoration:none; color:var(--text); }
+.deck-item-card__title { font-weight:600; margin:0; font-size:0.875rem; }
+.deck-item-card__desc { font-size:0.75rem; color:var(--muted-color); margin:0; }
+.deck-item-card__meta { display:flex; gap:0.25rem; margin-top:0.25rem; flex-wrap:wrap; }
+.deck-item-card__actions { display:flex; gap:0.25rem; margin-top:0.375rem; flex-wrap:wrap; }
+.deck-favorite-btn { background:none; border:none; cursor:pointer; padding:0; color:var(--muted-color); display:flex; align-items:center; }
+.deck-favorite-btn:hover { color:inherit; }
+.deck-favorite-btn--active { color:#f59e0b; }
 
-.button-tiny { padding: 0.125rem 0.375rem; font-size: 0.75rem; }
+.deck-org-badge { font-size:0.7rem; padding:0.1rem 0.4rem; border-radius:4px; background:var(--badge-bg); color:var(--badge-color); }
+
+/* ── Pagination / Empty ─────────────────────────────────────────────── */
+.browse-pagination { display:flex; align-items:center; gap:0.5rem; margin-top:1rem; }
+.browse-empty { text-align:center; padding:2.5rem; color:var(--muted-color); }
+.browse-empty h3 { margin:0 0 0.25rem; font-size:1rem; }
+
+/* ── Folder picker ───────────────────────────────────────────────────── */
+.folder-picker-opt {
+  display:flex; align-items:center; gap:0.5rem; padding:0.375rem 0;
+  cursor:pointer; font-size:0.875rem; color:var(--text);
+}
+#folder-picker-tree label { padding-left:1rem; }
+.error-text { color:#d32f2f; font-size:0.8rem; }
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .browse-layout { flex-direction:column; }
+  .browse-sidebar { width:100%; }
+  .browse-grid { grid-template-columns:repeat(auto-fill, minmax(160px,1fr)); }
+}
 </style>
 
-{# ── JS ────────────────────────────────────────────────────────────────── #}
+{# ── JS ──────────────────────────────────────────────────────────────── #}
 <script>
 (() => {
   const folderTreeData = JSON.parse(document.getElementById("folder-tree-data")?.textContent || "[]");
-  let selectMode = false;
-  let selectedItems = []; // { type: "deck"|"folder", id: string }
+  const moveBtn = document.getElementById("move-btn");
+  const deleteBtn = document.getElementById("delete-btn");
+  const countNum = document.getElementById("sel-count-num");
+  let selected = [];
 
-  // ── Select mode ──────────────────────────────────────────────────────
-  const selectBtn = document.getElementById("select-mode-btn");
-  const cancelBtn = document.getElementById("cancel-select-btn");
-  const moveBtn = document.getElementById("move-selected-btn");
-  const deleteBtn = document.getElementById("delete-selected-btn");
-  const modeBar = document.getElementById("select-mode-bar");
-  const countEl = document.getElementById("select-mode-count");
-
-  function enterSelectMode() {
-    selectMode = true;
-    document.querySelectorAll(".item-select-checkbox, .deck-select-checkbox").forEach(cb => {
-      cb.style.display = "";
-      cb.checked = false;
-    });
-    selectedItems = [];
-    updateCount();
-    if (modeBar) modeBar.style.display = "flex";
-    if (selectBtn) selectBtn.textContent = "Done";
+  function getAllCheckboxes() {
+    return [...document.querySelectorAll(".item-cb")];
   }
 
-  function exitSelectMode() {
-    selectMode = false;
-    selectedItems = [];
-    document.querySelectorAll(".item-select-checkbox, .deck-select-checkbox").forEach(cb => {
-      cb.checked = false; cb.style.display = "none";
-    });
-    document.querySelectorAll(".browse-item--selected").forEach(el => el.classList.remove("browse-item--selected"));
-    if (modeBar) modeBar.style.display = "none";
-    if (selectBtn) selectBtn.textContent = "{% if current_folder %}Select items{% else %}Select decks{% endif %}";
-  }
-
-  function updateCount() {
-    const n = selectedItems.length;
-    if (countEl) countEl.textContent = n + " selected";
+  function syncSelected() {
+    selected = getAllCheckboxes()
+      .filter(cb => cb.checked)
+      .map(cb => ({ type: cb.dataset.type, id: cb.dataset.id }));
+    const n = selected.length;
+    if (countNum) countNum.textContent = n;
     if (moveBtn) moveBtn.disabled = n === 0;
     if (deleteBtn) deleteBtn.disabled = n === 0;
+    // Highlight selected items
+    getAllCheckboxes().forEach(cb => {
+      const card = cb.closest(".browse-item");
+      if (card) card.classList.toggle("is-selected", cb.checked);
+    });
   }
 
-  if (selectBtn) selectBtn.addEventListener("click", () => {
-    selectMode ? exitSelectMode() : enterSelectMode();
-  });
-  if (cancelBtn) cancelBtn.addEventListener("click", exitSelectMode);
+  getAllCheckboxes().forEach(cb => cb.addEventListener("change", syncSelected));
 
-  // Checkbox change handler
-  function handleCheck(checkbox) {
-    const itemType = checkbox.dataset.itemType;
-    const itemId = checkbox.value;
-    const itemRow = checkbox.closest(".browse-item, .deck-item-card");
-
-    if (checkbox.checked) {
-      selectedItems.push({ type: itemType, id: itemId });
-      itemRow?.classList.add("browse-item--selected");
-    } else {
-      selectedItems = selectedItems.filter(i => !(i.type === itemType && i.id === itemId));
-      itemRow?.classList.remove("browse-item--selected");
-    }
-    updateCount();
-  }
-
-  document.querySelectorAll(".item-select-checkbox, .deck-select-checkbox").forEach(cb => {
-    cb.addEventListener("change", () => handleCheck(cb));
-  });
-
-  // Move button → open picker
+  // Move
   if (moveBtn) {
     moveBtn.addEventListener("click", () => {
       const modal = document.getElementById("folder-picker-modal");
-      if (modal) { populateFolderPicker(); modal.showModal(); }
+      if (modal) { populatePicker(); modal.showModal(); }
     });
   }
 
-  // Delete button
+  function populatePicker() {
+    const container = document.getElementById("folder-picker-tree");
+    if (!container) return;
+    container.innerHTML = "";
+    function render(nodes, depth=0) {
+      for (const n of nodes) {
+        const label = document.createElement("label");
+        label.className = "folder-picker-opt";
+        label.style.paddingLeft = (depth * 1.25 + 0.5) + "rem";
+        label.innerHTML = `<input type="radio" name="target_folder" value="${n.id}" /> <span>📁 ${n.name}</span>`;
+        container.appendChild(label);
+        if (n.children?.length) render(n.children, depth+1);
+      }
+    }
+    render(folderTreeData);
+  }
+
+  document.getElementById("picker-confirm")?.addEventListener("click", async () => {
+    const target = document.querySelector('input[name="target_folder"]:checked')?.value ?? "";
+    const folders = selected.filter(i => i.type === "folder").map(i => i.id);
+    const decks = selected.filter(i => i.type === "deck").map(i => i.id);
+    let ok = true;
+    if (decks.length) {
+      const r = await fetch("/api/v1/decks/move", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ deck_ids: decks, folder_id: target || null }),
+      });
+      if (!r.ok) ok = false;
+    }
+    if (folders.length && ok) {
+      for (const fid of folders) {
+        const r = await fetch("/api/v1/folders/" + fid + "/move", {
+          method: "PUT",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ parent_id: target || null }),
+        });
+        if (!r.ok) ok = false;
+      }
+    }
+    if (ok) {
+      document.getElementById("folder-picker-modal")?.close();
+      window.location.reload();
+    } else {
+      const err = document.getElementById("folder-picker-error");
+      if (err) { err.textContent = "Move failed. Try again."; err.style.display = "block"; }
+    }
+  });
+
+  // Delete
   if (deleteBtn) {
     deleteBtn.addEventListener("click", async () => {
-      const folders = selectedItems.filter(i => i.type === "folder");
-      const decks = selectedItems.filter(i => i.type === "deck");
+      const folders = selected.filter(i => i.type === "folder");
+      const decks = selected.filter(i => i.type === "deck");
       const parts = [];
-      if (folders.length) parts.push(folders.length + " folder" + (folders.length > 1 ? "s" : ""));
-      if (decks.length) parts.push(decks.length + " deck" + (decks.length > 1 ? "s" : ""));
+      if (folders.length) parts.push(folders.length + " folder" + (folders.length>1?"s":""));
+      if (decks.length) parts.push(decks.length + " deck" + (decks.length>1?"s":""));
       if (!confirm("Delete " + parts.join(" and ") + "?")) return;
-
       let ok = true;
       for (const f of folders) {
-        const r = await fetch("/folders/" + f.id + "/delete", { method: "POST" });
+        const r = await fetch("/folders/" + f.id + "/delete", {method:"POST"});
         if (!r.ok) ok = false;
       }
       for (const d of decks) {
-        const r = await fetch("/api/v1/decks/" + d.id, { method: "DELETE" });
+        const r = await fetch("/api/v1/decks/" + d.id, {method:"DELETE"});
         if (!r.ok) ok = false;
       }
-      exitSelectMode();
       if (ok) window.location.reload();
     });
   }
 
-  // ── Folder picker ────────────────────────────────────────────────────
-  function populateFolderPicker() {
-    const container = document.getElementById("folder-picker-tree");
-    if (!container) return;
-    container.innerHTML = "";
-    document.getElementById("folder-picker-error").style.display = "none";
-
-    function renderNodes(nodes, depth = 0) {
-      for (const node of nodes) {
-        const label = document.createElement("label");
-        label.className = "folder-picker-option";
-        label.style.paddingLeft = (depth * 1.5 + 1) + "rem";
-        label.innerHTML = `<input type="radio" name="target_folder" value="${node.id}" /> <span>📁 ${node.name}</span>`;
-        container.appendChild(label);
-        if (node.children?.length) renderNodes(node.children, depth + 1);
-      }
-    }
-    renderNodes(folderTreeData);
-    document.getElementById("folder-picker-confirm").disabled = false;
-  }
-
-  // Picker confirm
-  const pickerConfirm = document.getElementById("folder-picker-confirm");
-  if (pickerConfirm) {
-    pickerConfirm.addEventListener("click", async () => {
-      const selected = document.querySelector('input[name="target_folder"]:checked');
-      const targetFolder = selected ? selected.value : "";
-
-      const folders = selectedItems.filter(i => i.type === "folder").map(i => i.id);
-      const decks = selectedItems.filter(i => i.type === "deck").map(i => i.id);
-      let ok = true, err = "";
-
-      if (decks.length) {
-        const r = await fetch("/api/v1/decks/move", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deck_ids: decks, folder_id: targetFolder || null }),
-        });
-        if (!r.ok) { ok = false; err = "Failed to move decks."; }
-      }
-
-      if (folders.length && ok) {
-        for (const fid of folders) {
-          const r = await fetch("/api/v1/folders/" + fid + "/move", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ parent_id: targetFolder || null }),
-          });
-          if (!r.ok) { ok = false; err = "Failed to move folders."; }
-        }
-      }
-
-      if (ok) {
-        document.getElementById("folder-picker-modal")?.close();
-        exitSelectMode();
-        window.location.reload();
-      } else {
-        const errEl = document.getElementById("folder-picker-error");
-        if (errEl) { errEl.textContent = err; errEl.style.display = "block"; }
-      }
-    });
-  }
-
-  // ── Folder CRUD ──────────────────────────────────────────────────────
-  // Create folder (sidebar)
+  // Folder create
   document.getElementById("add-folder-btn")?.addEventListener("click", () => {
     const el = document.getElementById("inline-folder-create");
     if (el) { el.style.display = "block"; document.getElementById("new-folder-name")?.focus(); }
@@ -515,97 +507,71 @@
   document.getElementById("cancel-folder-create")?.addEventListener("click", () => {
     document.getElementById("inline-folder-create").style.display = "none";
   });
-  // Create folder (main area, folder view)
-  document.getElementById("add-folder-btn-2")?.addEventListener("click", () => {
-    const el = document.getElementById("inline-folder-create-2");
-    if (el) { el.style.display = "block"; document.getElementById("new-folder-name-2")?.focus(); }
+  document.getElementById("add-subfolder-btn")?.addEventListener("click", () => {
+    const el = document.getElementById("inline-subfolder-create");
+    if (el) { el.style.display = "flex"; document.getElementById("subfolder-name")?.focus(); }
   });
-  document.getElementById("cancel-folder-create-2")?.addEventListener("click", () => {
-    document.getElementById("inline-folder-create-2").style.display = "none";
+  document.getElementById("cancel-subfolder")?.addEventListener("click", () => {
+    document.getElementById("inline-subfolder-create").style.display = "none";
   });
 
   // Rename folder
   document.querySelectorAll("[data-action='rename-folder']").forEach(btn => {
     btn.addEventListener("click", () => {
-      const form = document.getElementById("folder-rename-form");
-      const input = document.getElementById("rename-folder-input");
-      if (form) form.action = "/folders/" + btn.dataset.folderId + "/rename";
-      if (input) { input.value = btn.dataset.folderName; input.focus(); input.select(); }
-      const el = document.getElementById("inline-folder-rename");
-      if (el) el.style.display = "block";
+      const modal = document.getElementById("rename-modal");
+      const form = document.getElementById("rename-form");
+      const idInput = document.getElementById("rename-folder-id");
+      const nameInput = document.getElementById("rename-folder-name");
+      if (form) form.action = "/folders/" + btn.dataset.id + "/rename";
+      if (idInput) idInput.value = btn.dataset.id;
+      if (nameInput) { nameInput.value = btn.dataset.name; nameInput.focus(); nameInput.select(); }
+      if (modal) modal.showModal();
     });
   });
-  document.getElementById("cancel-folder-rename")?.addEventListener("click", () => {
-    document.getElementById("inline-folder-rename").style.display = "none";
-  });
 
-  // Delete folder (main area buttons)
+  // Delete folder
   document.querySelectorAll("[data-action='delete-folder']").forEach(btn => {
     btn.addEventListener("click", () => {
-      if (!confirm("Delete folder \"" + btn.dataset.folderName + "\"? Decks inside will be moved to parent.")) return;
+      if (!confirm("Delete folder \"" + btn.dataset.name + "\"? Decks inside move to parent.")) return;
       const form = document.createElement("form");
       form.method = "POST";
-      form.action = "/folders/" + btn.dataset.folderId + "/delete";
+      form.action = "/folders/" + btn.dataset.id + "/delete";
       document.body.appendChild(form);
       form.submit();
     });
   });
 
-  // Rename/delete in sidebar
-  document.querySelectorAll("[data-action='rename']").forEach(btn => {
-    btn.addEventListener("click", e => {
-      e.stopPropagation();
-      const form = document.getElementById("folder-rename-form");
-      const input = document.getElementById("rename-folder-input");
-      const li = btn.closest(".folder-tree-item");
-      if (form) form.action = "/folders/" + btn.dataset.folderId + "/rename";
-      if (input) { input.value = btn.dataset.folderName; input.focus(); input.select(); }
-      document.getElementById("inline-folder-rename").style.display = "block";
-    });
-  });
-  document.querySelectorAll("[data-action='delete']").forEach(btn => {
-    btn.addEventListener("click", e => {
-      e.stopPropagation();
-      if (!confirm("Delete folder \"" + btn.dataset.folderName + "\"?")) return;
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = "/folders/" + btn.dataset.folderId + "/delete";
-      document.body.appendChild(form);
-      form.submit();
-    });
-  });
-
-  // Folder name validation (no numbers in create form)
-  ["new-folder-name", "new-folder-name-2"].forEach(id => {
+  // Folder name keydown filter
+  ["new-folder-name","subfolder-name"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("keydown", e => {
-      if (!/[a-zA-Z0-9_]/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab","Escape"].includes(e.key) && e.key.length === 1)
+      if (!/[a-zA-Z0-9_]/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab","Escape","Enter"].includes(e.key) && e.key.length === 1)
         e.preventDefault();
     });
   });
 
-  // ── Folder picker modal close on backdrop ────────────────────────────
-  document.getElementById("folder-picker-modal")?.addEventListener("click", e => {
-    if (e.target.tagName === "DIALOG" || e.target.classList.contains("modal__surface")) {
-      e.target.close?.();
-    }
+  // Modal backdrop close
+  document.querySelectorAll("dialog.modal").forEach(d => {
+    d.addEventListener("click", e => {
+      if (e.target === d) d.close();
+    });
   });
 
-  // ── Favorites ───────────────────────────────────────────────────────
-  document.querySelectorAll(".deck-favorite-btn, .browse-favorite-btn").forEach(btn => {
+  // Favorites
+  document.querySelectorAll(".deck-favorite-btn").forEach(btn => {
     btn.addEventListener("click", async e => {
       e.preventDefault(); e.stopPropagation();
       const id = btn.dataset.deckId;
       if (!id) return;
       btn.disabled = true;
       try {
-        const res = await fetch("/api/v1/favorites/decks/" + id + "/toggle", { method: "POST" });
+        const res = await fetch("/api/v1/favorites/decks/" + id + "/toggle", {method:"POST"});
         if (res.ok) {
           const d = await res.json();
           btn.innerHTML = d.favorite
-            ? '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>'
-            : '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
           btn.classList.toggle("deck-favorite-btn--active", d.favorite);
         }
       } finally { btn.disabled = false; }
