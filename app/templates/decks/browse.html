@@ -410,8 +410,8 @@
   }
 
   document.getElementById("picker-confirm")?.addEventListener("click", async () => {
-    const tree = document.getElementById("folder-picker-tree");
-    const selected = tree?.selected?.[0] ?? "";
+    const target = document.querySelector('input[name="target_folder"]:checked')?.value ?? "";
+    const folderIds = [...document.querySelectorAll('input[name="target_folder"]:checked')].map(i => i.value).filter(Boolean);
     const folders = selected.filter(i => i.type === "folder").map(i => i.id);
     const decks = selected.filter(i => i.type === "deck").map(i => i.id);
     let ok = true;
@@ -419,7 +419,7 @@
       const r = await fetch("/api/v1/decks/move", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ deck_ids: decks, folder_id: target || null }),
+        body: JSON.stringify({ deck_ids: decks, folder_id: folderIds[0] || null }),
       });
       if (!r.ok) ok = false;
     }
@@ -428,7 +428,7 @@
         const r = await fetch("/api/v1/folders/" + fid + "/move", {
           method: "PUT",
           headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ parent_id: target || null }),
+          body: JSON.stringify({ parent_id: folderIds[0] || null }),
         });
         if (!r.ok) ok = false;
       }
