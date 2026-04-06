@@ -402,6 +402,8 @@
     }
     if (ok) {
       document.getElementById("folder-picker-modal")?.close();
+      getAllCheckboxes().forEach(cb => { cb.checked = false; });
+      syncSelected();
       window.location.reload();
     } else {
       const err = document.getElementById("folder-picker-error");
@@ -427,7 +429,11 @@
         const r = await fetch("/api/v1/decks/" + d.id, {method:"DELETE"});
         if (!r.ok) ok = false;
       }
-      if (ok) window.location.reload();
+      if (ok) {
+        getAllCheckboxes().forEach(cb => { cb.checked = false; });
+        syncSelected();
+        window.location.reload();
+      }
     });
   }
 
