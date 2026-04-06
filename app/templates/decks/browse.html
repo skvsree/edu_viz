@@ -1,13 +1,88 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="stack-lg">
+
+  {# ── Folder nav section ─────────────────────────────────────────────── #}
+  {% if can_manage_decks %}
+  <section class="card browse-folders">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Organization</p>
+        <h1 class="section-title">
+          {% if current_folder %}{{ current_folder.name }}{% else %}Browse Decks{% endif %}
+        </h1>
+      </div>
+      <div class="dashboard-actions">
+        <button
+          type="button"
+          class="button button-secondary button-small"
+          id="select-mode-btn"
+        >Select decks</button>
+        <button
+          type="button"
+          class="button button-small"
+          id="add-folder-btn"
+          data-parent-id="{% if current_folder %}{{ current_folder.id }}{% endif %}"
+        >New folder</button>
+      </div>
+    </div>
+
+    {# Breadcrumb #}
+    {% if breadcrumb or current_folder %}
+      {% with breadcrumb=breadcrumb %}
+        {% include "components/folder_nav.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {# Inline folder create form #}
+    <div id="inline-folder-create" style="display:none; margin-bottom: 1rem;">
+      <form method="post" action="/folders" class="inline-folder-form">
+        <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
+        <input
+          type="text"
+          name="name"
+          id="new-folder-name"
+          placeholder="Folder name (letters, numbers, underscore)"
+          pattern="[a-zA-Z0-9_]+"
+          maxlength="255"
+          required
+          autofocus
+        />
+        <button type="submit" class="button button-small">Create</button>
+        <button type="button" class="button button-secondary button-small" id="cancel-folder-create">Cancel</button>
+      </form>
+    </div>
+
+    {# Folder list #}
+    {% if folders %}
+      {% with folders=folders, can_manage_decks=can_manage_decks, list_mode='browse' %}
+        {% include "components/folder_list.html" %}
+      {% endwith %}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {# ── Select mode bar ───────────────────────────────────────────────── #}
+  <div id="select-mode-bar" class="select-mode-bar" style="display:none;">
+    <span id="select-mode-count">0 selected</span>
+    <div class="select-mode-bar__actions">
+      <button type="button" class="button button-secondary button-small" id="move-selected-btn">Move to folder</button>
+      <button type="button" class="button button-ghost button-small" id="cancel-select-btn">Cancel</button>
+    </div>
+  </div>
+
+  {# ── Deck library ──────────────────────────────────────────────────── #}
   <section class="card">
     <div class="section-heading">
       <div>
         <p class="panel-label">Deck library</p>
         <h1 class="section-title">Browse Decks</h1>
         <p class="muted section-copy">
-          Search and filter through all decks available to you, then star the ones you want on your dashboard.
+          {% if current_folder %}
+            Decks in <strong>{{ current_folder.name }}</strong>.
+          {% else %}
+            Search and filter through all decks available to you, then star the ones you want on your dashboard.
+          {% endif %}
         </p>
       </div>
       <div class="metric-pill">
@@ -17,6 +92,7 @@
     </div>
 
     <form method="get" action="/decks/browse" class="deck-search" style="margin-bottom: 1.5rem;">
+      <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
       <input
         type="text"
         name="q"
@@ -27,15 +103,29 @@
       />
       <button type="submit" class="button">Search</button>
       {% if q %}
-        <a href="/decks/browse" class="button button-secondary">Clear</a>
+        <a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="button button-secondary">Clear</a>
       {% endif %}
     </form>
 
     {% if decks %}
       <div class="deck-grid deck-grid--dashboard" id="browse-grid">
         {% for deck in decks %}
-          <article class="deck-card deck-card--simple" data-name="{{ deck.name | lower }}" data-deck-id="{{ deck.id }}">
+          <article
+            class="deck-card deck-card--simple{% if can_manage_decks %} deck-card--selectable{% endif %}"
+            data-name="{{ deck.name | lower }}"
+            data-deck-id="{{ deck.id }}"
+          >
             <div class="deck-card__header">
+              {% if can_manage_decks %}
+                <input
+                  type="checkbox"
+                  class="deck-select-checkbox"
+                  name="deck_ids"
+                  value="{{ deck.id }}"
+                  aria-label="Select {{ deck.name }}"
+                  style="margin-right: 0.5rem;"
+                />
+              {% endif %}
               <a href="/decks/{{ deck.id }}" class="deck-card__title-link">
                 <h3 class="deck-card__title">{{ deck.name }}</h3>
               </a>
@@ -59,28 +149,28 @@
         <nav class="pagination pagination--prominent" aria-label="Browse pagination">
           <div class="pagination__controls">
             {% if page > 1 %}
-              <a href="?q={{ q }}&page={{ page - 1 }}" class="button button-secondary" aria-label="Previous page">&larr; Previous</a>
+              <a href="?q={{ q }}&folder={{ current_folder.id if current_folder else '' }}&page={{ page - 1 }}" class="button button-secondary" aria-label="Previous page">&larr; Previous</a>
             {% endif %}
 
             {# Page number buttons #}
             {% if start_page > 1 %}
-              <a href="?q={{ q }}&page=1" class="button button-ghost page-num">1</a>
+              <a href="?q={{ q }}&folder={{ current_folder.id if current_folder else '' }}&page=1" class="button button-ghost page-num">1</a>
               {% if start_page > 2 %}<span class="pagination__ellipsis">…</span>{% endif %}
             {% endif %}
             {% for p in range(start_page, end_page + 1) %}
               {% if p == page %}
                 <span class="button page-num page-num--active" aria-current="page">{{ p }}</span>
               {% else %}
-                <a href="?q={{ q }}&page={{ p }}" class="button button-ghost page-num">{{ p }}</a>
+                <a href="?q={{ q }}&folder={{ current_folder.id if current_folder else '' }}&page={{ p }}" class="button button-ghost page-num">{{ p }}</a>
               {% endif %}
             {% endfor %}
             {% if end_page < total_pages %}
               {% if end_page < total_pages - 1 %}<span class="pagination__ellipsis">…</span>{% endif %}
-              <a href="?q={{ q }}&page={{ total_pages }}" class="button button-ghost page-num">{{ total_pages }}</a>
+              <a href="?q={{ q }}&folder={{ current_folder.id if current_folder else '' }}&page={{ total_pages }}" class="button button-ghost page-num">{{ total_pages }}</a>
             {% endif %}
 
             {% if page < total_pages %}
-              <a href="?q={{ q }}&page={{ page + 1 }}" class="button button-secondary" aria-label="Next page">Next &rarr;</a>
+              <a href="?q={{ q }}&folder={{ current_folder.id if current_folder else '' }}&page={{ page + 1 }}" class="button button-secondary" aria-label="Next page">Next &rarr;</a>
             {% endif %}
           </div>
           <span class="pagination__info">{{ total }} decks &middot; Page {{ page }} of {{ total_pages }}</span>
@@ -93,6 +183,9 @@
         {% if q %}
           <h3>No decks match "{{ q }}"</h3>
           <p class="muted">Try a different search term or <a href="/decks/browse">browse all decks</a>.</p>
+        {% elif current_folder %}
+          <h3>No decks in this folder</h3>
+          <p class="muted">This folder is empty. <a href="/decks/browse">Browse all decks</a> and move some here.</p>
         {% else %}
           <h3>No decks available</h3>
           <p class="muted">Ask an admin to add organization or global decks.</p>
@@ -102,20 +195,236 @@
   </section>
 </section>
 
+{# Folder picker modal #}
+{% if can_manage_decks %}
+  {% with folder_tree=folder_tree, current_folder_id=current_folder.id if current_folder else None %}
+    {% include "components/folder_picker_modal.html" %}
+  {% endwith %}
+
+  {# Inline folder rename form #}
+  <div id="inline-folder-rename" style="display:none; margin-bottom: 1rem;">
+    <form method="post" action="" id="folder-rename-form" class="inline-folder-form">
+      <input
+        type="text"
+        name="name"
+        id="rename-folder-input"
+        placeholder="New folder name"
+        pattern="[a-zA-Z0-9_]+"
+        maxlength="255"
+        required
+        autofocus
+      />
+      <button type="submit" class="button button-small">Rename</button>
+      <button type="button" class="button button-secondary button-small" id="cancel-folder-rename">Cancel</button>
+    </form>
+  </div>
+{% endif %}
+
+{# ── Modal dialog JS ─────────────────────────────────────────────────── #}
 <script>
   (() => {
-    const grid = document.getElementById("browse-grid");
-    if (grid) {
-      grid.querySelectorAll(".deck-card--simple").forEach((card) => {
-        card.style.cursor = "pointer";
-        card.addEventListener("click", () => {
-          window.location.href = card.dataset.href;
-        });
+    const dialogs = Array.from(document.querySelectorAll(".modal"));
+    const supportsModal = typeof HTMLDialogElement !== "undefined";
+
+    const syncState = () => {
+      const hasOpen = dialogs.some(d => d.open);
+      document.documentElement.classList.toggle("has-modal-open", hasOpen);
+    };
+
+    const closeModal = (id) => {
+      const d = document.getElementById(id);
+      if (d?.open) d.close();
+      syncState();
+    };
+    const openModal = (id) => {
+      const d = document.getElementById(id);
+      if (!d || !supportsModal) return;
+      dialogs.forEach(item => { if (item !== d && item.open) item.close(); });
+      if (!d.open) d.showModal();
+      syncState();
+    };
+
+    dialogs.forEach(d => {
+      d.addEventListener("close", syncState);
+      d.addEventListener("cancel", () => { window.requestAnimationFrame(syncState); });
+      d.addEventListener("click", e => {
+        const surface = d.querySelector(".modal__surface");
+        if (surface && !surface.contains(e.target)) closeModal(d.id);
       });
-    }
+    });
+
+    document.querySelectorAll("[data-modal-open]").forEach(t => {
+      t.addEventListener("click", e => { e.preventDefault(); openModal(t.dataset.modalOpen); });
+    });
+    document.querySelectorAll("[data-modal-close]").forEach(t => {
+      t.addEventListener("click", () => closeModal(t.dataset.modalClose));
+    });
+    syncState();
   })();
 </script>
 
+{# ── Folder inline CRUD JS ────────────────────────────────────────────── #}
+<script>
+  (() => {
+    // Folder create
+    const addBtn = document.getElementById("add-folder-btn");
+    const inlineCreate = document.getElementById("inline-folder-create");
+    const cancelCreate = document.getElementById("cancel-folder-create");
+    const newFolderInput = document.getElementById("new-folder-name");
+
+    if (addBtn) {
+      addBtn.addEventListener("click", () => {
+        inlineCreate && (inlineCreate.style.display = "block");
+        newFolderInput && newFolderInput.focus();
+      });
+    }
+    if (cancelCreate) {
+      cancelCreate.addEventListener("click", () => {
+        inlineCreate && (inlineCreate.style.display = "none");
+        if (newFolderInput) newFolderInput.value = "";
+      });
+    }
+    if (newFolderInput) {
+      newFolderInput.addEventListener("keydown", e => {
+        if (e.key === "Escape") inlineCreate && (inlineCreate.style.display = "none");
+        if (!/[a-zA-Z0-9_]/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab"].includes(e.key) && e.key.length === 1)
+          e.preventDefault();
+      });
+    }
+
+    // Folder rename
+    const inlineRename = document.getElementById("inline-folder-rename");
+    const renameForm = document.getElementById("folder-rename-form");
+    const renameInput = document.getElementById("rename-folder-input");
+    const cancelRename = document.getElementById("cancel-folder-rename");
+
+    document.querySelectorAll("[data-action='rename']").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (renameForm) renameForm.action = "/folders/" + btn.dataset.folderId + "/rename";
+        if (renameInput) { renameInput.value = btn.dataset.currentName; renameInput.focus(); renameInput.select(); }
+        inlineRename && (inlineRename.style.display = "block");
+      });
+    });
+    if (cancelRename) {
+      cancelRename.addEventListener("click", () => { inlineRename && (inlineRename.style.display = "none"); });
+    }
+    if (renameInput) {
+      renameInput.addEventListener("keydown", e => {
+        if (e.key === "Escape") inlineRename && (inlineRename.style.display = "none");
+        if (!/^[a-zA-Z0-9_]$/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab"].includes(e.key) && e.key.length === 1)
+          e.preventDefault();
+      });
+    }
+
+    // Folder delete
+    document.querySelectorAll("[data-action='delete']").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (confirm("Delete folder \"" + btn.dataset.folderName + "\"? Decks inside will be moved to the parent folder.")) {
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = "/folders/" + btn.dataset.folderId + "/delete";
+          document.body.appendChild(form);
+          form.submit();
+        }
+      });
+    });
+  })();
+</script>
+
+{# ── Select mode JS ───────────────────────────────────────────────────── #}
+<script>
+  (() => {
+    const selectBtn = document.getElementById("select-mode-btn");
+    const cancelBtn = document.getElementById("cancel-select-btn");
+    const moveBtn = document.getElementById("move-selected-btn");
+    const modeBar = document.getElementById("select-mode-bar");
+    const countEl = document.getElementById("select-mode-count");
+    const pickerModal = document.getElementById("folder-picker-modal");
+    const pickerConfirm = document.getElementById("folder-picker-confirm");
+    let selectMode = false;
+
+    function getSelected() {
+      return Array.from(document.querySelectorAll(".deck-select-checkbox:checked")).map(cb => cb.value);
+    }
+
+    function updateCount() {
+      const n = getSelected().length;
+      if (countEl) countEl.textContent = n + " selected";
+      if (moveBtn) moveBtn.disabled = n === 0;
+    }
+
+    // Enter select mode
+    if (selectBtn) {
+      selectBtn.addEventListener("click", () => {
+        selectMode = true;
+        document.querySelectorAll(".deck-select-checkbox").forEach(cb => cb.style.display = "");
+        if (modeBar) modeBar.style.display = "flex";
+      });
+    }
+
+    // Cancel select mode
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", () => {
+        selectMode = false;
+        document.querySelectorAll(".deck-select-checkbox").forEach(cb => { cb.checked = false; cb.style.display = "none"; });
+        if (modeBar) modeBar.style.display = "none";
+        updateCount();
+      });
+    }
+
+    // Count on change
+    document.querySelectorAll(".deck-select-checkbox").forEach(cb => {
+      cb.addEventListener("change", updateCount);
+      // Hide checkboxes initially
+      cb.style.display = "none";
+    });
+
+    // Move button — open picker
+    if (moveBtn) {
+      moveBtn.addEventListener("click", () => {
+        if (pickerModal) pickerModal.showModal();
+      });
+    }
+
+    // Picker confirm
+    if (pickerConfirm) {
+      pickerConfirm.addEventListener("click", async () => {
+        const selected = document.querySelector('input[name="target_folder"]:checked');
+        if (!selected) return;
+        const targetFolder = selected.value; // "" means root
+        const deckIds = getSelected();
+        if (!deckIds.length) return;
+
+        pickerConfirm.disabled = true;
+        try {
+          const res = await fetch("/api/v1/decks/move", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deck_ids: deckIds, folder_id: targetFolder || null }),
+          });
+          if (res.ok) {
+            pickerModal?.close();
+            window.location.reload();
+          } else {
+            const err = document.getElementById("folder-picker-error");
+            if (err) { err.textContent = "Failed to move decks. Please try again."; err.style.display = "block"; }
+          }
+        } finally {
+          pickerConfirm.disabled = false;
+        }
+      });
+    }
+
+    // Enable confirm when a radio is selected
+    document.querySelectorAll('input[name="target_folder"]').forEach(radio => {
+      radio.addEventListener("change", () => {
+        if (pickerConfirm) pickerConfirm.disabled = false;
+      });
+    });
+  })();
+</script>
+
+{# ── Favorite toggle JS ───────────────────────────────────────────────── #}
 <script>
   (() => {
     const FAVORITES_API = "/api/v1/favorites/decks/";
@@ -125,15 +434,13 @@
       return `<svg width="20" height="20" viewBox="0 0 24 24" ${fillAttr} stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
     }
 
-    function updateFavoriteBtn(btn, isFavorited) {
-      btn.innerHTML = getSvgStar(isFavorited);
-      btn.classList.toggle("deck-favorite-btn--active", isFavorited);
-      btn.title = isFavorited ? "Remove from favorites" : "Add to favorites";
-      btn.setAttribute("aria-label", isFavorited ? "Remove from favorites" : "Add to favorites");
+    function updateBtn(btn, filled) {
+      btn.innerHTML = getSvgStar(filled);
+      btn.classList.toggle("deck-favorite-btn--active", filled);
     }
 
-    document.querySelectorAll(".deck-favorite-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
+    document.querySelectorAll(".deck-favorite-btn").forEach(btn => {
+      btn.addEventListener("click", async e => {
         e.preventDefault();
         e.stopPropagation();
         const deckId = btn.dataset.deckId;
@@ -143,7 +450,7 @@
           const res = await fetch(FAVORITES_API + deckId + "/toggle", { method: "POST" });
           if (res.ok) {
             const data = await res.json();
-            updateFavoriteBtn(btn, data.favorite);
+            updateBtn(btn, data.favorite);
           }
         } finally {
           btn.disabled = false;

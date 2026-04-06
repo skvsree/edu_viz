@@ -765,14 +765,53 @@ def browse_decks(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    from app.models import Folder
     from app.services.access import accessible_deck_clause
+    from app.api.routers.folders import get_folder_tree, _count_decks_in_folder, _count_subfolders
 
     q = request.query_params.get("q", "").strip()
     page = request.query_params.get("page", "1")
+    folder_param = request.query_params.get("folder", "")
     try:
         page = max(1, int(page))
     except ValueError:
         page = 1
+
+    # Folder context
+    folder_id: UUID | None = None
+    current_folder = None
+    breadcrumb: list[tuple[str, str]] = []
+    folders: list[dict] = []
+    folder_tree = get_folder_tree(user=user, db=db)
+
+    if folder_param:
+        try:
+            folder_id = UUID(folder_param)
+        except ValueError:
+            pass
+
+    if folder_id:
+        current_folder = db.get(Folder, folder_id)
+        if current_folder and current_folder.user_id == user.id:
+            # Breadcrumb
+            node_id: UUID | None = folder_id
+            path_ids: list = []
+            while node_id:
+                node = db.get(Folder, node_id)
+                if not node:
+                    break
+                path_ids.insert(0, node)
+                node_id = node.parent_id
+            breadcrumb = [(str(f.id), f.name) for f in path_ids]
+            # Subfolders
+            for f in db.execute(
+                select(Folder).where(Folder.parent_id == folder_id).order_by(Folder.name.asc())
+            ).scalars().all():
+                folders.append({
+                    "id": str(f.id), "name": f.name,
+                    "deck_count": _count_decks_in_folder(db, f.id),
+                    "subfolder_count": _count_subfolders(db, f.id),
+                })
 
     # Base query — accessible decks
     base_q = (
@@ -781,7 +820,11 @@ def browse_decks(
         .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
     )
 
-    # Search filter - normalize the query to match normalized deck names or tags
+    # Folder filter — only when not searching (search results stay flat)
+    if folder_id and not q:
+        base_q = base_q.where(Deck.folder_id == folder_id)
+
+    # Search filter — normalize the query to match normalized deck names or tags
     if q:
         from app.services.access import normalize_deck_name
         from sqlalchemy import or_
@@ -837,6 +880,12 @@ def browse_decks(
             "start_page": start_page,
             "end_page": end_page,
             "title": "Browse Decks | edu selviz",
+            # Folder context
+            "folders": folders,
+            "breadcrumb": breadcrumb,
+            "current_folder": current_folder,
+            "folder_tree": folder_tree,
+            "can_manage_decks": can_manage_decks(user),
         },
     )
 
