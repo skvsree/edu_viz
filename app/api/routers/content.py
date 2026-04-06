@@ -43,7 +43,7 @@ router = APIRouter(tags=["content"])
 logger = logging.getLogger(__name__)
 
 
-def _split_text_for_ai_upload(text: str, *, max_chars: int = 9000, overlap_chars: int = 1200) -> list[str]:
+def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars: int = 800) -> list[str]:
     cleaned = "\n".join(line.strip() for line in (text or "").splitlines() if line.strip())
     if not cleaned:
         return []
