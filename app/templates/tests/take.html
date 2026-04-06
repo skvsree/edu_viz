@@ -15,6 +15,10 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/mhchem.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   </head>
   <body class="review-body">
     <div class="review-shell">
@@ -52,12 +56,12 @@
               <div id="question-container">
                 {% for question in questions %}
                   <div class="test-question-slide" data-question-index="{{ loop.index0 }}" data-question-id="{{ question.id }}" style="display: {% if loop.index0 == 0 %}block{% else %}none{% endif %};">
-                    <h2 class="test-question-text">Q{{ loop.index }}. {{ question.card.front }}</h2>
+                    <h2 class="test-question-text math-content">Q{{ loop.index }}. {{ question.card.front | sanitize | safe }}</h2>
                     <div class="test-options">
                       {% for option in question.card.mcq_options or [] %}
                         <label class="test-option">
                           <input type="radio" name="question_{{ question.id }}" value="{{ loop.index0 }}" required />
-                          <span class="test-option-text">{{ option }}</span>
+                          <span class="test-option-text math-content">{{ option | sanitize | safe }}</span>
                         </label>
                       {% endfor %}
                     </div>
@@ -80,6 +84,35 @@
     </div>
 
     <script>
+      function renderKaTeX(root) {
+        root = root || document.body;
+        if (typeof renderMathInElement === 'function') {
+          try {
+            renderMathInElement(root, {
+              delimiters: [
+                {left: '\\[', right: '\\]', display: true},
+                {left: '$$', right: '$$', display: true},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '$', right: '$', display: false}
+              ],
+              ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+              ignoredClasses: ['katex', 'math-content', 'cloze'],
+              throwOnError: false,
+              trust: true,
+              macros: {
+                "\\celsius": "{}^{\\circ}\\text{C}"
+              }
+            });
+          } catch (e) {
+            console.error('KaTeX render error:', e);
+          }
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        renderKaTeX(document.getElementById('question-container'));
+      });
+
       (function() {
         const questions = {{ questions | map(attribute='id') | map('string') | list | tojson }};
         const totalQuestions = questions.length;

@@ -3,11 +3,11 @@
     <div class="review-loading-ring"></div>
     {% if remaining is not none %}<p class="panel-label">{{ remaining }} card{% if remaining != 1 %}s{% endif %} left in this session</p>{% endif %}
 
-    <div class="review-card__text review-card__text--prompt math-content">{{ card.front | sanitize }}</div>
+    <div class="review-card__text review-card__text--prompt math-content">{{ card.front | sanitize | safe }}</div>
 
     <details class="review-answer" hx-on:toggle="if (this.open && window.renderMathInElement) { renderMathInElement(this, { delimiters: [{left:'\\[', right:'\\]', display:true},{left:'$$', right:'$$', display:true},{left:'\\(', right:'\\)', display:false},{left:'$', right:'$', display:false}], ignoredTags:['script','noscript','style','textarea','pre','code'], throwOnError:false, trust:true }); }">
       <summary>Reveal answer</summary>
-      <div class="review-card__text review-card__text--answer math-content">{{ card.back | sanitize }}</div>
+      <div class="review-card__text review-card__text--answer math-content">{{ card.back | sanitize | safe }}</div>
     </details>
   </div>
 

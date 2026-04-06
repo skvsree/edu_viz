@@ -65,6 +65,7 @@
 - Toggle button (🌙/☀️) in `base.html` topbar + keyboard shortcut `T` toggles on main app pages.
 - All `[data-theme="light"]` element overrides are scoped under `.page-content` class — review/test pages do not use this class so their warm cream theme is unaffected.
 - Review, Test, and Test Report pages have their own standalone HTML templates (not extending base.html) with a fixed warm cream gradient theme.
+- Rendering pitfall: review/test/test-report templates do not inherit base.html’s general KaTeX setup or content rendering conventions. If card HTML/formula support changes, patch these standalone templates explicitly so prompts/options/explanations use `| sanitize | safe` and initialize KaTeX locally.
 
 ## Deployment notes
 - Live deployment path: `/opt/edu_viz`.
