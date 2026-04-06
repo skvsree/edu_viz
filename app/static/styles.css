@@ -3437,6 +3437,15 @@ ul {
   margin: 8px 0;
 }
 
+.mcq-progress-error {
+  color: #f87171 !important;
+  font-weight: 700;
+}
+
+[data-theme="light"] .mcq-progress-error {
+  color: #b91c1c !important;
+}
+
 .progress-bar-container {
   background: var(--surface-soft);
   border-radius: 8px;

@@ -189,7 +189,11 @@ def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str,
                     max_flashcards=18,
                     max_mcqs=18,
                 )
-                pass_pack = provider_client.generate_from_prompt(prompt, credential)
+                try:
+                    pass_pack = provider_client.generate_from_prompt(prompt, credential)
+                except AIGenerationError as exc:
+                    logger.warning("AI upload mode %s failed for deck %s chunk %s: %s", mode, deck_id, index, exc)
+                    continue
                 chunk_pack = merge_study_packs(chunk_pack, pass_pack)
 
             new_cards: list[Card] = []
