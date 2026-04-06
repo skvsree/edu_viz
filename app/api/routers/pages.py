@@ -599,7 +599,7 @@ def dashboard(
         except ValueError:
             pass
 
-    folder_tree = get_folder_tree(db, user.id)
+    folder_tree = get_folder_tree(user=user, db=db)
 
     return _dashboard_response(
         request, user=user, db=db,
@@ -638,7 +638,7 @@ def create_folder(
             status_code=303,
         )
     if not _FOLDER_NAME_RE.match(name):
-        folder_tree = get_folder_tree(db, user.id)
+        folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
             request, user=user, db=db,
             folder_id=parent_uuid,
@@ -657,7 +657,7 @@ def create_folder(
         select(Folder).where(Folder.parent_id == parent_uuid, Folder.user_id == user.id, Folder.name == name)
     ).scalars().first()
     if existing:
-        folder_tree = get_folder_tree(db, user.id)
+        folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
             request, user=user, db=db,
             folder_id=parent_uuid,
@@ -692,7 +692,7 @@ def rename_folder(
 
     name = name.strip()
     if not name or len(name) > 255 or not _FOLDER_NAME_RE.match(name):
-        folder_tree = get_folder_tree(db, user.id)
+        folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
             request, user=user, db=db,
             folder_id=folder.parent_id,
@@ -710,7 +710,7 @@ def rename_folder(
         )
     ).scalars().first()
     if existing:
-        folder_tree = get_folder_tree(db, user.id)
+        folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
             request, user=user, db=db,
             folder_id=folder.parent_id,
