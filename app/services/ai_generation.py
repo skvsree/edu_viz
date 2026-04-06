@@ -4,6 +4,8 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Protocol
+import re
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +47,16 @@ class StudyPackProvider(Protocol):
     name: str
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack: ...
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack: ...
 
 
 class OpenAIStudyPackProvider:
     name = "openai"
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return self.generate_from_prompt(_build_prompt(text), credential)
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         if not credential or credential.provider != "openai":
             raise AIGenerationError("OpenAI credential is required.")
         if credential.auth_type not in {"api_key", "oauth"}:
@@ -61,7 +67,7 @@ class OpenAIStudyPackProvider:
         client = OpenAI(api_key=credential.secret)
         response = client.responses.create(
             model="gpt-4.1-mini",
-            input=_build_prompt(text),
+            input=prompt,
         )
         return _parse_study_pack_json(response.output_text)
 
@@ -70,6 +76,9 @@ class MinimaxStudyPackProvider:
     name = "minimax"
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return self.generate_from_prompt(_build_prompt(text), credential)
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         if not credential or credential.provider != "minimax":
             raise AIGenerationError("Minimax credential is required.")
         if credential.auth_type not in {"api_key"}:
@@ -86,7 +95,7 @@ class MinimaxStudyPackProvider:
                 "model": "MiniMax-M2",
                 "messages": [
                     {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
-                    {"role": "user", "content": _build_prompt(text)},
+                    {"role": "user", "content": prompt},
                 ],
                 "max_completion_tokens": 8192,
                 "temperature": 0.2,
@@ -106,6 +115,9 @@ class ClaudeStudyPackProvider:
     name = "claude"
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return self.generate_from_prompt(_build_prompt(text), credential)
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         if not credential or credential.provider != "claude":
             raise AIGenerationError("Claude credential is required.")
         if credential.auth_type not in {"api_key"}:
@@ -122,7 +134,7 @@ class ClaudeStudyPackProvider:
             json={
                 "model": "claude-sonnet-4-20250514",
                 "max_tokens": 8192,
-                "messages": [{"role": "user", "content": _build_prompt(text)}],
+                "messages": [{"role": "user", "content": prompt}],
             },
             timeout=120,
         )
@@ -151,6 +163,78 @@ def build_study_pack_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 
 
 def _build_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
     return build_study_pack_prompt(text, num_flashcards=num_flashcards, num_mcqs=num_mcqs)
+
+
+def normalize_generated_text(value: str) -> str:
+    value = unicodedata.normalize("NFKC", (value or "").strip().lower())
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
+def merge_study_packs(*packs: GeneratedStudyPack) -> GeneratedStudyPack:
+    flashcards: list[GeneratedFlashcard] = []
+    mcqs: list[GeneratedMcq] = []
+    seen_flashcards: set[tuple[str, str]] = set()
+    seen_mcqs: set[str] = set()
+
+    for pack in packs:
+        for item in pack.flashcards:
+            key = (normalize_generated_text(item.front), normalize_generated_text(item.back))
+            if not key[0] or not key[1] or key in seen_flashcards:
+                continue
+            seen_flashcards.add(key)
+            flashcards.append(item)
+
+        for item in pack.mcqs:
+            key = normalize_generated_text(item.question)
+            if not key or key in seen_mcqs:
+                continue
+            seen_mcqs.add(key)
+            mcqs.append(item)
+
+    return GeneratedStudyPack(flashcards=flashcards, mcqs=mcqs)
+
+
+def build_iterative_study_pack_prompt(
+    text: str,
+    *,
+    mode: str,
+    existing_flashcards: list[str] | None = None,
+    existing_mcqs: list[str] | None = None,
+    max_flashcards: int = 18,
+    max_mcqs: int = 18,
+) -> str:
+    sample = text[:12000]
+    existing_flashcards = existing_flashcards or []
+    existing_mcqs = existing_mcqs or []
+
+    mode_instructions = {
+        "core": "Extract core facts, definitions, names, classifications, direct recall points, and high-yield statements.",
+        "mechanisms": "Extract mechanisms, pathways, processes, sequences, cause-effect links, relationships, and functional reasoning points.",
+        "traps": "Extract comparisons, exceptions, confusing look-alikes, edge cases, exam traps, and application-focused concepts that make strong MCQs.",
+    }
+    instruction = mode_instructions.get(mode, mode_instructions["core"])
+
+    flashcard_avoid = "\n".join(f"- {item[:180]}" for item in existing_flashcards[:40]) or "- none"
+    mcq_avoid = "\n".join(f"- {item[:180]}" for item in existing_mcqs[:40]) or "- none"
+
+    return (
+        "You are preparing dense study material for Indian medical entrance exam revision. "
+        "Return compact strict JSON only with keys flashcards and mcqs. "
+        f"Generate up to {max_flashcards} flashcards and up to {max_mcqs} MCQs, focusing on NEW items not already covered. "
+        "Prefer maximum useful coverage, not minimal output. If the text supports many good items, fill the response close to capacity. "
+        "Do not repeat meaning-equivalent items. "
+        "flashcards: array of objects with front and back. "
+        "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
+        "Make MCQs concept-focused, exam-style, and not trivial. "
+        f"Current extraction mode: {instruction}\n\n"
+        "Already covered flashcard fronts to avoid repeating:\n"
+        f"{flashcard_avoid}\n\n"
+        "Already covered MCQ questions to avoid repeating:\n"
+        f"{mcq_avoid}\n\n"
+        "Source text:\n"
+        f"{sample}"
+    )
 
 
 def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
@@ -225,6 +309,9 @@ class OpencodeStudyPackProvider:
     name = "opencode"
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return self.generate_from_prompt(_build_prompt(text), credential)
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         if not credential or credential.provider != "minimax":
             raise AIGenerationError("Minimax credential is required for opencode provider.")
         if credential.auth_type not in {"api_key"}:
@@ -241,7 +328,7 @@ class OpencodeStudyPackProvider:
                 "model": "MiniMax-M2",
                 "messages": [
                     {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
-                    {"role": "user", "content": _build_prompt(text)},
+                    {"role": "user", "content": prompt},
                 ],
                 "max_completion_tokens": 8192,
                 "temperature": 0.2,

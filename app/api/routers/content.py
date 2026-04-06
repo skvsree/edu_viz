@@ -34,13 +34,69 @@ from app.services.access import (
     can_use_ai_generation,
 )
 from app.services.ai_auth import get_env_ai_provider_name, get_scope_provider, resolve_ai_credential
-from app.services.ai_generation import AIGenerationError, build_study_pack_prompt, generate_study_pack, get_study_pack_provider, _parse_study_pack_json
+from app.services.ai_generation import AIGenerationError, build_iterative_study_pack_prompt, build_study_pack_prompt, generate_study_pack, get_study_pack_provider, merge_study_packs, normalize_generated_text, _parse_study_pack_json
 from app.services.content_extraction import ContentExtractionError, extract_text
 from app.services.mcq_import import McqImportError, parse_mcq_json
 from app.services.tests import build_test_report, create_test_from_deck, list_accessible_tests, submit_attempt, user_attempts_for_test
 
 router = APIRouter(tags=["content"])
 logger = logging.getLogger(__name__)
+
+
+def _split_text_for_ai_upload(text: str, *, max_chars: int = 9000, overlap_chars: int = 1200) -> list[str]:
+    cleaned = "\n".join(line.strip() for line in (text or "").splitlines() if line.strip())
+    if not cleaned:
+        return []
+    if len(cleaned) <= max_chars:
+        return [cleaned]
+
+    chunks: list[str] = []
+    start = 0
+    step = max(1, max_chars - overlap_chars)
+    while start < len(cleaned):
+        end = min(len(cleaned), start + max_chars)
+        chunk = cleaned[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(cleaned):
+            break
+        start += step
+    return chunks
+
+
+def _generate_iterative_ai_upload_pack(text: str, *, credential) -> tuple:
+    provider_client = get_study_pack_provider(credential.provider)
+    chunks = _split_text_for_ai_upload(text)
+    if not chunks:
+        raise AIGenerationError("No usable study text found in uploaded file.")
+
+    aggregate = merge_study_packs()
+    modes = ("core", "mechanisms", "traps")
+
+    for chunk in chunks:
+        chunk_pack = merge_study_packs()
+        for mode in modes:
+            prompt = build_iterative_study_pack_prompt(
+                chunk,
+                mode=mode,
+                existing_flashcards=[item.front for item in merge_study_packs(aggregate, chunk_pack).flashcards],
+                existing_mcqs=[item.question for item in merge_study_packs(aggregate, chunk_pack).mcqs],
+                max_flashcards=18,
+                max_mcqs=18,
+            )
+            pass_pack = provider_client.generate_from_prompt(prompt, credential)
+            before_flash = len(chunk_pack.flashcards)
+            before_mcq = len(chunk_pack.mcqs)
+            chunk_pack = merge_study_packs(chunk_pack, pass_pack)
+            added_flash = len(chunk_pack.flashcards) - before_flash
+            added_mcq = len(chunk_pack.mcqs) - before_mcq
+            if added_flash + added_mcq <= 2:
+                continue
+        aggregate = merge_study_packs(aggregate, chunk_pack)
+
+    if not aggregate.flashcards and not aggregate.mcqs:
+        raise AIGenerationError("AI provider did not return usable flashcards or MCQs.")
+    return aggregate, len(chunks)
 
 
 def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) -> None:
@@ -108,15 +164,39 @@ def ai_import_deck_content(
         credential = resolution.credential
         if not credential:
             raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
-        pack = generate_study_pack(text, provider_name=credential.provider, credential=credential)
+        pack, chunk_count = _generate_iterative_ai_upload_pack(text, credential=credential)
     except (ContentExtractionError, AIGenerationError) as exc:
         message = quote_plus(str(exc))
         return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_error={message}", status_code=303)
 
+    existing_flashcards = {
+        (normalize_generated_text(card.front or ""), normalize_generated_text(card.back or ""))
+        for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "basic")).scalars().all()
+    }
+    existing_mcqs = {
+        normalize_generated_text(card.front or "")
+        for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "mcq")).scalars().all()
+    }
+
     new_cards: list[Card] = []
+    created_flashcards = 0
+    created_mcqs = 0
+    skipped_duplicates = 0
     for item in pack.flashcards:
+        key = (normalize_generated_text(item.front), normalize_generated_text(item.back))
+        if key in existing_flashcards:
+            skipped_duplicates += 1
+            continue
+        existing_flashcards.add(key)
+        created_flashcards += 1
         new_cards.append(Card(deck_id=deck.id, front=item.front, back=item.back, card_type="basic", source_label="ai-upload"))
     for item in pack.mcqs:
+        key = normalize_generated_text(item.question)
+        if key in existing_mcqs:
+            skipped_duplicates += 1
+            continue
+        existing_mcqs.add(key)
+        created_mcqs += 1
         new_cards.append(
             Card(
                 deck_id=deck.id,
@@ -128,11 +208,18 @@ def ai_import_deck_content(
                 source_label="ai-upload",
             )
         )
-    db.add_all(new_cards)
-    db.flush()
-    db.add_all([CardState(card_id=card.id) for card in new_cards])
-    db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_success={quote_plus(f'Generated {len(pack.flashcards)} flashcards and {len(pack.mcqs)} MCQs')}", status_code=303)
+    if new_cards:
+        db.add_all(new_cards)
+        db.flush()
+        db.add_all([CardState(card_id=card.id) for card in new_cards])
+        db.commit()
+    success_message = (
+        f"Generated {created_flashcards} flashcards and {created_mcqs} MCQs "
+        f"from {chunk_count} chunk(s)"
+    )
+    if skipped_duplicates:
+        success_message += f"; skipped {skipped_duplicates} duplicates"
+    return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_success={quote_plus(success_message)}", status_code=303)
 
 
 @router.post("/decks/{deck_id}/generate-mcqs")
