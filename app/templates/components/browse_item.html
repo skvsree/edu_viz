@@ -4,38 +4,16 @@
   data-item-id="{{ deck.id }}"
   data-deck-id="{{ deck.id }}"
 >
-  <div class="deck-item-card__header">
-    {% if can_manage %}
-      <label class="browse-item-check" style="align-items:center;">
-        <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
-      </label>
-    {% endif %}
-    <a href="/decks/{{ deck.id }}" class="deck-item-card__title-link" style="flex:1; min-width:0;">
-      <h3 class="deck-item-card__title">{{ deck.name }}</h3>
-    </a>
-    <button
-      type="button"
-      class="deck-favorite-btn deck-item-card__favorite{% if deck.id|string in favorite_deck_ids %} deck-favorite-btn--active{% endif %}"
-      data-deck-id="{{ deck.id }}"
-      title="{% if deck.id|string in favorite_deck_ids %}Unfavorite{% else %}Favorite{% endif %}"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24"
-        fill="{% if deck.id|string in favorite_deck_ids %}currentColor{% else %}none{% endif %}"
-        stroke="currentColor" stroke-width="2">
-        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-      </svg>
-    </button>
-  </div>
-
-  {% if deck.description %}
-    <p class="deck-item-card__desc">{{ deck.description }}</p>
+  {% if can_manage %}
+    <div class="item-cb-wrap" style="position:absolute; top:0.5rem; right:0.5rem;">
+      <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
+    </div>
   {% endif %}
 
-  <div class="deck-item-card__meta">
-    {% if deck.organization %}
-      <span class="deck-org-badge">{{ deck.organization.name }}</span>
-    {% endif %}
-  </div>
+  <a href="/decks/{{ deck.id }}" class="deck-item-card__link" style="display:flex; flex-direction:column; align-items:center; gap:0.35rem; text-decoration:none; color:var(--text); width:100%;">
+    <span class="deck-item-icon">🗂️</span>
+    <span class="deck-item-name">{{ deck.name }}</span>
+  </a>
 
   <div class="deck-item-card__actions">
     <a href="/review?deck_id={{ deck.id }}" class="browse-btn browse-btn--xs browse-btn--ghost">Review</a>
