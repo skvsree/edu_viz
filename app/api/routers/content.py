@@ -22,7 +22,7 @@ import threading
 from app.api.deps import current_user
 from app.api.routers.pages import templates
 from app.core.db import get_db
-from app.models import Card, CardState, Deck, Review as CardReview, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User
+from app.models import Card, CardState, Deck, Review as CardReview, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, AIUploadGeneration, AIUploadGenerationStatus
 from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     can_access_deck,
@@ -114,10 +114,156 @@ def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) ->
         db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(affected_test_ids)))
         db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
         db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
-
+ 
     db.execute(delete(CardState).where(CardState.card_id.in_(card_ids)))
     db.execute(delete(CardReview).where(CardReview.card_id.in_(card_ids)))
     db.execute(delete(Card).where(Card.id.in_(card_ids)))
+
+
+def _resolve_ai_provider_and_credential(db: Session, user: User):
+    from app.models import Organization
+    provider = get_scope_provider(db, "user", user.id) if user.id else None
+    if not provider and user.organization_id:
+        org = db.get(Organization, user.organization_id)
+        if org and org.is_ai_enabled:
+            provider = get_scope_provider(db, "organization", org.id)
+    if not provider:
+        provider = get_env_ai_provider_name() or "openai"
+    resolution = resolve_ai_credential(db, user, provider)
+    credential = resolution.credential
+    if not credential:
+        raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
+    return provider, credential
+
+
+def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str, filename: str, payload: bytes) -> None:
+    from app.core.db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        generation = db.get(AIUploadGeneration, generation_id)
+        user = db.get(User, user_id)
+        deck = db.get(Deck, deck_id)
+        if not generation or not user or not deck:
+            return
+
+        generation.status = AIUploadGenerationStatus.IN_PROGRESS.value
+        generation.started_at = datetime.utcnow()
+        db.commit()
+
+        text = extract_text(filename or "", payload)
+        provider_name, credential = _resolve_ai_provider_and_credential(db, user)
+        generation.provider = credential.provider or provider_name
+        chunks = _split_text_for_ai_upload(text)
+        if not chunks:
+            raise AIGenerationError("No usable study text found in uploaded file.")
+        generation.total_chunks = len(chunks)
+        generation.processed_chunks = 0
+        db.commit()
+
+        provider_client = get_study_pack_provider(credential.provider)
+        aggregate = merge_study_packs()
+        modes = ("core", "mechanisms", "traps")
+
+        existing_flashcards = {
+            (normalize_generated_text(card.front or ""), normalize_generated_text(card.back or ""))
+            for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "basic")).scalars().all()
+        }
+        existing_mcqs = {
+            normalize_generated_text(card.front or "")
+            for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "mcq")).scalars().all()
+        }
+
+        created_flashcards = 0
+        created_mcqs = 0
+        skipped_duplicates = 0
+
+        for index, chunk in enumerate(chunks, start=1):
+            chunk_pack = merge_study_packs()
+            for mode in modes:
+                prompt = build_iterative_study_pack_prompt(
+                    chunk,
+                    mode=mode,
+                    existing_flashcards=[item.front for item in merge_study_packs(aggregate, chunk_pack).flashcards],
+                    existing_mcqs=[item.question for item in merge_study_packs(aggregate, chunk_pack).mcqs],
+                    max_flashcards=18,
+                    max_mcqs=18,
+                )
+                pass_pack = provider_client.generate_from_prompt(prompt, credential)
+                chunk_pack = merge_study_packs(chunk_pack, pass_pack)
+
+            new_cards: list[Card] = []
+            for item in chunk_pack.flashcards:
+                key = (normalize_generated_text(item.front), normalize_generated_text(item.back))
+                if key in existing_flashcards:
+                    skipped_duplicates += 1
+                    continue
+                existing_flashcards.add(key)
+                created_flashcards += 1
+                new_cards.append(Card(deck_id=deck.id, front=item.front, back=item.back, card_type="basic", source_label="ai-upload"))
+            for item in chunk_pack.mcqs:
+                key = normalize_generated_text(item.question)
+                if key in existing_mcqs:
+                    skipped_duplicates += 1
+                    continue
+                existing_mcqs.add(key)
+                created_mcqs += 1
+                new_cards.append(
+                    Card(
+                        deck_id=deck.id,
+                        front=item.question,
+                        back=item.explanation,
+                        card_type="mcq",
+                        mcq_options=item.options,
+                        mcq_answer_index=item.answer_index,
+                        source_label="ai-upload",
+                    )
+                )
+            if new_cards:
+                db.add_all(new_cards)
+                db.flush()
+                db.add_all([CardState(card_id=card.id) for card in new_cards])
+                db.commit()
+            else:
+                db.commit()
+
+            aggregate = merge_study_packs(aggregate, chunk_pack)
+            generation = db.get(AIUploadGeneration, generation_id)
+            if not generation:
+                return
+            generation.processed_chunks = index
+            generation.flashcards_generated = created_flashcards
+            generation.mcqs_generated = created_mcqs
+            generation.duplicates_skipped = skipped_duplicates
+            db.commit()
+
+        generation = db.get(AIUploadGeneration, generation_id)
+        if not generation:
+            return
+        if not created_flashcards and not created_mcqs:
+            generation.status = AIUploadGenerationStatus.FAILED.value
+            generation.error_message = "AI provider did not return usable flashcards or MCQs."
+        else:
+            generation.status = AIUploadGenerationStatus.COMPLETED.value
+            generation.completed_at = datetime.utcnow()
+        generation.flashcards_generated = created_flashcards
+        generation.mcqs_generated = created_mcqs
+        generation.duplicates_skipped = skipped_duplicates
+        db.commit()
+    except Exception as exc:
+        logger.exception("AI upload generation failed for deck %s", deck_id)
+        try:
+            generation = db.get(AIUploadGeneration, generation_id)
+            if generation:
+                generation.status = AIUploadGenerationStatus.FAILED.value
+                generation.error_message = str(exc)
+                generation.completed_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            logger.exception("Failed to persist AI upload generation failure state for deck %s", deck_id)
+    finally:
+        db.close()
+
 
 
 def _require_system_admin(user: User) -> None:
@@ -135,8 +281,8 @@ def _require_mcq_json_access(user: User) -> None:
         raise HTTPException(status_code=403, detail="You do not have permission to import MCQ JSON.")
 
 
-@router.post("/decks/{deck_id}/ai-import")
-def ai_import_deck_content(
+@router.post("/decks/{deck_id}/ai-import/start")
+def ai_import_deck_content_start(
     deck_id: str,
     source_file: UploadFile = File(...),
     user: User = Depends(current_user),
@@ -147,79 +293,149 @@ def ai_import_deck_content(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
+    if not source_file.filename:
+        raise HTTPException(status_code=400, detail="Please choose a PDF or DOCX file.")
+
+    try:
+        provider_name, credential = _resolve_ai_provider_and_credential(db, user)
+    except AIGenerationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    latest = db.execute(
+        select(AIUploadGeneration)
+        .where(AIUploadGeneration.deck_id == deck.id)
+        .order_by(AIUploadGeneration.created_at.desc())
+    ).scalars().first()
+    if latest and latest.status == AIUploadGenerationStatus.IN_PROGRESS.value:
+        return {
+            "ok": True,
+            "already_running": True,
+            "generation_id": str(latest.id),
+            "provider": latest.provider or credential.provider or provider_name,
+            "total": latest.total_chunks or 0,
+            "completed": latest.processed_chunks,
+            "flashcards_generated": latest.flashcards_generated,
+            "mcqs_generated": latest.mcqs_generated,
+            "duplicates_skipped": latest.duplicates_skipped,
+        }
+
     payload = source_file.file.read()
     source_file.file.close()
-    try:
-        text = extract_text(source_file.filename or "", payload)
-        # Determine provider: user > org > global env
-        from app.models import Organization
-        provider = get_scope_provider(db, "user", user.id) if user.id else None
-        if not provider and user.organization_id:
-            org = db.get(Organization, user.organization_id)
-            if org and org.is_ai_enabled:
-                provider = get_scope_provider(db, "organization", org.id)
-        if not provider:
-            provider = get_env_ai_provider_name() or "openai"
-        resolution = resolve_ai_credential(db, user, provider)
-        credential = resolution.credential
-        if not credential:
-            raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
-        pack, chunk_count = _generate_iterative_ai_upload_pack(text, credential=credential)
-    except (ContentExtractionError, AIGenerationError) as exc:
-        message = quote_plus(str(exc))
-        return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_error={message}", status_code=303)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    existing_flashcards = {
-        (normalize_generated_text(card.front or ""), normalize_generated_text(card.back or ""))
-        for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "basic")).scalars().all()
-    }
-    existing_mcqs = {
-        normalize_generated_text(card.front or "")
-        for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "mcq")).scalars().all()
-    }
-
-    new_cards: list[Card] = []
-    created_flashcards = 0
-    created_mcqs = 0
-    skipped_duplicates = 0
-    for item in pack.flashcards:
-        key = (normalize_generated_text(item.front), normalize_generated_text(item.back))
-        if key in existing_flashcards:
-            skipped_duplicates += 1
-            continue
-        existing_flashcards.add(key)
-        created_flashcards += 1
-        new_cards.append(Card(deck_id=deck.id, front=item.front, back=item.back, card_type="basic", source_label="ai-upload"))
-    for item in pack.mcqs:
-        key = normalize_generated_text(item.question)
-        if key in existing_mcqs:
-            skipped_duplicates += 1
-            continue
-        existing_mcqs.add(key)
-        created_mcqs += 1
-        new_cards.append(
-            Card(
-                deck_id=deck.id,
-                front=item.question,
-                back=item.explanation,
-                card_type="mcq",
-                mcq_options=item.options,
-                mcq_answer_index=item.answer_index,
-                source_label="ai-upload",
-            )
-        )
-    if new_cards:
-        db.add_all(new_cards)
-        db.flush()
-        db.add_all([CardState(card_id=card.id) for card in new_cards])
-        db.commit()
-    success_message = (
-        f"Generated {created_flashcards} flashcards and {created_mcqs} MCQs "
-        f"from {chunk_count} chunk(s)"
+    generation = AIUploadGeneration(
+        deck_id=deck.id,
+        status=AIUploadGenerationStatus.IN_PROGRESS.value,
+        total_chunks=None,
+        processed_chunks=0,
+        flashcards_generated=0,
+        mcqs_generated=0,
+        duplicates_skipped=0,
+        provider=credential.provider or provider_name,
+        filename=(source_file.filename or "")[:255],
+        started_at=datetime.utcnow(),
     )
-    if skipped_duplicates:
-        success_message += f"; skipped {skipped_duplicates} duplicates"
-    return RedirectResponse(url=f"/decks/{deck.id}/ai-upload?import_success={quote_plus(success_message)}", status_code=303)
+    db.add(generation)
+    db.commit()
+    db.refresh(generation)
+
+    worker = threading.Thread(
+        target=_run_ai_upload_generation,
+        kwargs={
+            "generation_id": str(generation.id),
+            "deck_id": str(deck.id),
+            "user_id": str(user.id),
+            "filename": source_file.filename or "",
+            "payload": payload,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    return {
+        "ok": True,
+        "already_running": False,
+        "generation_id": str(generation.id),
+        "provider": credential.provider or provider_name,
+        "total": 0,
+        "completed": 0,
+        "flashcards_generated": 0,
+        "mcqs_generated": 0,
+        "duplicates_skipped": 0,
+    }
+
+
+@router.get("/decks/{deck_id}/ai-import/stream")
+def ai_import_deck_content_stream(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    _require_ai_generation_access(user)
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    def event_stream():
+        sent_state = None
+        while True:
+            db.expire_all()
+            latest = db.execute(
+                select(AIUploadGeneration)
+                .where(AIUploadGeneration.deck_id == deck.id)
+                .order_by(AIUploadGeneration.created_at.desc())
+            ).scalars().first()
+            if not latest:
+                yield ": keep-alive\n\n"
+                sleep(1)
+                continue
+
+            state = (
+                latest.status,
+                latest.total_chunks or 0,
+                latest.processed_chunks,
+                latest.flashcards_generated,
+                latest.mcqs_generated,
+                latest.duplicates_skipped,
+                latest.error_message or "",
+                latest.provider or "",
+            )
+            if state != sent_state:
+                payload = {
+                    "generation_id": str(latest.id),
+                    "total": latest.total_chunks or 0,
+                    "completed": latest.processed_chunks,
+                    "flashcards_generated": latest.flashcards_generated,
+                    "mcqs_generated": latest.mcqs_generated,
+                    "duplicates_skipped": latest.duplicates_skipped,
+                    "provider": latest.provider,
+                    "filename": latest.filename,
+                }
+                if latest.status == AIUploadGenerationStatus.IN_PROGRESS.value:
+                    event_name = "start" if sent_state is None else "progress"
+                    yield f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
+                elif latest.status == AIUploadGenerationStatus.COMPLETED.value:
+                    yield f"event: complete\ndata: {json.dumps(payload)}\n\n"
+                    break
+                elif latest.status == AIUploadGenerationStatus.FAILED.value:
+                    payload["message"] = latest.error_message or "AI upload failed."
+                    yield f"event: generation_error\ndata: {json.dumps(payload)}\n\n"
+                    break
+                sent_state = state
+            else:
+                yield ": keep-alive\n\n"
+            sleep(1)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/decks/{deck_id}/generate-mcqs")
