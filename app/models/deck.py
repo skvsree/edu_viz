@@ -34,6 +34,12 @@ class Deck(Base):
         index=True,
         nullable=True,
     )
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id"),
+        index=True,
+        nullable=True,
+    )
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -44,6 +50,7 @@ class Deck(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     organization = relationship("Organization", back_populates="decks")
+    folder = relationship("Folder", back_populates="decks")
     cards = relationship("Card", back_populates="deck", cascade="all, delete-orphan")
     tags = relationship("Tag", secondary="deck_tags", back_populates="decks")
     mcq_generations = relationship("MCQGeneration", back_populates="deck", cascade="all, delete-orphan")

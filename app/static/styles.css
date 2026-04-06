@@ -3464,3 +3464,334 @@ ul {
 [data-theme="light"] .mcq-progress-modal {
   background: rgba(15, 23, 42, 0.22);
 }
+
+/* ============================================
+   Folder Navigation
+   ============================================ */
+
+.folder-nav {
+  margin-bottom: 1rem;
+}
+
+.folder-nav__list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.folder-nav__crumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.folder-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.875rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.folder-nav__link:hover {
+  background: var(--bg-accent);
+  color: var(--text);
+}
+
+.folder-nav__crumb--current span {
+  font-size: 0.875rem;
+  color: var(--text);
+  font-weight: 600;
+  padding: 4px 8px;
+}
+
+/* ============================================
+   Folder Grid & Cards
+   ============================================ */
+
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.folder-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: default;
+}
+
+.folder-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.folder-card__main {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.folder-card__icon-link {
+  flex-shrink: 0;
+  color: var(--primary);
+  text-decoration: none;
+  display: flex;
+}
+
+.folder-card__icon-link:hover {
+  color: var(--primary-strong);
+}
+
+.folder-card__info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.folder-card__name {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.folder-card__name:hover {
+  color: var(--primary);
+}
+
+.folder-card__meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-card__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.folder-card:hover .folder-card__actions {
+  opacity: 1;
+}
+
+/* ============================================
+   Folder Picker Modal
+   ============================================ */
+
+.modal__surface--wide {
+  max-width: 480px;
+}
+
+.folder-picker {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.folder-picker__node {
+  margin: 0;
+}
+
+.folder-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.folder-picker__item:hover {
+  background: var(--bg-accent);
+}
+
+.folder-picker__item--root {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+  margin-bottom: 6px;
+}
+
+.folder-picker__icon {
+  flex-shrink: 0;
+  color: var(--primary);
+}
+
+.folder-picker__item--root .folder-picker__icon {
+  color: var(--muted);
+}
+
+.folder-picker__name {
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.folder-picker__radio {
+  display: none;
+}
+
+.folder-picker__item:has(input:checked) {
+  background: var(--primary-soft);
+}
+
+.folder-picker__item:has(input:checked) .folder-picker__name {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.folder-picker__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ============================================
+   Select Mode Bar (Browse page)
+   ============================================ */
+
+.select-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 0.625rem 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.select-mode-bar__info {
+  font-size: 0.875rem;
+  color: var(--muted);
+  flex: 1;
+}
+
+.select-mode-bar__info strong {
+  color: var(--text);
+}
+
+.select-mode-bar__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.deck-card--selectable {
+  cursor: pointer;
+}
+
+.deck-card--selectable:hover {
+  border-color: var(--primary);
+}
+
+.deck-card--selected {
+  border-color: var(--primary) !important;
+  background: var(--primary-soft) !important;
+}
+
+.deck-card--selected .deck-card__checkbox {
+  opacity: 1;
+}
+
+.deck-card__checkbox {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.deck-card--selectable:hover .deck-card__checkbox,
+.deck-card--selected .deck-card__checkbox {
+  opacity: 1;
+}
+
+/* ============================================
+   Inline Folder Create / Rename
+   ============================================ */
+
+.folder-inline-form,
+.inline-folder-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.folder-inline-form input,
+.inline-folder-form input {
+  flex: 1;
+  max-width: 280px;
+}
+
+#inline-folder-create input[type="text"],
+#inline-folder-rename input[type="text"] {
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.form-error {
+  color: #f87171;
+  font-size: 0.8rem;
+  margin: 0.25rem 0;
+}
+
+/* ============================================
+   Responsive
+   ============================================ */
+
+@media (max-width: 600px) {
+  .folder-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .folder-card__actions {
+    opacity: 1;
+  }
+
+  .select-mode-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .select-mode-bar__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}

@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="stack-lg">
-  {% if dashboard_error %}
+  {% if dashboard_error or folder_error %}
     <section class="status-banner status-banner--error">
       <strong>Workspace update failed.</strong>
-      <span>{{ dashboard_error }}</span>
+      <span>{{ dashboard_error or folder_error }}</span>
     </section>
   {% endif %}
 
-  {% if dashboard_success %}
+  {% if dashboard_success or folder_success %}
     <section class="status-banner status-banner--success">
       <strong>Workspace updated.</strong>
-      <span>{{ dashboard_success }}</span>
+      <span>{{ dashboard_success or folder_success }}</span>
     </section>
   {% endif %}
 
@@ -72,6 +72,94 @@
         <p class="muted">
           <a href="/decks/browse">Browse all decks</a> and star the ones you want to study.
         </p>
+      </div>
+    {% endif %}
+  </section>
+
+  {# ── Folders section ──────────────────────────────────────────────────── #}
+  <section class="card dashboard-folders">
+    <div class="section-heading dashboard-decks__heading">
+      <div>
+        <p class="panel-label">Organization</p>
+        <h1 class="section-title">
+          {% if current_folder %}{{ current_folder.name }}{% else %}Folders{% endif %}
+        </h1>
+      </div>
+      <div class="dashboard-actions">
+        {% if can_manage_decks %}
+          <button
+            type="button"
+            class="button button-small"
+            id="add-folder-btn"
+            data-parent-id="{% if current_folder %}{{ current_folder.id }}{% endif %}"
+          >
+            New folder
+          </button>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Breadcrumb #}
+    {% if breadcrumb or current_folder %}
+      {% with breadcrumb=breadcrumb, current_folder_name=current_folder.name if current_folder else None %}
+        {% include "components/folder_nav.html" %}
+      {% endwith %}
+    {% endif %}
+
+    {# Inline folder create form (hidden by default) #}
+    {% if can_manage_decks %}
+      <div id="inline-folder-create" style="display:none; margin-bottom: 1rem;">
+        <form method="post" action="/folders" class="inline-folder-form">
+          <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
+          <input
+            type="text"
+            name="name"
+            id="new-folder-name"
+            placeholder="Folder name (letters, numbers, underscore)"
+            pattern="[a-zA-Z0-9_]+"
+            maxlength="255"
+            required
+            autofocus
+          />
+          <button type="submit" class="button button-small">Create</button>
+          <button type="button" class="button button-secondary button-small" id="cancel-folder-create">Cancel</button>
+          <span class="form-error" id="folder-create-error" style="display:none"></span>
+        </form>
+      </div>
+    {% endif %}
+
+    {# Folder list #}
+    {% if folders %}
+      {% with folders=folders, can_manage_decks=can_manage_decks, list_mode='dashboard' %}
+        {% include "components/folder_list.html" %}
+      {% endwith %}
+    {% elif not breadcrumb and not current_folder %}
+      <div class="empty-state" id="no-folders-msg">
+        <p class="muted">No folders yet. Click "New folder" to organize your decks.</p>
+      </div>
+    {% endif %}
+
+    {# Decks in current folder #}
+    {% if current_folder and folder_decks %}
+      <div class="folder-deck-section">
+        <p class="panel-label" style="margin: 1.5rem 0 0.5rem;">
+          Decks in this folder ({{ folder_decks|length }})
+        </p>
+        <div class="deck-grid deck-grid--dashboard">
+          {% for deck in folder_decks %}
+            <article class="deck-card deck-card--simple" data-deck-id="{{ deck.id }}">
+              <div class="deck-card__header">
+                <a href="/decks/{{ deck.id }}" class="deck-card__title-link">
+                  <h3 class="deck-card__title">{{ deck.name }}</h3>
+                </a>
+              </div>
+              <div class="deck-card__actions">
+                <a href="/review?deck_id={{ deck.id }}" class="button button-secondary button-small">Review</a>
+                <a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Test</a>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
       </div>
     {% endif %}
   </section>
@@ -209,6 +297,30 @@
 </section>
 
 {% if can_manage_decks %}
+  {# Folder picker modal for multi-move #}
+  {% with folder_tree=folder_tree, current_folder_id=current_folder.id if current_folder else None %}
+    {% include "components/folder_picker_modal.html" %}
+  {% endwith %}
+
+  {# Inline folder rename form (hidden) #}
+  <div id="inline-folder-rename" style="display:none; margin-bottom: 1rem;">
+    <form method="post" action="" id="folder-rename-form">
+      <input type="hidden" name="name" id="rename-folder-current-name" value="" />
+      <input
+        type="text"
+        name="name"
+        id="rename-folder-input"
+        placeholder="New folder name"
+        pattern="[a-zA-Z0-9_]+"
+        maxlength="255"
+        required
+        autofocus
+      />
+      <button type="submit" class="button button-small">Rename</button>
+      <button type="button" class="button button-secondary button-small" id="cancel-folder-rename">Cancel</button>
+    </form>
+  </div>
+
   <script>
     (() => {
       const dialogs = Array.from(document.querySelectorAll(".modal"));
@@ -280,6 +392,97 @@
 
       syncModalState();
     })();
+
+    // ── Folder inline create ──────────────────────────────────────────────
+    const addFolderBtn = document.getElementById("add-folder-btn");
+    const inlineCreate = document.getElementById("inline-folder-create");
+    const cancelCreate = document.getElementById("cancel-folder-create");
+    const newFolderInput = document.getElementById("new-folder-name");
+    const createError = document.getElementById("folder-create-error");
+
+    if (addFolderBtn) {
+      addFolderBtn.addEventListener("click", () => {
+        inlineCreate.style.display = "block";
+        if (newFolderInput) newFolderInput.focus();
+      });
+    }
+    if (cancelCreate) {
+      cancelCreate.addEventListener("click", () => {
+        inlineCreate.style.display = "none";
+        if (createError) createError.style.display = "none";
+        if (newFolderInput) newFolderInput.value = "";
+      });
+    }
+    if (newFolderInput) {
+      newFolderInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          inlineCreate.style.display = "none";
+        }
+        if (!/[a-zA-Z0-9_]/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab"].includes(e.key) && e.key.length === 1) {
+          e.preventDefault();
+        }
+      });
+      // Validate on submit
+      newFolderInput.closest("form")?.addEventListener("submit", (e) => {
+        if (!/^[a-zA-Z0-9_]+$/.test(newFolderInput.value)) {
+          e.preventDefault();
+          if (createError) {
+            createError.textContent = "Only letters, numbers, and underscores allowed.";
+            createError.style.display = "block";
+          }
+        }
+      });
+    }
+
+    // ── Folder inline rename ──────────────────────────────────────────────
+    const inlineRename = document.getElementById("inline-folder-rename");
+    const renameForm = document.getElementById("folder-rename-form");
+    const renameInput = document.getElementById("rename-folder-input");
+    const cancelRename = document.getElementById("cancel-folder-rename");
+
+    document.querySelectorAll("[data-action='rename']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const folderId = btn.dataset.folderId;
+        const currentName = btn.dataset.currentName;
+        if (renameForm) renameForm.action = "/folders/" + folderId + "/rename";
+        if (renameInput) {
+          renameInput.value = currentName;
+          renameInput.focus();
+          renameInput.select();
+        }
+        if (inlineRename) inlineRename.style.display = "block";
+      });
+    });
+    if (cancelRename) {
+      cancelRename.addEventListener("click", () => {
+        if (inlineRename) inlineRename.style.display = "none";
+      });
+    }
+    if (renameInput) {
+      renameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          if (inlineRename) inlineRename.style.display = "none";
+        }
+        if (!/^[a-zA-Z0-9_]$/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab"].includes(e.key) && e.key.length === 1) {
+          e.preventDefault();
+        }
+      });
+    }
+
+    // ── Folder delete ──────────────────────────────────────────────────────
+    document.querySelectorAll("[data-action='delete']").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const folderId = btn.dataset.folderId;
+        const folderName = btn.dataset.folderName;
+        if (confirm("Delete folder \"" + folderName + "\"? Decks inside will be moved to the parent folder.")) {
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = "/folders/" + folderId + "/delete";
+          document.body.appendChild(form);
+          form.submit();
+        }
+      });
+    });
   </script>
 {% endif %}
 
