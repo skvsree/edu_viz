@@ -337,6 +337,13 @@
 
       document.querySelectorAll(".modal[data-open-on-load='true']").forEach((dialog) => {
         openModal(dialog.id);
+        // Strip modal-triggering query params from URL after auto-open to prevent reopen on refresh
+        const url = new URL(window.location);
+        if (url.searchParams.has('modal') || url.searchParams.has('edit_deck')) {
+          url.searchParams.delete('modal');
+          url.searchParams.delete('edit_deck');
+          history.replaceState({}, '', url);
+        }
       });
 
       syncModalState();
