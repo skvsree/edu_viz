@@ -6,52 +6,8 @@
 {% block content %}
 <div class="browse-layout">
 
-  {# ── Sidebar ───────────────────────────────────────────────────────── #}
-  {% if can_manage_decks %}
-  <aside class="browse-sidebar">
-    <div class="sidebar-header">
-      <a href="/decks/browse" class="sidebar-root-link{% if not current_folder %} active{% endif %}">
-        All decks
-      </a>
-    </div>
-
-    <div style="padding: 0.5rem 1rem;">
-      <button type="button" class="browse-btn browse-btn--sm" id="add-folder-btn">
-        + New folder
-      </button>
-    </div>
-
-    <div id="inline-folder-create" style="display:none; padding: 0 1rem 0.5rem;">
-      <form method="post" action="/folders" class="inline-folder-form">
-        <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
-        <input type="text" name="name" id="new-folder-name"
-          placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
-          style="width:100%; margin-bottom:0.25rem; padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.8rem;" />
-        <div style="display:flex; gap:0.25rem;">
-          <button type="submit" class="browse-btn browse-btn--sm">Create</button>
-          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="cancel-folder-create">✕</button>
-        </div>
-      </form>
-    </div>
-
-    {% if root_folders %}
-      <ul class="folder-tree-list">
-        {% for f in root_folders %}
-          <li class="folder-tree-item{% if current_folder and current_folder.id|string == f.id %} active{% endif %}">
-            <a href="/decks/browse?folder={{ f.id }}" class="folder-tree-link">
-              <span class="folder-icon">📁</span>
-              <span class="folder-tree-name">{{ f.name }}</span>
-              <span class="folder-count">{{ f.deck_count }}</span>
-            </a>
-          </li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  </aside>
-  {% endif %}
-
   {# ── Main ──────────────────────────────────────────────────────────── #}
-  <main class="browse-main">
+  <main class="browse-main" style="padding-left: 1.5rem;">
 
     {# Breadcrumb #}
     {% if breadcrumb or current_folder %}
@@ -87,33 +43,26 @@
     {# ── Action bar ──────────────────────────────────────────────────── #}
     {% if can_manage_decks %}
     <div class="browse-action-bar" id="browse-action-bar">
-      <span class="browse-action-bar__count" id="selection-count">
-        <span id="sel-count-num">0</span> selected
-      </span>
-      <div class="browse-action-bar__actions">
-        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="move-btn" disabled>
-          ↗️ Move to folder
-        </button>
-        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost browse-btn--danger" id="delete-btn" disabled>
-          🗑️ Delete
-        </button>
+      <div class="browse-action-bar__left">
+        <span class="browse-action-bar__count" id="selection-count">
+          <span id="sel-count-num">0</span> selected
+        </span>
+        <button type="button" class="browse-btn browse-btn--sm" id="new-folder-btn">+ Folder</button>
       </div>
-    </div>
-    {% endif %}
-
-    {# ── Folder view: create subfolder ────────────────────────────────── #}
-    {% if can_manage_decks and current_folder %}
-    <div style="margin-bottom: 0.75rem;">
-      <button type="button" class="browse-btn browse-btn--sm" id="add-subfolder-btn">+ New subfolder</button>
-      <div id="inline-subfolder-create" style="display:none; margin-top:0.5rem;">
-        <form method="post" action="/folders" class="inline-folder-form" style="display:flex; gap:0.5rem; align-items:center;">
-          <input type="hidden" name="parent_id" value="{{ current_folder.id }}" />
-          <input type="text" name="name" id="subfolder-name"
+      <div id="inline-folder-create" style="display:none; margin-bottom:0.5rem;">
+        <form method="post" action="/folders" style="display:flex; gap:0.375rem; align-items:center;">
+          <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
+          <input type="text" name="name" id="new-folder-name"
             placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
             style="padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.8rem; width:160px;" />
           <button type="submit" class="browse-btn browse-btn--sm">Create</button>
-          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="cancel-subfolder">Cancel</button>
+          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="cancel-folder-create">✕</button>
         </form>
+      </div>
+      <div class="browse-action-bar__actions">
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="rename-btn" disabled>✏️ Rename</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="move-btn" disabled>↗️ Move</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost browse-btn--danger" id="delete-btn" disabled>🗑️ Delete</button>
       </div>
     </div>
     {% endif %}
@@ -239,31 +188,10 @@
 
 <style>
 /* ── Layout ────────────────────────────────────────────────────────── */
-.browse-layout { display:flex; gap:1.5rem; align-items:flex-start; }
-.browse-sidebar {
-  width:210px; flex-shrink:0;
-  background:var(--card-bg); border:1px solid var(--border-color);
-  border-radius:12px; overflow:hidden;
-}
-.sidebar-header { padding:0.75rem 1rem; border-bottom:1px solid var(--border-color); display:flex; align-items:center; }
-.sidebar-root-link { font-weight:600; color:var(--text); text-decoration:none; font-size:0.875rem; }
-.sidebar-root-link:hover, .sidebar-root-link.active { color:var(--accent); }
-
-.folder-tree-list { list-style:none; padding:0; margin:0; }
-.folder-tree-item { border-bottom:1px solid var(--border-color); }
-.folder-tree-item:last-child { border-bottom:none; }
-.folder-tree-link {
-  display:flex; align-items:center; gap:0.5rem;
-  padding:0.5rem 1rem; text-decoration:none;
-  color:var(--text); font-size:0.8rem;
-}
-.folder-tree-link:hover { background:var(--hover-bg); }
-.folder-tree-item.active .folder-tree-link { color:var(--accent); font-weight:600; }
-.folder-icon { font-size:0.9rem; }
-.folder-count { font-size:0.7rem; color:var(--muted-color); margin-left:auto; }
+.browse-layout { display:flex; gap:1.5rem; align-items:flex-start; flex-direction:column; }
 
 /* ── Main ───────────────────────────────────────────────────────────── */
-.browse-main { flex:1; min-width:0; }
+.browse-main { flex:1; min-width:0; width:100%; }
 .browse-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem; flex-wrap:wrap; }
 .browse-title { font-size:1.25rem; font-weight:700; margin:0; }
 .browse-header-right { display:flex; gap:0.5rem; align-items:center; }
@@ -275,15 +203,16 @@
 
 /* ── Action bar ─────────────────────────────────────────────────────── */
 .browse-action-bar {
-  display:none; align-items:center; gap:0.75rem;
+  display:none; align-items:center; justify-content:space-between;
   padding:0.5rem 0.75rem; margin-bottom:0.75rem;
   background:var(--card-bg); border:1px solid var(--border-color);
-  border-radius:10px; flex-wrap:wrap;
+  border-radius:10px; flex-wrap:wrap; gap:0.5rem;
 }
 .browse-action-bar.has-selection { display:flex; }
+.browse-action-bar__left { display:flex; align-items:center; gap:0.5rem; }
 .browse-action-bar__count { font-size:0.8rem; color:var(--muted-color); min-width:60px; }
 #sel-count-num { font-weight:700; color:var(--accent); }
-.browse-action-bar__actions { display:flex; gap:0.375rem; margin-left:auto; }
+.browse-action-bar__actions { display:flex; gap:0.375rem; }
 
 /* ── Grid ────────────────────────────────────────────────────────────── */
 .browse-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:0.75rem; }
@@ -374,8 +303,6 @@
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .browse-layout { flex-direction:column; }
-  .browse-sidebar { width:100%; }
   .browse-grid { grid-template-columns:repeat(auto-fill, minmax(100px,1fr)); gap:0.5rem; }
   .browse-item { padding:0.625rem; min-height:80px; }
   .item-cb { width:22px; height:22px; }
@@ -413,6 +340,8 @@
     if (countNum) countNum.textContent = n;
     if (moveBtn) moveBtn.disabled = n === 0;
     if (deleteBtn) deleteBtn.disabled = n === 0;
+    const renameBtn = document.getElementById("rename-btn");
+    if (renameBtn) renameBtn.disabled = n !== 1;
     if (actionBar) actionBar.classList.toggle("has-selection", n > 0);
     getAllCheckboxes().forEach(cb => {
       const card = cb.closest(".browse-item");
@@ -509,42 +438,24 @@
   document.getElementById("cancel-folder-create")?.addEventListener("click", () => {
     document.getElementById("inline-folder-create").style.display = "none";
   });
-  document.getElementById("add-subfolder-btn")?.addEventListener("click", () => {
-    const el = document.getElementById("inline-subfolder-create");
-    if (el) { el.style.display = "flex"; document.getElementById("subfolder-name")?.focus(); }
-  });
-  document.getElementById("cancel-subfolder")?.addEventListener("click", () => {
-    document.getElementById("inline-subfolder-create").style.display = "none";
-  });
 
-  // Rename folder
-  document.querySelectorAll("[data-action='rename-folder']").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const modal = document.getElementById("rename-modal");
-      const form = document.getElementById("rename-form");
-      const idInput = document.getElementById("rename-folder-id");
-      const nameInput = document.getElementById("rename-folder-name");
-      if (form) form.action = "/folders/" + btn.dataset.id + "/rename";
-      if (idInput) idInput.value = btn.dataset.id;
-      if (nameInput) { nameInput.value = btn.dataset.name; nameInput.focus(); nameInput.select(); }
-      if (modal) modal.showModal();
-    });
-  });
-
-  // Delete folder
-  document.querySelectorAll("[data-action='delete-folder']").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (!confirm("Delete folder \"" + btn.dataset.name + "\"? Decks inside move to parent.")) return;
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = "/folders/" + btn.dataset.id + "/delete";
-      document.body.appendChild(form);
-      form.submit();
-    });
+  // Rename button in action bar
+  document.getElementById("rename-btn")?.addEventListener("click", () => {
+    const modal = document.getElementById("rename-modal");
+    const form = document.getElementById("rename-form");
+    const idInput = document.getElementById("rename-folder-id");
+    const nameInput = document.getElementById("rename-folder-name");
+    if (selected.length !== 1) return;
+    const item = selected[0];
+    const el = document.querySelector(`[data-item-id="${item.id}"]`);
+    if (form) form.action = "/" + item.type + "s/" + item.id + "/rename";
+    if (idInput) idInput.value = item.id;
+    if (nameInput) { nameInput.value = el?.dataset.name || el?.querySelector(".browse-item__name, .deck-item-name")?.textContent || ""; nameInput.focus(); nameInput.select(); }
+    if (modal) modal.showModal();
   });
 
   // Folder name keydown filter
-  ["new-folder-name","subfolder-name"].forEach(id => {
+  ["new-folder-name"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener("keydown", e => {
