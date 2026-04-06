@@ -349,6 +349,53 @@ def move_decks(
     return {"success": True, "moved_count": len(request.deck_ids)}
 
 
+class FolderMoveRequest(BaseModel):
+    parent_id: UUID | None = None
+
+
+@router.put("/folders/{folder_id}/move", status_code=200)
+def move_folder(
+    folder_id: UUID,
+    request: FolderMoveRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Move a folder to a new parent (or root if parent_id is null)."""
+    folder = db.get(Folder, folder_id)
+    if not folder or folder.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Folder not found")
+
+    # Prevent moving into itself or a descendant
+    if request.parent_id:
+        descendant_ids = set()
+        def collect_descendants(pid: UUID):
+            descendants = db.execute(
+                select(Folder.id).where(Folder.parent_id == pid)
+            ).scalars().all()
+            for d in descendants:
+                descendant_ids.add(d)
+                collect_descendants(d)
+        collect_descendants(folder_id)
+        if request.parent_id in descendant_ids or request.parent_id == folder_id:
+            raise HTTPException(status_code=400, detail="Cannot move a folder into itself or its descendant")
+
+    # Check duplicate sibling name
+    existing = db.execute(
+        select(Folder).where(
+            Folder.parent_id == request.parent_id,
+            Folder.user_id == user.id,
+            Folder.name == folder.name,
+            Folder.id != folder_id,
+        )
+    ).scalars().first()
+    if existing:
+        raise HTTPException(status_code=409, detail="A folder with this name already exists in the target location")
+
+    folder.parent_id = request.parent_id
+    db.commit()
+    return {"success": True}
+
+
 @router.get("/folders/tree", response_model=list[dict])
 def get_folder_tree(
     user: User = Depends(current_user),

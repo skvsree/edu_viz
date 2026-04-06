@@ -751,7 +751,7 @@ def delete_folder(
     db.commit()
 
     return RedirectResponse(
-        "/dashboard" + (f"?folder={parent_id}" if parent_id else "") + "?success=Folder+deleted",
+        "/decks/browse" + (f"?folder={parent_id}" if parent_id else "") + "?success=Folder+deleted",
         status_code=303,
     )
 
@@ -770,32 +770,22 @@ def browse_decks(
     from app.api.routers.folders import get_folder_tree, _count_decks_in_folder, _count_subfolders
 
     q = request.query_params.get("q", "").strip()
-    page = request.query_params.get("page", "1")
     folder_param = request.query_params.get("folder", "")
     try:
-        page = max(1, int(page))
+        folder_id = UUID(folder_param) if folder_param else None
     except ValueError:
-        page = 1
+        folder_id = None
 
-    # Folder context
-    folder_id: UUID | None = None
-    current_folder = None
-    breadcrumb: list[tuple[str, str]] = []
-    folders: list[dict] = []
     folder_tree = get_folder_tree(user=user, db=db)
 
-    if folder_param:
-        try:
-            folder_id = UUID(folder_param)
-        except ValueError:
-            pass
-
+    # Breadcrumb
+    breadcrumb: list[tuple[str, str]] = []
+    current_folder = None
     if folder_id:
         current_folder = db.get(Folder, folder_id)
         if current_folder and current_folder.user_id == user.id:
-            # Breadcrumb
             node_id: UUID | None = folder_id
-            path_ids: list = []
+            path_ids = []
             while node_id:
                 node = db.get(Folder, node_id)
                 if not node:
@@ -803,28 +793,47 @@ def browse_decks(
                 path_ids.insert(0, node)
                 node_id = node.parent_id
             breadcrumb = [(str(f.id), f.name) for f in path_ids]
-            # Subfolders
-            for f in db.execute(
-                select(Folder).where(Folder.parent_id == folder_id).order_by(Folder.name.asc())
-            ).scalars().all():
-                folders.append({
-                    "id": str(f.id), "name": f.name,
-                    "deck_count": _count_decks_in_folder(db, f.id),
-                    "subfolder_count": _count_subfolders(db, f.id),
-                })
 
-    # Base query — accessible decks
+    # Subfolders in current folder
+    subfolders = []
+    for f in db.execute(
+        select(Folder).where(
+            Folder.parent_id == folder_id,
+            Folder.user_id == user.id,
+        ).order_by(Folder.name.asc())
+    ).scalars().all():
+        subfolders.append({
+            "id": str(f.id), "name": f.name,
+            "deck_count": _count_decks_in_folder(db, f.id),
+            "subfolder_count": _count_subfolders(db, f.id),
+        })
+
+    # Root folders (for sidebar or root-level display)
+    root_folders = []
+    for f in db.execute(
+        select(Folder).where(
+            Folder.parent_id == None,
+            Folder.user_id == user.id,
+        ).order_by(Folder.name.asc())
+    ).scalars().all():
+        root_folders.append({
+            "id": str(f.id), "name": f.name,
+            "deck_count": _count_decks_in_folder(db, f.id),
+            "subfolder_count": _count_subfolders(db, f.id),
+        })
+
+    # Base query for decks
     base_q = (
         select(Deck)
         .options(selectinload(Deck.organization), selectinload(Deck.tags))
         .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
     )
 
-    # Folder filter — only when not searching (search results stay flat)
+    # Folder filter
     if folder_id and not q:
         base_q = base_q.where(Deck.folder_id == folder_id)
 
-    # Search filter — normalize the query to match normalized deck names or tags
+    # Search
     if q:
         from app.services.access import normalize_deck_name
         from sqlalchemy import or_
@@ -837,33 +846,48 @@ def browse_decks(
                 )
             ).group_by(Deck.id)
 
-    # Count total
+    # Pagination only for search results
+    page = request.query_params.get("page", "1")
+    try:
+        page = max(1, int(page))
+    except ValueError:
+        page = 1
+
     count_q = select(func.count()).select_from(base_q.subquery())
     total = db.execute(count_q).scalar_one()
+    total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
+    start_page = max(1, page - 2)
+    end_page = min(total_pages, page + 2)
 
-    # Paginated
     offset = (page - 1) * BROWSE_PAGE_SIZE
     decks = (
         db.execute(
             base_q.order_by(Deck.is_global.desc(), Deck.created_at.desc())
-            .limit(BROWSE_PAGE_SIZE)
-            .offset(offset)
-        )
-        .scalars()
-        .all()
+            .limit(BROWSE_PAGE_SIZE).offset(offset)
+        ).scalars().all()
     )
 
-    # Favorite IDs for current user
+    # Root-level decks only (no folder, for root view)
+    root_decks = []
+    if not q:
+        root_decks = (
+            db.execute(
+                select(Deck)
+                .options(selectinload(Deck.organization), selectinload(Deck.tags))
+                .where(
+                    accessible_deck_clause(user),
+                    Deck.is_deleted.is_(False),
+                    Deck.folder_id == None,
+                )
+                .order_by(Deck.is_global.desc(), Deck.created_at.desc())
+            ).scalars().all()
+        )
+
+    # Favorite IDs
     fav_rows = db.execute(
         select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
-
-    total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
-
-    # Pagination window around current page
-    start_page = max(1, page - 2)
-    end_page = min(total_pages, page + 2)
 
     return templates.TemplateResponse(
         "decks/browse.html",
@@ -876,12 +900,13 @@ def browse_decks(
             "page": page,
             "total_pages": total_pages,
             "total": total,
-            "page_size": BROWSE_PAGE_SIZE,
             "start_page": start_page,
             "end_page": end_page,
-            "title": "Browse Decks | edu selviz",
+            "title": "Browse | edu selviz",
             # Folder context
-            "folders": folders,
+            "subfolders": subfolders,
+            "root_folders": root_folders,
+            "root_decks": root_decks,
             "breadcrumb": breadcrumb,
             "current_folder": current_folder,
             "folder_tree": folder_tree,

@@ -1,0 +1,52 @@
+{% macro browse_item(deck, favorite_deck_ids, can_manage_decks=False) %}
+<article class="browse-item browse-item--deck deck-item-card"
+  data-name="{{ deck.name | lower }}"
+  data-item-type="deck"
+  data-item-id="{{ deck.id }}"
+  data-deck-id="{{ deck.id }}"
+>
+  <div class="deck-item-card__header">
+    {% if can_manage_decks %}
+      <input
+        type="checkbox"
+        class="item-select-checkbox"
+        data-item-type="deck"
+        data-item-id="{{ deck.id }}"
+        value="{{ deck.id }}"
+        style="display:none;"
+        aria-label="Select {{ deck.name }}"
+      />
+    {% endif %}
+    <a href="/decks/{{ deck.id }}" class="deck-item-card__title-link">
+      <h3 class="deck-item-card__title">{{ deck.name }}</h3>
+    </a>
+    <button
+      type="button"
+      class="deck-favorite-btn deck-item-card__favorite{% if deck.id|string in favorite_deck_ids %} deck-favorite-btn--active{% endif %}"
+      data-deck-id="{{ deck.id }}"
+      title="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24"
+        fill="{% if deck.id|string in favorite_deck_ids %}currentColor{% else %}none{% endif %}"
+        stroke="currentColor" stroke-width="2">
+        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+      </svg>
+    </button>
+  </div>
+
+  {% if deck.description %}
+    <p class="deck-item-card__desc">{{ deck.description }}</p>
+  {% endif %}
+
+  <div class="deck-item-card__meta">
+    {% if deck.organization %}
+      <span class="deck-org-badge">{{ deck.organization.name }}</span>
+    {% endif %}
+  </div>
+
+  <div class="deck-item-card__actions">
+    <a href="/review?deck_id={{ deck.id }}" class="button button-secondary button-small">Review</a>
+    <a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Test</a>
+  </div>
+</article>
+{% endmacro %}
