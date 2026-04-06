@@ -6,11 +6,11 @@
 >
   <div class="deck-item-card__header">
     {% if can_manage %}
-      <label class="browse-item-check">
+      <label class="browse-item-check" style="align-items:center;">
         <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
       </label>
     {% endif %}
-    <a href="/decks/{{ deck.id }}" class="deck-item-card__title-link">
+    <a href="/decks/{{ deck.id }}" class="deck-item-card__title-link" style="flex:1; min-width:0;">
       <h3 class="deck-item-card__title">{{ deck.name }}</h3>
     </a>
     <button
