@@ -65,6 +65,7 @@
 - Toggle button (🌙/☀️) in `base.html` topbar + keyboard shortcut `T` toggles on main app pages.
 - All `[data-theme="light"]` element overrides are scoped under `.page-content` class — review/test pages do not use this class so their warm cream theme is unaffected.
 - Review, Test, and Test Report pages have their own standalone HTML templates (not extending base.html) with a fixed warm cream gradient theme.
+- Rendering pitfall: review/test/test-report templates do not inherit base.html’s general KaTeX setup or content rendering conventions. If card HTML/formula support changes, patch these standalone templates explicitly so prompts/options/explanations use `| sanitize | safe` and initialize KaTeX locally.
 
 ## Deployment notes
 - Live deployment path: `/opt/edu_viz`.
@@ -114,6 +115,18 @@
 - Flashcard bulk delete: `POST /decks/{id}/flashcards/bulk-delete`
 - MCQ bulk delete: `POST /decks/{id}/mcqs/bulk-delete`
 - Both clean up card state dependencies before deleting; keep tests aligned if changing logic.
+- Deleting AI-generated MCQs intentionally resets deck MCQ generation item state deck-wide because generated MCQs are not reliably mapped back to source cards one-by-one.
+
+### MCQ generation status / streaming
+- Start endpoint: `POST /decks/{id}/generate-mcqs/start`
+- Stream endpoint: `GET /decks/{id}/generate-mcqs/stream`
+- Architecture: start request launches a long-running worker/thread; SSE route streams DB-backed status only.
+- Per-source-card progress lives in `deck_mcq_generation_items` via `DeckMcqGenerationItem` / `DeckMcqGenerationItemStatus`.
+- Reruns should skip completed source cards and retry only pending/failed ones.
+- Do not move long-running provider calls back into the SSE handler; browser/EventSource stability is better with the current start + background worker + stream-status pattern.
+- EventSource only listens to GET and named SSE events require `addEventListener(eventName, ...)`.
+- Avoid custom SSE event name `error`; use app-specific names like `generation_error`.
+- Mobile bulk-select controls on flashcard/MCQ management pages are styled as toggle switches; if they look broken, inspect both template markup and mobile CSS rules in `app/static/styles.css`.
 
 ### Tests
 - Test center lives at `/decks/{id}/tests` and is accessible to managers (admin/system_admin).
@@ -209,10 +222,31 @@
 - Multiselect stores selected keys in hidden input as comma-separated string
 - For Deck objects, use `opt.id|string` for key extraction (not `opt.key|default(opt.id)` which returns 'undefined')
 
+### AI Generation
+- Three providers: OpenAI, Minimax, Claude
+- Config via two env vars: `AI_PROVIDER` (openai|minimax|claude) and `AI_API_KEY`
+- Resolution hierarchy: user > org > global env
+- AI buttons only visible when org has `is_ai_enabled=true` and user is admin
+- Checked via `can_use_ai_generation(user)` in `app/services/access.py`
+- AI upload page (`/decks/{id}/ai-upload`) validates `can_use_ai_generation` + `can_manage_deck`
+- Both generate-mcqs and ai-import use dynamic provider resolution
+
 ### Settings (admin)
-- Organizations management (`/settings/organizations`) — create, rename, assign users
-- Users management (`/settings/users`) — update role, assign organization
+- Organizations management (`/settings/organizations`) — create, edit via modals, delete (future)
+- Users management (`/settings/users`) — update role, assign organization, AI and test settings
 - Global deck toggle in deck edit flow (marks deck as globally accessible)
+
+#### Settings page UI patterns
+- **Organizations page**: deck-grid of org cards with stats (users, AI, tests). Create/edit via modals.
+  - Modal flow: `Enable AI generation` checkbox → conditional `Override global AI setting` → Provider + API key inputs
+  - Same pattern for `Enable tests` → `Daily test limit` input
+  - Modal pre-fills from data attributes on the Edit button
+- **Users page**: stacked form-cards per user matching the `form-card` pattern (section-heading outside form, form class="stack-md", each field in a `<div>` wrapper)
+  - AI settings section: `Enable AI generation` → `Override org AI` → Provider + API key (same flow as orgs)
+  - AI section only shown when org AI is enabled for that user
+  - AI status shown in grid: "Org AI off" or "Org AI on (user key)"
+  - "View users" from org page filters to that org via `?org=<org_id>` query param
+  - Filtered view shows "Showing users in [Org] — Show all" link
 
 ### Routes reference
 
@@ -286,3 +320,54 @@ app/templates/
 - Review page styling is separate from the main shell — do not pull in the full topbar/nav into review mode.
 - Modal flows in dashboard/settings depend on query params + client-side dialog wiring; test both direct page loads and click-open interactions.
 - Static assets use `static_asset_url()` for cache-busting; always reference CSS/images/icons through this helper.
+
+## Anki Import System (feature/anki-import)
+
+### Overview
+Extended EduViz to import Anki .apkg decks with rich content support.
+
+### Files Created
+- `alembic/versions/0013_add_anki_card_fields.py` - Migration for new card fields
+- `app/services/anki_import.py` - AnkiImportService for parsing .apkg files
+- `app/services/cloze_renderer.py` - Cloze text rendering ({{c1::text}} syntax)
+- `app/services/media_urls.py` - Media URL resolution for images
+- `docs/ANKI_IMPORT_PLAN.md` - Full implementation plan
+
+### Files Modified
+- `app/models/card.py` - Added content_html, media_files, cloze_number fields
+- `app/api/routers/bulk_import.py` - Added POST /api/v1/import/decks/{id}/anki-import
+- `requirements.txt` - Added genanki>=0.14.0
+
+### New Card Fields
+- `content_html`: Full HTML with cloze/image markup
+- `media_files`: JSON array of media filenames
+- `cloze_number`: Cloze index (1, 2, 3...) or NULL
+
+### API Endpoint
+```
+POST /api/v1/import/decks/{deck_id}/anki-import
+Content-Type: multipart/form-data
+file: <.apkg binary>
+
+Response: {
+  "success": true,
+  "cards_imported": 8917,
+  "media_files": 302,
+  "duplicates_skipped": 0,
+  "errors": []
+}
+```
+
+### Phase 2 (Pending)
+- Review template update (cloze rendering)
+- Import UI page
+- Media cleanup on deck delete
+
+### Current Branch: feature/anki-import
+- Recent commits: c7b7613 (Minimax/Claude providers), ce168a9 (dynamic provider + button visibility), 2ea17e4 (simplified AI_PROVIDER/AI_API_KEY env vars)
+
+### OpenCode Provider
+- `OpencodeStudyPackProvider` in `app/services/ai_generation.py` uses MiniMax API directly
+- API: `https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=RqdqdwGe0gBWoGFh`
+- Model: `MiniMax-M2` with system prompt "Answer briefly. Do not explain reasoning. Give only final answer in JSON."
+- Requires `minimax` credential with `api_key` auth type

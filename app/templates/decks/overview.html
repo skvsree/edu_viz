@@ -68,8 +68,9 @@
       </div>
       {% if can_edit %}
       <div class="overview-actions" style="margin-top: 12px;">
+        <a href="/decks/{{ deck.id }}/anki-import" class="button button-secondary button-small">Import Anki Deck</a>
         <a href="/decks/{{ deck.id }}/anki-export.csv" class="button button-secondary button-small">Export to Anki</a>
-        {% if can_use_ai_generation %}<a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small">AI Upload</a>{% endif %}
+        {% if can_use_ai_generation %}<button type="button" id="generate-mcqs-btn" class="button button-secondary button-small button-ai" data-deck-id="{{ deck.id }}"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Generate MCQs</span></button><a href="/decks/{{ deck.id }}/ai-upload" class="button button-secondary button-small button-ai"><span class="button-ai__icon" aria-hidden="true">◈</span><span>AI Upload</span></a>{% endif %}
       </div>
       {% endif %}
     </article>
@@ -94,10 +95,16 @@
           <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
         </div>
         {% if user.role == "system_admin" %}
-          <label class="checkbox-row">
-            <input type="checkbox" name="is_global" value="true" {% if deck.is_global %}checked{% endif %} />
-            <span>Make this a global deck</span>
-          </label>
+          <div class="toggle-row">
+            <div class="toggle-row__label">
+              <span class="toggle-row__title">Global deck</span>
+              <span class="toggle-row__desc">Make this deck accessible across all organizations</span>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" name="is_global" value="true" {% if deck.is_global %}checked{% endif %} />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         {% endif %}
         <div class="deck-card__actions">
           <button type="submit" class="button">Save deck</button>
@@ -159,10 +166,231 @@
       </form>
     </article>
 
-  {% endif %}
+   {% endif %}
 </section>
 
+<!-- MCQ Generation Progress Modal -->
+<div id="mcq-progress-modal" class="mcq-progress-modal" style="display:none;" aria-hidden="true">
+  <div class="mcq-progress-modal-content" role="dialog" aria-modal="true" aria-labelledby="mcq-progress-title">
+    <div class="modal-header mcq-progress-modal-header">
+      <h3 id="mcq-progress-title">Generating MCQs</h3>
+      <button type="button" id="mcq-progress-close" class="button button-secondary button-small" style="display:none;">Close</button>
+    </div>
+    <div class="modal-body">
+      <p id="mcq-progress-status">Initializing...</p>
+      <p id="mcq-progress-error" class="mcq-progress-error" style="display:none; margin-top: 8px;"></p>
+      <div class="progress-bar-container">
+        <div id="mcq-progress-bar" class="progress-bar" style="width: 0%"></div>
+      </div>
+      <p class="muted" style="margin-top: 8px;">
+        <span id="mcq-processed">0</span> / <span id="mcq-total">0</span> source cards completed
+      </p>
+      <p class="muted" style="margin-top: 4px;">
+        MCQs generated: <strong id="mcq-count">0</strong>
+      </p>
+      <p id="mcq-provider" class="muted" style="margin-top: 8px;"></p>
+    </div>
+  </div>
+</div>
+
 <script>
+  (() => {
+    const btn = document.getElementById("overview-star-btn");
+    
+    // MCQ Generation SSE
+    const generateBtn = document.getElementById("generate-mcqs-btn");
+    const modal = document.getElementById("mcq-progress-modal");
+    const progressBar = document.getElementById("mcq-progress-bar");
+    const progressStatus = document.getElementById("mcq-progress-status");
+    const processedSpan = document.getElementById("mcq-processed");
+    const totalSpan = document.getElementById("mcq-total");
+    const mcqCountSpan = document.getElementById("mcq-count");
+    const providerSpan = document.getElementById("mcq-provider");
+    const errorBox = document.getElementById("mcq-progress-error");
+    const closeBtn = document.getElementById("mcq-progress-close");
+
+    const clearError = () => {
+      if (!errorBox) return;
+      errorBox.textContent = "";
+      errorBox.style.display = "none";
+    };
+
+    const showError = (message) => {
+      if (!errorBox) return;
+      errorBox.textContent = message || "Unknown error";
+      errorBox.style.display = "block";
+    };
+
+    const openModal = () => {
+      modal.style.display = "flex";
+      modal.setAttribute("aria-hidden", "false");
+    };
+
+    const closeModal = () => {
+      modal.style.display = "none";
+      modal.setAttribute("aria-hidden", "true");
+    };
+
+    if (generateBtn) {
+      generateBtn.addEventListener("click", async () => {
+        const deckId = generateBtn.dataset.deckId;
+        
+        // Show modal
+        openModal();
+        progressStatus.textContent = "Connecting...";
+        progressBar.style.width = "0%";
+        processedSpan.textContent = "0";
+        totalSpan.textContent = "0";
+        mcqCountSpan.textContent = "0";
+        providerSpan.textContent = "";
+        clearError();
+        closeBtn.style.display = "none";
+        generateBtn.disabled = true;
+        
+        let eventSource;
+        
+        try {
+          const startResp = await fetch(`/decks/${deckId}/generate-mcqs/start`, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' },
+            credentials: 'same-origin'
+          });
+          if (!startResp.ok) {
+            let message = 'Unable to start generation.';
+            try {
+              const errData = await startResp.json();
+              message = errData.detail || message;
+            } catch (_) {}
+            throw new Error(message);
+          }
+          const startData = await startResp.json();
+          totalSpan.textContent = startData.total || 0;
+          processedSpan.textContent = startData.completed || 0;
+          providerSpan.textContent = `Provider: ${startData.provider || 'unknown'}`;
+          progressStatus.textContent = startData.already_running ? 'Reconnected to running generation...' : 'Generation started...';
+
+          let completedNormally = false;
+          let reconnectTimer = null;
+
+          const connectStream = () => {
+            eventSource = new EventSource(`/decks/${deckId}/generate-mcqs/stream`, {
+              withCredentials: true
+            });
+
+          const parseEvent = (event) => {
+            try {
+              return JSON.parse(event.data);
+            } catch (e) {
+              console.error("Error parsing SSE data:", e);
+              return null;
+            }
+          };
+
+          eventSource.addEventListener("start", (event) => {
+            const data = parseEvent(event);
+            if (!data) return;
+            clearError();
+            progressStatus.textContent = "Generating MCQs...";
+            totalSpan.textContent = data.total || 0;
+            processedSpan.textContent = data.completed || 0;
+            providerSpan.textContent = `Provider: ${data.provider || "unknown"}`;
+          });
+
+          eventSource.addEventListener("progress", (event) => {
+            const data = parseEvent(event);
+            if (!data) return;
+            clearError();
+            const processed = data.completed ?? data.processed ?? 0;
+            const total = data.total || 1;
+            const percent = Math.round((processed / total) * 100);
+            progressBar.style.width = `${percent}%`;
+            processedSpan.textContent = processed;
+            totalSpan.textContent = total;
+            mcqCountSpan.textContent = data.total_mcqs || 0;
+            progressStatus.textContent = `Completed ${processed} of ${total} source cards (${percent}%)`;
+          });
+
+          eventSource.addEventListener("mcq_created", (event) => {
+            const data = parseEvent(event);
+            if (!data) return;
+            mcqCountSpan.textContent = data.total_saved || 0;
+            if (typeof data.completed !== "undefined" && typeof data.total !== "undefined") {
+              processedSpan.textContent = data.completed;
+              totalSpan.textContent = data.total;
+            }
+          });
+
+          eventSource.addEventListener("batch_error", (event) => {
+            const data = parseEvent(event);
+            if (!data) return;
+            console.error("Batch error:", data.error);
+            progressStatus.textContent = "Generation failed";
+            showError(`Batch ${data.batch || "?"} failed: ${data.error || "Unknown error"}`);
+            closeBtn.style.display = "inline-flex";
+            generateBtn.disabled = false;
+          });
+
+          eventSource.addEventListener("generation_error", (event) => {
+            const data = parseEvent(event);
+            if (!data) return;
+            completedNormally = true;
+            progressStatus.textContent = "Generation failed";
+            showError(data.message || "Unknown error");
+            closeBtn.style.display = "inline-flex";
+            generateBtn.disabled = false;
+            eventSource.close();
+          });
+
+          eventSource.addEventListener("complete", (event) => {
+            const data = parseEvent(event);
+            if (!data) return;
+            completedNormally = true;
+            clearError();
+            progressBar.style.width = "100%";
+            progressStatus.textContent = `Complete! Created ${data.mcqs_created} MCQs`;
+            mcqCountSpan.textContent = data.mcqs_created || 0;
+            closeBtn.style.display = "inline-flex";
+            generateBtn.disabled = false;
+            eventSource.close();
+          });
+
+          eventSource.onerror = () => {
+            if (completedNormally) {
+              return;
+            }
+            progressStatus.textContent = "Reconnecting...";
+            showError("Live updates disconnected. Trying to reconnect...");
+            try { eventSource.close(); } catch (_) {}
+            if (!reconnectTimer) {
+              reconnectTimer = window.setTimeout(() => {
+                reconnectTimer = null;
+                connectStream();
+              }, 2000);
+            }
+          };
+        };
+
+          connectStream();
+
+        } catch (err) {
+          console.error("SSE error:", err);
+          progressStatus.textContent = "Failed to start generation";
+          showError(err?.message || "Unable to open generation stream.");
+          closeBtn.style.display = "inline-flex";
+          generateBtn.disabled = false;
+        }
+
+        closeBtn.onclick = () => {
+          closeModal();
+          const text = progressStatus.textContent || "";
+          if (text.startsWith("Complete!")) {
+            window.location.reload();
+          }
+        };
+      });
+    }
+  })();
+  
   (() => {
     const btn = document.getElementById("overview-star-btn");
     if (!btn) return;

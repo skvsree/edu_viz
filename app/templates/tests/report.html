@@ -15,6 +15,10 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="{{ static_asset_url('styles.css') }}" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/mhchem.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
   </head>
   <body class="review-body">
     <div class="review-shell">
@@ -79,14 +83,14 @@
                     <span class="test-report-status {% if answer.is_correct %}test-correct{% else %}test-incorrect{% endif %}">
                       {{ 'Correct' if answer.is_correct else 'Incorrect' }}
                     </span>
-                    <h3 class="test-report-question-text">Q{{ loop.index }}. {{ answer.question.card.front }}</h3>
+                    <h3 class="test-report-question-text math-content">Q{{ loop.index }}. {{ answer.question.card.front | sanitize | safe }}</h3>
                   </div>
                   <div class="test-report-options">
                     {% for option in answer.question.card.mcq_options or [] %}
                       {% set is_correct = loop.index0 == answer.question.card.mcq_answer_index %}
                       {% set is_selected = loop.index0 == answer.selected_option_index %}
                       <div class="test-report-option {% if is_correct %}test-correct-option{% endif %} {% if is_selected and not is_correct %}test-incorrect-option{% endif %}">
-                        <span class="test-report-option-text">{{ option }}</span>
+                        <span class="test-report-option-text math-content">{{ option | sanitize | safe }}</span>
                         {% if is_correct %}
                           <span class="test-report-option-badge test-correct-badge">✓ Correct</span>
                         {% endif %}
@@ -101,7 +105,7 @@
                   </div>
                   {% if answer.notes or answer.question.card.back %}
                     <div class="test-report-explanation">
-                      <p class="muted">{{ answer.notes or answer.question.card.back }}</p>
+                      <div class="muted math-content">{{ (answer.notes or answer.question.card.back) | sanitize | safe }}</div>
                     </div>
                   {% endif %}
                 </div>
@@ -120,6 +124,35 @@
     </div>
 
     <script>
+      function renderKaTeX(root) {
+        root = root || document.body;
+        if (typeof renderMathInElement === 'function') {
+          try {
+            renderMathInElement(root, {
+              delimiters: [
+                {left: '\\[', right: '\\]', display: true},
+                {left: '$$', right: '$$', display: true},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '$', right: '$', display: false}
+              ],
+              ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+              ignoredClasses: ['katex', 'math-content', 'cloze'],
+              throwOnError: false,
+              trust: true,
+              macros: {
+                "\\celsius": "{}^{\\circ}\\text{C}"
+              }
+            });
+          } catch (e) {
+            console.error('KaTeX render error:', e);
+          }
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        renderKaTeX(document.getElementById('report-container'));
+      });
+
       (function() {
         const allSlides = Array.from(document.querySelectorAll('.test-report-slide'));
         let currentIndex = 0;

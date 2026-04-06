@@ -41,10 +41,6 @@ class ReviewService:
             print(f"REVIEW_DEBUG: requested_deck={deck_id} returned_deck={result.deck_id} card={result.id}", file=sys.stderr, flush=True)
         return result
 
-        # If state exists and due is in future, allow it only if there are no due cards?
-        # For MVP, we still show the earliest card even if not due.
-        _ = now
-        return card
 
     def rate(self, db: Session, *, card_id: uuid.UUID, rating: int) -> Review:
         now = datetime.now(timezone.utc)

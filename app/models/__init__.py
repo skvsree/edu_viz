@@ -4,6 +4,9 @@ from app.models.deck import Deck
 from app.models.user_deck_favorite import UserDeckFavorite
 from app.models.card import Card
 from app.models.card_state import CardState
+from app.models.mcq_generation import MCQGeneration, MCQGenerationStatus
+from app.models.deck_mcq_generation_status import DeckMcqGenerationItem, DeckMcqGenerationItemStatus
+from app.models.ai_upload_generation import AIUploadGeneration, AIUploadGenerationStatus
 from app.models.review import Review
 from app.models.tag import Tag, deck_tags
 from app.models.test import Test
@@ -17,6 +20,7 @@ from app.models.analytics import (
     AnalyticsEvent,
     AnalyticsEventType,
 )
+from app.models.ai_credentials import AICredentialScope
 
 __all__ = [
     "Organization",
@@ -37,5 +41,11 @@ __all__ = [
     "SystemAnalytics",
     "AnalyticsEvent",
     "AnalyticsEventType",
-    "UserDeckFavorite",
+    "AICredentialScope",
+    "MCQGeneration",
+    "MCQGenerationStatus",
+    "DeckMcqGenerationItem",
+    "DeckMcqGenerationItemStatus",
+    "AIUploadGeneration",
+    "AIUploadGenerationStatus",
 ]

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 from uuid import UUID
+
+from html import escape
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -25,7 +26,6 @@ from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     ROLE_USER,
     can_access_deck,
-    can_access_tests,
     can_manage_deck,
     can_manage_decks,
     can_open_test_center,
@@ -33,9 +33,38 @@ from app.services.access import (
     deck_has_test_content,
     normalize_deck_name,
 )
+from app.services.ai_auth import (
+    get_scope_provider,
+    has_scope_credential,
+    is_env_ai_available,
+    save_ai_credential,
+)
 from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
 from app.services.review_service import ReviewService
+
+
+def _normalize_review_html(text: str | None) -> str:
+    if not text:
+        return ""
+    text = text.replace("\\\\", "\\")
+    text = text.replace("<hl>", '<span class="hl">').replace("</hl>", "</span>")
+    text = text.replace("<br>", "<br/>")
+    return text
+
+
+def _render_mixed_card_content(text: str | None) -> tuple[str, str]:
+    if not text:
+        return "", ""
+    parts = [p for p in text.split("\x1f") if p]
+    if not parts:
+        return "", ""
+    front = _normalize_review_html(parts[0])
+    back = _normalize_review_html(parts[1]) if len(parts) > 1 else ""
+    if back and "<br" not in back:
+        back = back.replace("\n", "<br/>")
+    return front, back
+
 
 router = APIRouter(tags=["pages"])
 
@@ -45,6 +74,39 @@ STATIC_DIR = APP_DIR / "static"
 COMPONENTS_DIR = APP_DIR / "components"
 COMPONENT_TEMPLATES_DIR = COMPONENTS_DIR / "multiselect" / "templates"
 templates = Jinja2Templates(directory=[str(TEMPLATES_DIR), str(COMPONENT_TEMPLATES_DIR)])
+
+def _sanitize_html(text: str | None) -> str:
+    """Allow only safe HTML tags for card content (no scripting)."""
+    if not text:
+        return ""
+    # Escape HTML first, then allow specific safe tags
+    escaped = escape(text, quote=True)
+    # Allow basic formatting tags
+    allowed = {
+        'b': ['b', 'strong'],
+        'i': ['i', 'em'],
+        'u': ['u'],
+        'code': ['code'],
+        'span': ['span'],
+        'br': ['br', 'br/'],
+        'p': ['p'],
+        'div': ['div'],
+        'sub': ['sub'],
+        'sup': ['sup'],
+    }
+    # For MVP: strip all HTML, keep only text
+    # This prevents XSS while supporting basic content
+    import re
+    # Remove script, style, and event handlers
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+    return text
+
+
+templates.env.filters["sanitize"] = _sanitize_html
+
 
 
 @lru_cache(maxsize=256)
@@ -131,9 +193,11 @@ def _require_system_admin(user: User) -> None:
 
 
 
-def _visible_users_stmt(user: User):
+def _visible_users_stmt(user: User, org_id: str | None = None):
     stmt = select(User).options(selectinload(User.organization)).order_by(User.created_at.desc())
     if user.role == ROLE_SYSTEM_ADMIN:
+        if org_id:
+            stmt = stmt.where(User.organization_id == UUID(org_id))
         return stmt
     return stmt.where(User.organization_id == user.organization_id)
 
@@ -193,6 +257,16 @@ def _organizations_response(
         for org in organizations
     }
 
+    # AI credential state per org
+    org_ai_has_cred = {str(org.id): has_scope_credential(db, "organization", org.id) for org in organizations}
+    org_ai_provider = {str(org.id): get_scope_provider(db, "organization", org.id) for org in organizations}
+
+    # For modal org edit form, carry override state
+    modal_has_cred = has_scope_credential(db, "organization", modal_organization.id) if modal_organization else False
+    modal_provider = get_scope_provider(db, "organization", modal_organization.id) if modal_organization else "openai"
+
+    env_ai_available = is_env_ai_available()
+
     return templates.TemplateResponse(
         "settings/organizations.html",
         {
@@ -200,10 +274,15 @@ def _organizations_response(
             "user": user,
             "organizations": organizations,
             "org_user_counts": org_user_counts,
+            "org_ai_has_cred": org_ai_has_cred,
+            "org_ai_provider": org_ai_provider,
             "organization_error": organization_error if organization_error is not None else request.query_params.get("error"),
             "organization_success": organization_success if organization_success is not None else request.query_params.get("success"),
             "active_modal": active_modal or request.query_params.get("modal"),
             "modal_organization": modal_organization,
+            "modal_has_cred": modal_has_cred,
+            "modal_provider": modal_provider,
+            "env_ai_available": env_ai_available,
             "create_form": create_form or {"name": "", "is_ai_enabled": False},
             "edit_form": edit_form
             or {
@@ -235,14 +314,29 @@ def _users_response(
     status_code: int = 200,
     user_error: str | None = None,
     user_success: str | None = None,
+    org_id: str | None = None,
 ):
     _require_settings_access(user)
-    users = db.execute(_visible_users_stmt(user)).scalars().all()
+    users = db.execute(_visible_users_stmt(user, org_id)).scalars().all()
     organizations = []
     if user.role == ROLE_SYSTEM_ADMIN:
         organizations = db.execute(select(Organization).order_by(Organization.name.asc())).scalars().all()
 
+    filtered_org_name = None
+    if org_id:
+        org = db.get(Organization, org_id)
+        if org:
+            filtered_org_name = org.name
+
     editable_roles = {str(item.id): _allowed_role_options(user, item) for item in users}
+
+    # AI credential state per user
+    user_org_ai_enabled = {
+        str(u.id): (db.get(Organization, u.organization_id).is_ai_enabled if u.organization_id else False)
+        for u in users
+    }
+    user_ai_has_cred = {str(u.id): has_scope_credential(db, "user", u.id) for u in users}
+    user_ai_provider = {str(u.id): get_scope_provider(db, "user", u.id) for u in users}
 
     return templates.TemplateResponse(
         "settings/users.html",
@@ -252,6 +346,10 @@ def _users_response(
             "users": users,
             "organizations": organizations,
             "editable_roles": editable_roles,
+            "user_org_ai_enabled": user_org_ai_enabled,
+            "user_ai_has_cred": user_ai_has_cred,
+            "user_ai_provider": user_ai_provider,
+            "filtered_org_name": filtered_org_name,
             "user_error": user_error if user_error is not None else request.query_params.get("error"),
             "user_success": user_success if user_success is not None else request.query_params.get("success"),
             "title": "Users | edu selviz",
@@ -348,14 +446,6 @@ def _dashboard_response(
     # Filter deck_stats to only favorites (for display on dashboard)
     favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
 
-    requested_edit_deck_id = request.query_params.get("edit_deck")
-    if modal_deck is None and requested_edit_deck_id:
-        requested_deck = db.get(Deck, requested_edit_deck_id)
-        if requested_deck and can_manage_deck(user, requested_deck):
-            modal_deck = requested_deck
-            if active_modal is None:
-                active_modal = "edit"
-
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -367,7 +457,7 @@ def _dashboard_response(
             "can_manage_deck": can_manage_deck,
             "dashboard_error": dashboard_error if dashboard_error is not None else request.query_params.get("error"),
             "dashboard_success": dashboard_success if dashboard_success is not None else request.query_params.get("success"),
-            "active_modal": active_modal or request.query_params.get("modal"),
+            "active_modal": active_modal,  # Don't use query params - prevents unwanted modal on reload
             "modal_deck": modal_deck,
             "create_form": create_form or {"name": "", "description": "", "is_global": False},
             "edit_form": edit_form
@@ -658,12 +748,14 @@ def create_organization(
     is_ai_enabled: bool = Form(default=False),
     is_test_enabled: bool = Form(default=False),
     test_daily_limit: int = Form(default=0),
+    ai_override_global: bool = Form(default=False),
+    provider: str = Form(default="openai"),
+    ai_secret: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     _require_system_admin(user)
     cleaned_name = name.strip()
-    # Cap at global limit
     test_daily_limit = min(max(test_daily_limit, 0), settings.test_daily_limit or 9999)
     if not cleaned_name:
         return _organizations_response(
@@ -679,6 +771,9 @@ def create_organization(
     organization = Organization(name=cleaned_name, is_ai_enabled=is_ai_enabled, is_test_enabled=is_test_enabled, test_daily_limit=test_daily_limit)
     db.add(organization)
     try:
+        db.flush()  # get org.id before commit
+        if is_ai_enabled and ai_override_global and ai_secret.strip():
+            save_ai_credential(db, scope_type="organization", scope_id=organization.id, provider=provider, secret=ai_secret.strip())
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -703,6 +798,9 @@ def update_organization(
     is_ai_enabled: bool = Form(default=False),
     is_test_enabled: bool = Form(default=False),
     test_daily_limit: int = Form(default=0),
+    ai_override_global: bool = Form(default=False),
+    provider: str = Form(default="openai"),
+    ai_secret: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -712,7 +810,6 @@ def update_organization(
         raise HTTPException(status_code=404)
 
     cleaned_name = name.strip()
-    # Cap at global limit
     test_daily_limit = min(max(test_daily_limit, 0), settings.test_daily_limit or 9999)
     if not cleaned_name:
         return _organizations_response(
@@ -730,6 +827,15 @@ def update_organization(
     organization.is_ai_enabled = is_ai_enabled
     organization.is_test_enabled = is_test_enabled
     organization.test_daily_limit = test_daily_limit
+
+    # Handle AI credential override
+    if is_ai_enabled and ai_override_global and ai_secret.strip():
+        save_ai_credential(db, scope_type="organization", scope_id=organization.id, provider=provider, secret=ai_secret.strip())
+    elif is_ai_enabled and not ai_override_global:
+        # Clear any existing org-level credential so it falls back to env
+        from app.models import AICredentialScope
+        db.query(AICredentialScope).filter_by(scope_type="organization", scope_id=organization.id).delete()
+
     try:
         db.commit()
     except IntegrityError:
@@ -751,10 +857,11 @@ def update_organization(
 @router.get("/settings/users", response_class=HTMLResponse)
 def users_page(
     request: Request,
+    org: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    return _users_response(request, user=user, db=db)
+    return _users_response(request, user=user, db=db, org_id=org)
 
 
 @router.post("/settings/users/{target_user_id}/update")
@@ -764,6 +871,10 @@ def update_user_settings(
     role: str = Form(...),
     organization_id: str = Form(default=""),
     is_test_enabled: bool = Form(default=False),
+    ai_enabled: bool = Form(default=False),
+    ai_override_org: bool = Form(default=False),
+    provider: str = Form(default="openai"),
+    ai_secret: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -793,8 +904,17 @@ def update_user_settings(
 
     target.is_test_enabled = is_test_enabled
 
+    # Handle AI credential: only save if AI is on, override is on, and secret is provided
+    if ai_enabled and ai_override_org and ai_secret.strip():
+        save_ai_credential(db, scope_type="user", scope_id=target.id, provider=provider, secret=ai_secret.strip())
+    else:
+        # Clear any existing user AI credential when AI is disabled or override is removed
+        from app.models import AICredentialScope
+        db.query(AICredentialScope).filter_by(scope_type="user", scope_id=target.id).delete()
+
     db.commit()
     return RedirectResponse(url="/settings/users?success=User+updated", status_code=303)
+
 
 
 @router.post("/decks")
@@ -818,7 +938,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name is required.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
     normalized_name = normalize_deck_name(cleaned_name)
@@ -829,7 +948,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name must include letters or numbers.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
@@ -844,7 +962,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Assign this admin to an organization before creating organization decks.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
@@ -867,7 +984,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="An active deck with that normalized name already exists in this scope.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
@@ -930,15 +1046,9 @@ def update_deck(
                 },
                 status_code=400,
             )
-        return _dashboard_response(
-            request,
-            user=user,
-            db=db,
-            status_code=400,
-            dashboard_error=message,
-            active_modal="edit",
-            modal_deck=deck,
-            edit_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+        return RedirectResponse(
+            url=_append_message_param(redirect_target, "error", message),
+            status_code=303,
         )
 
     if not cleaned_name:
@@ -1101,8 +1211,27 @@ def delete_deck(
     db.execute(delete(Deck).where(Deck.id == deck.id))
     db.commit()
 
+    # Cleanup media files for this deck (if any)
+    _cleanup_deck_media(str(deck.id))
+
     success_message = quote_plus("Deck deleted")
     return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
+
+
+def _cleanup_deck_media(deck_id: str) -> None:
+    """
+    Remove media directory for a deck after deletion.
+    Uses shutil for safe directory removal (MIT licensed).
+    """
+    import shutil
+    from pathlib import Path
+
+    media_path = Path(__file__).resolve().parents[2] / "static" / "media" / deck_id
+    if media_path.exists() and media_path.is_dir():
+        try:
+            shutil.rmtree(media_path)
+        except OSError:
+            pass  # Best effort cleanup
 
 
 @router.get("/decks/{deck_id}", response_class=HTMLResponse)
@@ -1336,6 +1465,85 @@ def import_cards_csv(
     )
 
 
+# =============================================================================
+# Anki Import
+# =============================================================================
+
+@router.get("/decks/{deck_id}/anki-import", response_class=HTMLResponse)
+def anki_import_page(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        raise HTTPException(status_code=403, detail="You do not have permission to import to this deck")
+
+    return templates.TemplateResponse(
+        "cards/anki_import.html",
+        {
+            "request": request,
+            "user": user,
+            "deck": deck,
+            "title": f"Import Anki Deck | {deck.name}",
+        },
+    )
+
+
+@router.post("/decks/{deck_id}/anki-import")
+def anki_import_upload(
+    request: Request,
+    deck_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import JSONResponse
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        raise HTTPException(status_code=403, detail="You do not have permission to import to this deck")
+
+    # Validate file
+    if not file.filename or not file.filename.endswith('.apkg'):
+        return JSONResponse(
+            {"success": False, "error": "File must be a .apkg file"},
+            status_code=400,
+        )
+
+    # Import using AnkiImportService
+    from app.services.anki_import import AnkiImportError, AnkiImportService
+
+    try:
+        service = AnkiImportService(db, deck)
+        result = service.import_apkg(file.file)
+    except AnkiImportError as e:
+        return JSONResponse(
+            {"success": False, "error": str(e)},
+            status_code=400,
+        )
+    except Exception as e:
+        return JSONResponse(
+            {"success": False, "error": f"Import failed: {e}"},
+            status_code=500,
+        )
+
+    return JSONResponse({
+        "success": True,
+        "cards_imported": result.cards_imported,
+        "media_files": result.media_files,
+        "duplicates_skipped": result.duplicates_skipped,
+        "errors": result.errors,
+        "redirect_url": f"/decks/{deck.id}?import_success={quote_plus(f'Imported {result.cards_imported} cards')}",
+    })
+
+
+
 @router.get("/review", response_class=HTMLResponse)
 def review_page(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     deck_id = request.query_params.get("deck_id")
@@ -1384,9 +1592,20 @@ def _review_next_inner(request, user, db, deck_id=None, remaining=None):
     if card is None:
         return templates.TemplateResponse("review/empty.html", {"request": request, "user": user, "review_deck": deck, "review_complete": False})
 
+    cleaned_card = type("ReviewCardView", (), {})()
+    cleaned_card.id = card.id
+    cleaned_card.is_cloze = card.is_cloze
+    front_html, back_html = _render_mixed_card_content(card.content_html)
+    fallback_front = _normalize_review_html(card.front)
+    fallback_back = _normalize_review_html(card.back)
+    cleaned_card.front = front_html or fallback_front
+    cleaned_card.back = back_html or fallback_back
+    cleaned_card.content_html = front_html
+    cleaned_card.content_html_back = back_html
+
     return templates.TemplateResponse(
         "review/card.html",
-        {"request": request, "user": user, "card": card, "review_deck": deck, "remaining": remaining},
+        {"request": request, "user": user, "card": cleaned_card, "review_deck": deck, "remaining": remaining},
     )
 
 

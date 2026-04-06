@@ -171,7 +171,6 @@
     <dialog
       id="create-deck-modal"
       class="modal"
-      {% if active_modal == "create" %}data-open-on-load="true"{% endif %}
     >
       <div class="modal__surface" role="document">
         <div class="section-heading">
@@ -206,39 +205,6 @@
       </div>
     </dialog>
 
-    <dialog
-      id="edit-deck-modal"
-      class="modal"
-      data-default-action="{% if modal_deck %}/decks/{{ modal_deck.id }}/update{% endif %}"
-      {% if active_modal == "edit" and modal_deck %}data-open-on-load="true"{% endif %}
-    >
-      <div class="modal__surface" role="document">
-        <div class="section-heading">
-          <div>
-            <p class="panel-label">Edit deck</p>
-            <h2 class="section-subtitle" data-edit-title>{{ modal_deck.name if modal_deck else 'Update deck details' }}</h2>
-          </div>
-          <button type="button" class="button button-secondary button-small" data-modal-close="edit-deck-modal">Close</button>
-        </div>
-        <form method="post" action="{% if modal_deck %}/decks/{{ modal_deck.id }}/update{% else %}#{% endif %}" class="stack-md" data-edit-form>
-          <div>
-            <label for="edit-deck-name">Deck name</label>
-            <input id="edit-deck-name" name="name" value="{{ edit_form.name }}" maxlength="255" required />
-          </div>
-          <div>
-            <label for="edit-deck-description">Description</label>
-            <textarea id="edit-deck-description" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
-          </div>
-          {% if user.role == "system_admin" %}
-            <label class="checkbox-row">
-              <input id="edit-deck-is-global" type="checkbox" name="is_global" value="true" {% if edit_form.is_global %}checked{% endif %} />
-              <span>Make this a global deck</span>
-            </label>
-          {% endif %}
-          <button type="submit" class="button">Save deck</button>
-        </form>
-      </div>
-    </dialog>
   {% endif %}
 </section>
 
@@ -302,29 +268,6 @@
 
           event.preventDefault();
           const modalId = trigger.dataset.modalOpen;
-          if (modalId === "edit-deck-modal") {
-            const dialog = document.getElementById(modalId);
-            const form = dialog?.querySelector("[data-edit-form]");
-            const title = dialog?.querySelector("[data-edit-title]");
-            if (form) {
-              form.action = trigger.dataset.deckUpdateAction || dialog.dataset.defaultAction || "#";
-            }
-            if (title) {
-              title.textContent = trigger.dataset.deckName || "Update deck details";
-            }
-            const nameInput = dialog?.querySelector("#edit-deck-name");
-            const descriptionInput = dialog?.querySelector("#edit-deck-description");
-            const isGlobalInput = dialog?.querySelector("#edit-deck-is-global");
-            if (nameInput) {
-              nameInput.value = trigger.dataset.deckName || "";
-            }
-            if (descriptionInput) {
-              descriptionInput.value = trigger.dataset.deckDescription || "";
-            }
-            if (isGlobalInput) {
-              isGlobalInput.checked = trigger.dataset.deckIsGlobal === "true";
-            }
-          }
           openModal(modalId);
         });
       });
@@ -333,10 +276,6 @@
         trigger.addEventListener("click", () => {
           closeModal(trigger.dataset.modalClose);
         });
-      });
-
-      document.querySelectorAll(".modal[data-open-on-load='true']").forEach((dialog) => {
-        openModal(dialog.id);
       });
 
       syncModalState();

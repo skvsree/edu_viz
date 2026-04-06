@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from sqlalchemy import and_, delete, func, select, update
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.analytics import (
@@ -15,8 +15,6 @@ from app.models.analytics import (
     SystemAnalytics,
     UserAnalytics,
 )
-from app.models.user import User
-from app.models.organization import Organization
 
 
 class AnalyticsService:

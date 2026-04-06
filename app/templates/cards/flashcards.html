@@ -51,7 +51,11 @@
         <form method="post" action="/decks/{{ deck.id }}/flashcards/bulk-delete" class="bulk-form" data-bulk-form data-confirm-message="Delete {count} flashcard(s)? This cannot be undone.">
           <div class="bulk-actions">
             <div class="bulk-actions__controls">
-              <label class="bulk-actions__toggle"><input type="checkbox" data-bulk-select-all />Select all</label>
+              <label class="bulk-actions__toggle toggle-switch">
+                <input type="checkbox" data-bulk-select-all />
+                <span class="toggle-switch__slider" aria-hidden="true"></span>
+                <span>Select all</span>
+              </label>
               <span class="bulk-actions__count"><strong data-bulk-count>0</strong> selected</span>
             </div>
             <button type="submit" class="button button-danger button-small" data-bulk-submit disabled>Delete selected</button>
@@ -59,7 +63,11 @@
           <div class="study-card-grid">
             {% for c in flashcards %}
               <article class="study-card">
-                <label class="study-card__select"><input type="checkbox" name="card_ids" value="{{ c.id }}" data-bulk-item />Select</label>
+                <label class="study-card__select toggle-switch">
+                  <input type="checkbox" name="card_ids" value="{{ c.id }}" data-bulk-item />
+                  <span class="toggle-switch__slider" aria-hidden="true"></span>
+                  <span>Select</span>
+                </label>
                 <div class="study-card__label">Front</div>
                 <p>{{ c.front }}</p>
                 <div class="study-card__label">Back</div>
