@@ -28,13 +28,14 @@
     <div class="browse-header">
       <div>
         <h1 class="browse-title">
-          {% if current_folder %}{{ current_folder.name }}{% else %}Browse{% endif %}
+          {% if current_folder %}{{ current_folder.name }}{% else %}All{% endif %}
         </h1>
       </div>
       <div class="browse-header-right">
         <form method="get" action="/decks/browse" class="browse-search">
           <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
           <input type="text" name="q" value="{{ q }}" placeholder="Search..." autocomplete="off" class="browse-search-input" />
+          <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost" style="border:none; padding:0.35rem;">🔍</button>
           {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">✕</a>{% endif %}
         </form>
       </div>
