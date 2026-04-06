@@ -44,23 +44,119 @@ logger = logging.getLogger(__name__)
 
 
 def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars: int = 800) -> list[str]:
-    cleaned = "\n".join(line.strip() for line in (text or "").splitlines() if line.strip())
-    if not cleaned:
+    source = (text or "").strip()
+    if not source:
         return []
-    if len(cleaned) <= max_chars:
-        return [cleaned]
+
+    paragraph_blocks = [block.strip() for block in re.split(r"\n\s*\n+", source) if block.strip()]
+    if not paragraph_blocks:
+        paragraph_blocks = ["\n".join(line.strip() for line in source.splitlines() if line.strip())]
+
+    units: list[str] = []
+    sentence_splitter = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
+
+    def add_unit(value: str) -> None:
+        value = value.strip()
+        if value:
+            units.append(value)
+
+    for paragraph in paragraph_blocks:
+        normalized = " ".join(line.strip() for line in paragraph.splitlines() if line.strip())
+        if not normalized:
+            continue
+        if len(normalized) <= max_chars:
+            add_unit(normalized)
+            continue
+
+        sentences = [part.strip() for part in sentence_splitter.split(normalized) if part.strip()]
+        if not sentences:
+            sentences = [normalized]
+
+        current_sentence_group: list[str] = []
+        current_len = 0
+        for sentence in sentences:
+            if len(sentence) > max_chars:
+                if current_sentence_group:
+                    add_unit(" ".join(current_sentence_group))
+                    current_sentence_group = []
+                    current_len = 0
+                start = 0
+                while start < len(sentence):
+                    end = min(len(sentence), start + max_chars)
+                    piece = sentence[start:end].strip()
+                    if piece:
+                        add_unit(piece)
+                    if end >= len(sentence):
+                        break
+                    split_at = piece.rfind(" ")
+                    if split_at > max_chars // 2:
+                        end = start + split_at
+                    start = end
+                continue
+
+            extra = 1 if current_sentence_group else 0
+            if current_len + extra + len(sentence) <= max_chars:
+                current_sentence_group.append(sentence)
+                current_len += extra + len(sentence)
+            else:
+                add_unit(" ".join(current_sentence_group))
+                current_sentence_group = [sentence]
+                current_len = len(sentence)
+
+        if current_sentence_group:
+            add_unit(" ".join(current_sentence_group))
+
+    if not units:
+        return []
+
+    if len(units) == 1 and len(units[0]) <= max_chars:
+        return units
 
     chunks: list[str] = []
-    start = 0
-    step = max(1, max_chars - overlap_chars)
-    while start < len(cleaned):
-        end = min(len(cleaned), start + max_chars)
-        chunk = cleaned[start:end].strip()
-        if chunk:
+    current_units: list[str] = []
+    current_len = 0
+
+    def units_length(items: list[str]) -> int:
+        return sum(len(item) for item in items) + max(0, len(items) - 1) * 2
+
+    def overlap_tail(items: list[str]) -> list[str]:
+        tail: list[str] = []
+        tail_len = 0
+        for unit in reversed(items):
+            separator = 2 if tail else 0
+            projected = tail_len + separator + len(unit)
+            if tail and projected > overlap_chars:
+                break
+            if not tail and len(unit) > overlap_chars:
+                return [unit]
+            tail.insert(0, unit)
+            tail_len = projected
+        return tail
+
+    for unit in units:
+        separator = 2 if current_units else 0
+        projected = current_len + separator + len(unit)
+        if current_units and projected > max_chars:
+            chunk = "\n\n".join(current_units).strip()
+            if chunk and (not chunks or chunks[-1] != chunk):
+                chunks.append(chunk)
+            current_units = overlap_tail(current_units)
+            current_len = units_length(current_units)
+
+            separator = 2 if current_units else 0
+            projected = current_len + separator + len(unit)
+            if current_units and projected > max_chars:
+                current_units = []
+                current_len = 0
+
+        current_units.append(unit)
+        current_len = units_length(current_units)
+
+    if current_units:
+        chunk = "\n\n".join(current_units).strip()
+        if chunk and (not chunks or chunks[-1] != chunk):
             chunks.append(chunk)
-        if end >= len(cleaned):
-            break
-        start += step
+
     return chunks
 
 
