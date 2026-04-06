@@ -466,8 +466,8 @@ def ai_import_deck_content_start(
     }
 
 
-@router.get("/decks/{deck_id}/ai-import/stream")
-def ai_import_deck_content_stream(
+@router.get("/decks/{deck_id}/ai-import/status")
+def ai_import_deck_content_status(
     deck_id: str,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -477,65 +477,41 @@ def ai_import_deck_content_stream(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    def event_stream():
-        sent_state = None
-        while True:
-            db.expire_all()
-            latest = db.execute(
-                select(AIUploadGeneration)
-                .where(AIUploadGeneration.deck_id == deck.id)
-                .order_by(AIUploadGeneration.created_at.desc())
-            ).scalars().first()
-            if not latest:
-                yield ": keep-alive\n\n"
-                sleep(1)
-                continue
+    latest = db.execute(
+        select(AIUploadGeneration)
+        .where(AIUploadGeneration.deck_id == deck.id)
+        .order_by(AIUploadGeneration.created_at.desc())
+    ).scalars().first()
+    if not latest:
+        return {
+            "status": "not_started",
+            "generation_id": None,
+            "total": 0,
+            "completed": 0,
+            "flashcards_generated": 0,
+            "mcqs_generated": 0,
+            "duplicates_skipped": 0,
+            "provider": None,
+            "filename": None,
+            "message": None,
+            "started_at": None,
+            "completed_at": None,
+        }
 
-            state = (
-                latest.status,
-                latest.total_chunks or 0,
-                latest.processed_chunks,
-                latest.flashcards_generated,
-                latest.mcqs_generated,
-                latest.duplicates_skipped,
-                latest.error_message or "",
-                latest.provider or "",
-            )
-            if state != sent_state:
-                payload = {
-                    "generation_id": str(latest.id),
-                    "total": latest.total_chunks or 0,
-                    "completed": latest.processed_chunks,
-                    "flashcards_generated": latest.flashcards_generated,
-                    "mcqs_generated": latest.mcqs_generated,
-                    "duplicates_skipped": latest.duplicates_skipped,
-                    "provider": latest.provider,
-                    "filename": latest.filename,
-                }
-                if latest.status == AIUploadGenerationStatus.IN_PROGRESS.value:
-                    event_name = "start" if sent_state is None else "progress"
-                    yield f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
-                elif latest.status == AIUploadGenerationStatus.COMPLETED.value:
-                    yield f"event: complete\ndata: {json.dumps(payload)}\n\n"
-                    break
-                elif latest.status == AIUploadGenerationStatus.FAILED.value:
-                    payload["message"] = latest.error_message or "AI upload failed."
-                    yield f"event: generation_error\ndata: {json.dumps(payload)}\n\n"
-                    break
-                sent_state = state
-            else:
-                yield ": keep-alive\n\n"
-            sleep(1)
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return {
+        "status": latest.status,
+        "generation_id": str(latest.id),
+        "total": latest.total_chunks or 0,
+        "completed": latest.processed_chunks,
+        "flashcards_generated": latest.flashcards_generated,
+        "mcqs_generated": latest.mcqs_generated,
+        "duplicates_skipped": latest.duplicates_skipped,
+        "provider": latest.provider,
+        "filename": latest.filename,
+        "message": latest.error_message,
+        "started_at": latest.started_at.isoformat() if latest.started_at else None,
+        "completed_at": latest.completed_at.isoformat() if latest.completed_at else None,
+    }
 
 
 @router.post("/decks/{deck_id}/generate-mcqs")

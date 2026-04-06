@@ -127,7 +127,96 @@
       submitBtn.disabled = true;
       fileInput.disabled = true;
 
-      let eventSource;
+      let pollTimer = null;
+      let activeGenerationId = null;
+      let lastSeenStatus = null;
+
+      const stopPolling = () => {
+        if (pollTimer) {
+          window.clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+      };
+
+      const applyStatus = (data) => {
+        if (!data) return;
+        activeGenerationId = data.generation_id || activeGenerationId;
+        const processed = data.completed ?? 0;
+        const total = data.total || 0;
+        const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+        progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+        processedSpan.textContent = processed;
+        totalSpan.textContent = total;
+        flashcardsSpan.textContent = data.flashcards_generated || 0;
+        mcqsSpan.textContent = data.mcqs_generated || 0;
+        duplicatesSpan.textContent = data.duplicates_skipped || 0;
+        providerSpan.textContent = data.provider ? `Provider: ${data.provider}` : "";
+
+        if (data.status === "in_progress") {
+          clearError();
+          progressStatus.textContent = total > 0
+            ? `Completed ${processed} of ${total} chunks (${percent}%)`
+            : "Generating study pack...";
+          closeBtn.style.display = "none";
+          submitBtn.disabled = true;
+          fileInput.disabled = true;
+          return true;
+        }
+
+        if (data.status === "completed") {
+          clearError();
+          progressBar.style.width = "100%";
+          progressStatus.textContent = `Complete! Created ${data.flashcards_generated || 0} flashcards and ${data.mcqs_generated || 0} MCQs`;
+          closeBtn.style.display = "inline-flex";
+          submitBtn.disabled = false;
+          fileInput.disabled = false;
+          return false;
+        }
+
+        if (data.status === "failed") {
+          progressStatus.textContent = "Generation failed";
+          showError(data.message || "AI upload failed.");
+          closeBtn.style.display = "inline-flex";
+          submitBtn.disabled = false;
+          fileInput.disabled = false;
+          return false;
+        }
+
+        progressStatus.textContent = "Waiting to start...";
+        return false;
+      };
+
+      const pollStatus = async () => {
+        try {
+          const resp = await fetch(`/decks/${deckId}/ai-import/status`, {
+            method: "GET",
+            credentials: "same-origin",
+            headers: { "Accept": "application/json" },
+            cache: "no-store"
+          });
+          if (!resp.ok) {
+            throw new Error("Unable to fetch upload status.");
+          }
+          const data = await resp.json();
+          lastSeenStatus = data.status || null;
+          const shouldContinue = applyStatus(data);
+          if (shouldContinue) {
+            pollTimer = window.setTimeout(pollStatus, 2500);
+          } else {
+            stopPolling();
+          }
+        } catch (err) {
+          progressStatus.textContent = "Reconnecting...";
+          showError(err?.message || "Unable to fetch upload status.");
+          pollTimer = window.setTimeout(pollStatus, 4000);
+        }
+      };
+
+      const startPolling = () => {
+        stopPolling();
+        pollStatus();
+      };
 
       try {
         const formData = new FormData();
@@ -149,6 +238,7 @@
         }
 
         const startData = await startResp.json();
+        activeGenerationId = startData.generation_id || null;
         totalSpan.textContent = startData.total || 0;
         processedSpan.textContent = startData.completed || 0;
         flashcardsSpan.textContent = startData.flashcards_generated || 0;
@@ -156,98 +246,11 @@
         duplicatesSpan.textContent = startData.duplicates_skipped || 0;
         providerSpan.textContent = `Provider: ${startData.provider || "unknown"}`;
         progressStatus.textContent = startData.already_running ? "Reconnected to running upload..." : "Upload started...";
-
-        let completedNormally = false;
-        let reconnectTimer = null;
-
-        const connectStream = () => {
-          eventSource = new EventSource(`/decks/${deckId}/ai-import/stream`, { withCredentials: true });
-
-          const parseEvent = (event) => {
-            try {
-              return JSON.parse(event.data);
-            } catch (e) {
-              console.error("Error parsing SSE data:", e);
-              return null;
-            }
-          };
-
-          eventSource.addEventListener("start", (event) => {
-            const data = parseEvent(event);
-            if (!data) return;
-            clearError();
-            progressStatus.textContent = "Generating study pack...";
-            totalSpan.textContent = data.total || 0;
-            processedSpan.textContent = data.completed || 0;
-            flashcardsSpan.textContent = data.flashcards_generated || 0;
-            mcqsSpan.textContent = data.mcqs_generated || 0;
-            duplicatesSpan.textContent = data.duplicates_skipped || 0;
-            providerSpan.textContent = `Provider: ${data.provider || "unknown"}`;
-          });
-
-          eventSource.addEventListener("progress", (event) => {
-            const data = parseEvent(event);
-            if (!data) return;
-            clearError();
-            const processed = data.completed ?? 0;
-            const total = data.total || 1;
-            const percent = Math.round((processed / total) * 100);
-            progressBar.style.width = `${percent}%`;
-            processedSpan.textContent = processed;
-            totalSpan.textContent = total;
-            flashcardsSpan.textContent = data.flashcards_generated || 0;
-            mcqsSpan.textContent = data.mcqs_generated || 0;
-            duplicatesSpan.textContent = data.duplicates_skipped || 0;
-            progressStatus.textContent = `Completed ${processed} of ${total} chunks (${percent}%)`;
-          });
-
-          eventSource.addEventListener("generation_error", (event) => {
-            const data = parseEvent(event);
-            if (!data) return;
-            completedNormally = true;
-            progressStatus.textContent = "Generation failed";
-            showError(data.message || "Unknown error");
-            closeBtn.style.display = "inline-flex";
-            submitBtn.disabled = false;
-            fileInput.disabled = false;
-            eventSource.close();
-          });
-
-          eventSource.addEventListener("complete", (event) => {
-            const data = parseEvent(event);
-            if (!data) return;
-            completedNormally = true;
-            clearError();
-            progressBar.style.width = "100%";
-            flashcardsSpan.textContent = data.flashcards_generated || 0;
-            mcqsSpan.textContent = data.mcqs_generated || 0;
-            duplicatesSpan.textContent = data.duplicates_skipped || 0;
-            progressStatus.textContent = `Complete! Created ${data.flashcards_generated || 0} flashcards and ${data.mcqs_generated || 0} MCQs`;
-            closeBtn.style.display = "inline-flex";
-            submitBtn.disabled = false;
-            fileInput.disabled = false;
-            eventSource.close();
-          });
-
-          eventSource.onerror = () => {
-            if (completedNormally) return;
-            progressStatus.textContent = "Reconnecting...";
-            showError("Live updates disconnected. Trying to reconnect...");
-            try { eventSource.close(); } catch (_) {}
-            if (!reconnectTimer) {
-              reconnectTimer = window.setTimeout(() => {
-                reconnectTimer = null;
-                connectStream();
-              }, 2000);
-            }
-          };
-        };
-
-        connectStream();
+        startPolling();
       } catch (err) {
         console.error("AI upload progress error:", err);
         progressStatus.textContent = "Failed to start generation";
-        showError(err?.message || "Unable to open generation stream.");
+        showError(err?.message || "Unable to start generation.");
         closeBtn.style.display = "inline-flex";
         submitBtn.disabled = false;
         fileInput.disabled = false;
@@ -255,11 +258,18 @@
 
       closeBtn.onclick = () => {
         closeModal();
-        const text = progressStatus.textContent || "";
-        if (text.startsWith("Complete!")) {
+        if (lastSeenStatus === "completed") {
           window.location.reload();
         }
       };
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && modal.getAttribute("aria-hidden") === "false" && lastSeenStatus === "in_progress") {
+          startPolling();
+        }
+      });
+
+      window.addEventListener("beforeunload", stopPolling);
     });
   })();
 </script>
