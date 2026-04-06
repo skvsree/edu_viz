@@ -446,14 +446,6 @@ def _dashboard_response(
     # Filter deck_stats to only favorites (for display on dashboard)
     favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
 
-    requested_edit_deck_id = request.query_params.get("edit_deck")
-    if modal_deck is None and requested_edit_deck_id:
-        requested_deck = db.get(Deck, requested_edit_deck_id)
-        if requested_deck and can_manage_deck(user, requested_deck):
-            modal_deck = requested_deck
-            if active_modal is None:
-                active_modal = "edit"
-
     return templates.TemplateResponse(
         "dashboard.html",
         {
