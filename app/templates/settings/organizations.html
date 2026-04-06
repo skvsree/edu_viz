@@ -117,6 +117,8 @@
               data-organization-id="{{ organization.id }}"
               data-organization-name="{{ organization.name }}"
               data-organization-ai-enabled="{{ 'true' if organization.is_ai_enabled else 'false' }}"
+              data-organization-ai-override="{{ 'true' if org_ai_has_cred.get(organization.id|string, false) else 'false' }}"
+              data-organization-ai-provider="{{ org_ai_provider.get(organization.id|string, 'openai') }}"
               data-organization-update-action="/settings/organizations/{{ organization.id }}/update"
             >
               Edit
@@ -221,6 +223,17 @@
     });
   });
 
+  function syncAiForm(toggleSelector, sectionAttr, overrideAttr, settingsAttr) {
+    document.querySelectorAll(toggleSelector).forEach((toggle) => {
+      const form = toggle.closest('form');
+      const section = form?.querySelector(`[${sectionAttr}]`);
+      const overrideRow = section?.querySelector(`[${overrideAttr}]`);
+      const settings = section?.querySelector(`[${settingsAttr}]`);
+      if (section) section.hidden = !toggle.checked;
+      if (settings) settings.hidden = !(toggle.checked && overrideRow?.checked);
+    });
+  }
+
   document.querySelectorAll('[data-modal-open]').forEach((trigger) => {
     trigger.addEventListener('click', (event) => {
       if (!supportsModalDialog) {
@@ -234,6 +247,8 @@
         const form = dialog?.querySelector('[data-edit-form]');
         const nameInput = dialog?.querySelector('#organization-name-edit');
         const aiInput = dialog?.querySelector('#organization-ai-enabled-edit');
+        const overrideInput = dialog?.querySelector('#organization-ai-override-edit');
+        const providerInput = dialog?.querySelector('#organization-ai-provider-edit');
         if (form) {
           form.action = trigger.dataset.organizationUpdateAction || dialog?.dataset.defaultAction || '#';
         }
@@ -243,6 +258,13 @@
         if (aiInput) {
           aiInput.checked = (trigger.dataset.organizationAiEnabled || 'false') === 'true';
         }
+        if (overrideInput) {
+          overrideInput.checked = (trigger.dataset.organizationAiOverride || 'false') === 'true';
+        }
+        if (providerInput) {
+          providerInput.value = trigger.dataset.organizationAiProvider || 'openai';
+        }
+        syncAiForm('[data-org-ai-toggle]', 'data-org-ai-section', 'data-org-ai-override', 'data-org-ai-settings');
       }
       openModal(modalId);
     });
@@ -254,22 +276,14 @@
   // Sync org AI toggle with override/settings sections (modal)
   function initAiSync(toggleSelector, sectionAttr, overrideAttr, settingsAttr) {
     document.querySelectorAll(toggleSelector).forEach((toggle) => {
+      const sync = () => syncAiForm(toggleSelector, sectionAttr, overrideAttr, settingsAttr);
+      sync();
+      toggle.addEventListener('change', sync);
       const form = toggle.closest('form');
       const section = form?.querySelector(`[${sectionAttr}]`);
       const overrideRow = section?.querySelector(`[${overrideAttr}]`);
-      const settings = section?.querySelector(`[${settingsAttr}]`);
-      const sync = () => {
-        if (section) section.hidden = !toggle.checked;
-        if (toggle.checked) syncOverride();
-      };
-      const syncOverride = () => {
-        if (settings) settings.hidden = !overrideRow?.checked;
-      };
-      sync();
-      toggle.addEventListener('change', sync);
       if (overrideRow) {
-        syncOverride();
-        overrideRow.addEventListener('change', syncOverride);
+        overrideRow.addEventListener('change', sync);
       }
     });
   }
@@ -277,5 +291,6 @@
   initAiSync('[data-org-ai-toggle]', 'data-org-ai-section', 'data-org-ai-override', 'data-org-ai-settings');
   initAiSync('[data-inline-ai-toggle]', 'data-inline-ai-section', 'data-inline-ai-override', 'data-inline-ai-settings');
 })();
+
 </script>
 {% endblock %}

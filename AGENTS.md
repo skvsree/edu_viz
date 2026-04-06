@@ -114,6 +114,18 @@
 - Flashcard bulk delete: `POST /decks/{id}/flashcards/bulk-delete`
 - MCQ bulk delete: `POST /decks/{id}/mcqs/bulk-delete`
 - Both clean up card state dependencies before deleting; keep tests aligned if changing logic.
+- Deleting AI-generated MCQs intentionally resets deck MCQ generation item state deck-wide because generated MCQs are not reliably mapped back to source cards one-by-one.
+
+### MCQ generation status / streaming
+- Start endpoint: `POST /decks/{id}/generate-mcqs/start`
+- Stream endpoint: `GET /decks/{id}/generate-mcqs/stream`
+- Architecture: start request launches a long-running worker/thread; SSE route streams DB-backed status only.
+- Per-source-card progress lives in `deck_mcq_generation_items` via `DeckMcqGenerationItem` / `DeckMcqGenerationItemStatus`.
+- Reruns should skip completed source cards and retry only pending/failed ones.
+- Do not move long-running provider calls back into the SSE handler; browser/EventSource stability is better with the current start + background worker + stream-status pattern.
+- EventSource only listens to GET and named SSE events require `addEventListener(eventName, ...)`.
+- Avoid custom SSE event name `error`; use app-specific names like `generation_error`.
+- Mobile bulk-select controls on flashcard/MCQ management pages are styled as toggle switches; if they look broken, inspect both template markup and mobile CSS rules in `app/static/styles.css`.
 
 ### Tests
 - Test center lives at `/decks/{id}/tests` and is accessible to managers (admin/system_admin).

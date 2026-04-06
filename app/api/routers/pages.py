@@ -938,7 +938,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name is required.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
     normalized_name = normalize_deck_name(cleaned_name)
@@ -949,7 +948,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name must include letters or numbers.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
@@ -964,7 +962,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Assign this admin to an organization before creating organization decks.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
@@ -987,7 +984,6 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="An active deck with that normalized name already exists in this scope.",
-            active_modal="create",
             create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
         )
 
@@ -1050,15 +1046,9 @@ def update_deck(
                 },
                 status_code=400,
             )
-        return _dashboard_response(
-            request,
-            user=user,
-            db=db,
-            status_code=400,
-            dashboard_error=message,
-            active_modal="edit",
-            modal_deck=deck,
-            edit_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+        return RedirectResponse(
+            url=_append_message_param(redirect_target, "error", message),
+            status_code=303,
         )
 
     if not cleaned_name:

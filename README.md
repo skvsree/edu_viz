@@ -202,6 +202,24 @@ Resolution order: user > organization > global env
 
 AI buttons are only visible when the organization has AI generation enabled.
 
+### MCQ generation flow
+
+Deck overview includes an **AI Generate MCQs** action for managers/admins.
+
+Current flow:
+1. `POST /decks/{id}/generate-mcqs/start` starts a generation run
+2. A background worker processes source flashcards in batches
+3. `GET /decks/{id}/generate-mcqs/stream` streams DB-backed status updates to the browser via SSE
+4. Completed source cards are marked as done immediately so reruns skip already-completed items
+5. If AI-generated MCQs are bulk-deleted, generation state is reset for the deck so regeneration is possible
+
+Notes:
+- Browser `EventSource` requires the stream endpoint to be `GET`
+- Progress is tracked per source card, not only per run
+- Reruns process only items not already completed
+- Failed items can be retried in later runs
+- The MCQ/flashcard bulk-select UI uses toggle-switch controls on the management pages
+
 ---
 
 ## Roles

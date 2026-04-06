@@ -85,7 +85,7 @@ class MinimaxStudyPackProvider:
             json={
                 "model": "MiniMax-M2",
                 "messages": [
-                    {"role": "system", "content": "Answer briefly. Do not explain reasoning. Give only final answer in JSON."},
+                    {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
                     {"role": "user", "content": _build_prompt(text)},
                 ],
                 "max_completion_tokens": 8192,
@@ -135,7 +135,7 @@ class ClaudeStudyPackProvider:
         return _parse_study_pack_json(content)
 
 
-def _build_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
+def build_study_pack_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
     sample = text[:10000]
     return (
         "You are preparing study material for Indian medical entrance exam revision. "
@@ -149,11 +149,37 @@ def _build_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
     )
 
 
+def _build_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
+    return build_study_pack_prompt(text, num_flashcards=num_flashcards, num_mcqs=num_mcqs)
+
+
 def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise AIGenerationError("AI provider returned invalid JSON for study generation.") from exc
+    raw = (raw or "").strip()
+    candidates = [raw]
+
+    if "```" in raw:
+        import re
+        fenced = re.findall(r"```(?:json)?\s*(.*?)\s*```", raw, flags=re.S)
+        candidates.extend(item.strip() for item in fenced if item.strip())
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        extracted = raw[start:end + 1].strip()
+        if extracted and extracted not in candidates:
+            candidates.append(extracted)
+
+    data = None
+    last_exc = None
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            break
+        except json.JSONDecodeError as exc:
+            last_exc = exc
+
+    if data is None:
+        raise AIGenerationError("AI provider returned invalid JSON for study generation.") from last_exc
 
     flashcards = [
         GeneratedFlashcard(front=item["front"].strip(), back=item["back"].strip())
@@ -214,7 +240,7 @@ class OpencodeStudyPackProvider:
             json={
                 "model": "MiniMax-M2",
                 "messages": [
-                    {"role": "system", "content": "Answer briefly. Do not explain reasoning. Give only final answer in JSON."},
+                    {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
                     {"role": "user", "content": _build_prompt(text)},
                 ],
                 "max_completion_tokens": 8192,

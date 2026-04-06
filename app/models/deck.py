@@ -47,3 +47,4 @@ class Deck(Base):
     cards = relationship("Card", back_populates="deck", cascade="all, delete-orphan")
     tags = relationship("Tag", secondary="deck_tags", back_populates="decks")
     mcq_generations = relationship("MCQGeneration", back_populates="deck", cascade="all, delete-orphan")
+    mcq_generation_items = relationship("DeckMcqGenerationItem", back_populates="deck", cascade="all, delete-orphan")
