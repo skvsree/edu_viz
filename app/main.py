@@ -132,7 +132,7 @@ app.include_router(content_router)
 app.include_router(analytics.router)
 app.include_router(bulk_import_router)
 app.include_router(favorites_router)
-app.include_router(folders_router, prefix="/api/v1")
+app.include_router(folders_router)
 app.include_router(multiselect_router)
 
 
