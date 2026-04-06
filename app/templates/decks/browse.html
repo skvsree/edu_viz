@@ -144,10 +144,6 @@
 {% if can_manage_decks %}
   {# Folder picker #}
   <dialog id="folder-picker-modal" class="modal">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/dark.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/themes/light.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace.css" />
-    <script type="module" src="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@2.20.1/cdn/shoelace-autoloader.js"></script>
     <div class="modal__surface">
       <header class="modal__header">
         <h2 class="modal__title">Move to folder</h2>
@@ -158,7 +154,7 @@
           <input type="radio" name="target_folder" value="" checked />
           <span>📁 Root (no folder)</span>
         </label>
-        <sl-tree id="folder-picker-tree" selection="single" class="picker-tree"></sl-tree>
+        <div id="folder-picker-tree" class="fp-tree"></div>
         <p id="folder-picker-error" class="error-text" style="display:none;"></p>
       </div>
       <footer class="modal__footer">
@@ -298,10 +294,17 @@
 .browse-empty { text-align:center; padding:2.5rem; color:var(--muted-color); }
 .browse-empty h3 { margin:0 0 0.25rem; font-size:1rem; }
 
-/* ── Folder picker tree ───────────────────────────────────────────────── */
-sl-tree.picker-tree { font-size: 0.875rem; }
-sl-tree.picker-tree::part(item) { padding: 0.2rem 0; }
-sl-tree.picker-tree::part(item--selected) { background: rgba(99,102,241,0.15); border-radius: 4px; }
+/* ── Folder picker ───────────────────────────────────────────────────── */
+.fp-tree { margin-top: 0.25rem; }
+.fp-details, .fp-leaf { padding: 0.15rem 0; }
+.fp-details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-size: 0.875rem; color: var(--text); }
+.fp-details > summary::-webkit-details-marker { display: none; }
+.fp-details > summary:hover .fp-label { color: var(--accent); }
+.fp-leaf { padding-left: 1.5rem; }
+.fp-children { margin-left: 0.5rem; border-left: 1px solid var(--border); padding-left: 0.25rem; }
+.fp-toggle { font-size: 0.6rem; color: var(--text-dim); width: 1rem; display: inline-block; text-align: center; flex-shrink: 0; }
+.fp-label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; flex: 1; }
+.fp-label input { cursor: pointer; }
 .error-text { color:#d32f2f; font-size:0.8rem; }
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
@@ -363,44 +366,47 @@ sl-tree.picker-tree::part(item--selected) { background: rgba(99,102,241,0.15); b
   }
 
   function populatePicker() {
-    const tree = document.getElementById("folder-picker-tree");
-    if (!tree) return;
-    tree.innerHTML = "";
+    const container = document.getElementById("folder-picker-tree");
+    if (!container) return;
+    container.innerHTML = "";
 
-    function buildItem(n) {
-      const item = document.createElement("sl-tree-item");
-      item.setAttribute("value", n.id);
-      item.innerHTML = `<sl-icon name="folder"></sl-icon> ${n.name}`;
-      if (n.children?.length) {
+    function buildBranch(n, depth=0) {
+      const hasChildren = n.children?.length > 0;
+      const item = document.createElement(hasChildren ? "details" : "div");
+      item.className = hasChildren ? "fp-details" : "fp-leaf";
+      item.style.paddingLeft = (depth * 1.25) + "rem";
+      item.open = depth === 0;
+
+      if (hasChildren) {
+        const summary = document.createElement("summary");
+        summary.innerHTML = `<span class="fp-toggle" aria-hidden="true">▶</span><label class="fp-label"><input type="radio" name="target_folder" value="${n.id}" /> <span>📁 ${n.name}</span></label>`;
+        item.appendChild(summary);
+
+        const childGroup = document.createElement("div");
+        childGroup.className = "fp-children";
         for (const child of n.children) {
-          item.appendChild(buildItem(child));
+          childGroup.appendChild(buildBranch(child, 0));
         }
+        item.appendChild(childGroup);
+
+        // toggle chevron on open/close
+        item.addEventListener("toggle", () => {
+          const chev = summary.querySelector(".fp-toggle");
+          if (chev) chev.textContent = item.open ? "▼" : "▶";
+        });
+      } else {
+        item.innerHTML = `<label class="fp-label"><input type="radio" name="target_folder" value="${n.id}" /> <span>📁 ${n.name}</span></label>`;
       }
       return item;
     }
 
     for (const n of folderTreeData) {
-      tree.appendChild(buildItem(n));
+      container.appendChild(buildBranch(n));
     }
 
     if (!folderTreeData.length) {
-      tree.innerHTML = '<sl-tree-item disabled>No folders yet</sl-tree-item>';
+      container.innerHTML = '<p style="color:var(--text-dim);font-size:0.8rem;padding:0.5rem 0;">No folders yet</p>';
     }
-
-    // Root radio → clear tree selection
-    const rootRadio = document.querySelector('input[name="target_folder"][value=""]');
-    if (rootRadio) {
-      rootRadio.addEventListener("change", () => {
-        if (rootRadio.checked) tree.clearSelection?.();
-      });
-    }
-
-    // Tree selection → uncheck root radio
-    tree.addEventListener("sl-change", () => {
-      if (tree.selected?.length) {
-        rootRadio && (rootRadio.checked = false);
-      }
-    });
   }
 
   document.getElementById("picker-confirm")?.addEventListener("click", async () => {
