@@ -74,20 +74,12 @@
         <h1 class="browse-title">
           {% if current_folder %}{{ current_folder.name }}{% else %}Browse{% endif %}
         </h1>
-        <p class="muted" style="font-size:0.8rem; margin:0;">
-          {% if current_folder %}
-            {{ subfolders|length }} folders · {{ root_decks|length }} decks
-          {% else %}
-            {{ root_folders|length }} folders · {{ root_decks|length }} decks
-          {% endif %}
-        </p>
       </div>
       <div class="browse-header-right">
         <form method="get" action="/decks/browse" class="browse-search">
           <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
           <input type="text" name="q" value="{{ q }}" placeholder="Search..." autocomplete="off" class="browse-search-input" />
-          <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost">Go</button>
-          {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">Clear</a>{% endif %}
+          {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">✕</a>{% endif %}
         </form>
       </div>
     </div>
@@ -295,11 +287,12 @@
 
 /* ── Action bar ─────────────────────────────────────────────────────── */
 .browse-action-bar {
-  display:flex; align-items:center; gap:0.75rem;
+  display:none; align-items:center; gap:0.75rem;
   padding:0.5rem 0.75rem; margin-bottom:0.75rem;
   background:var(--card-bg); border:1px solid var(--border-color);
   border-radius:10px; flex-wrap:wrap;
 }
+.browse-action-bar.has-selection { display:flex; }
 .browse-action-bar__count { font-size:0.8rem; color:var(--muted-color); min-width:60px; }
 #sel-count-num { font-weight:700; color:var(--accent); }
 .browse-action-bar__actions { display:flex; gap:0.375rem; margin-left:auto; }
@@ -329,7 +322,6 @@
 /* Folder card */
 .browse-item__icon { font-size:2.5rem; line-height:1; }
 .browse-item__name { font-weight:600; font-size:0.85rem; color:var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 0.25rem; }
-.browse-item__meta { font-size:0.7rem; color:var(--muted-color); }
 .browse-item__actions { display:flex; gap:0.25rem; margin-top:0.25rem; position:absolute; bottom:0.5rem; left:50%; transform:translateX(-50%); }
 
 /* Hover overlay for folder link */
@@ -408,6 +400,7 @@
   const moveBtn = document.getElementById("move-btn");
   const deleteBtn = document.getElementById("delete-btn");
   const countNum = document.getElementById("sel-count-num");
+  const actionBar = document.getElementById("browse-action-bar");
   let selected = [];
 
   function getAllCheckboxes() {
@@ -422,7 +415,7 @@
     if (countNum) countNum.textContent = n;
     if (moveBtn) moveBtn.disabled = n === 0;
     if (deleteBtn) deleteBtn.disabled = n === 0;
-    // Highlight selected items
+    if (actionBar) actionBar.classList.toggle("has-selection", n > 0);
     getAllCheckboxes().forEach(cb => {
       const card = cb.closest(".browse-item");
       if (card) card.classList.toggle("is-selected", cb.checked);
