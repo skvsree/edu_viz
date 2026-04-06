@@ -387,14 +387,14 @@
     if (!container) return;
     container.innerHTML = "";
 
-    function renderNode(n, depth=0) {
+    function renderNode(parent, n, depth=0) {
       const row = document.createElement("div");
       row.className = "ft-row";
       row.style.paddingLeft = (depth * 1.5) + "rem";
 
       const hasChildren = n.children?.length > 0;
       const toggle = hasChildren
-        ? `<button type="button" class="ft-toggle" data-ft="t-${n.id}" aria-expanded="true">▼</button>`
+        ? `<button type="button" class="ft-toggle" aria-expanded="true">▼</button>`
         : `<span class="ft-toggle ft-toggle--blank"></span>`;
 
       row.innerHTML = `
@@ -404,16 +404,15 @@
           <span>📁 ${n.name}</span>
         </label>`;
 
-      container.appendChild(row);
+      parent.appendChild(row);
 
       if (hasChildren) {
         const childContainer = document.createElement("div");
-        childContainer.id = `ft-c-${n.id}`;
         childContainer.className = "ft-children";
-        container.appendChild(childContainer);
+        parent.appendChild(childContainer);
 
         for (const child of n.children) {
-          renderNode(child, 0);
+          renderNode(childContainer, child, depth + 1);
         }
 
         // collapse toggle
@@ -426,7 +425,7 @@
       }
     }
 
-    for (const n of folderTreeData) renderNode(n);
+    for (const n of folderTreeData) renderNode(container, n);
 
     if (!folderTreeData.length) {
       container.innerHTML = '<p style="color:var(--text-dim);font-size:0.8rem;padding:0.5rem 0;">No folders yet</p>';
