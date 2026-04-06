@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import and_, delete, func, or_, select
-from sqlalchemy import sql as sa
+from sqlalchemy import literal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -193,8 +193,11 @@ def create_folder(
     parent_folder = None
     if folder_data.parent_id:
         parent_folder = db.get(Folder, folder_data.parent_id)
-        if not parent_folder or parent_folder.user_id != user.id:
+        if not parent_folder:
             raise HTTPException(status_code=404, detail="Parent folder not found")
+        # Allow subfolders under own or org folders
+        if parent_folder.user_id != user.id and parent_folder.organization_id != user.organization_id:
+            raise HTTPException(status_code=403, detail="You cannot create subfolders here")
 
     folder = Folder(
         name=folder_data.name,
@@ -404,19 +407,24 @@ def get_folder_tree(
 ):
     """Get folder tree structure for folder picker (own + org-shared)."""
     def build_tree(parent_id: UUID | None) -> list[dict]:
-        folders = db.execute(
-            select(Folder)
-            .where(
-                Folder.parent_id == parent_id,
-                or_(
-                    Folder.user_id == user.id,
-                    Folder.organization_id == user.organization_id,
-                    # Legacy folders with no org — treat as org-scoped
-                    sa.and_(Folder.organization_id.is_(None), user.organization_id.isnot(None)),
-                ),
-            )
-            .order_by(Folder.name.asc())
-        ).scalars().all()
+        if user.organization_id:
+            folders = db.execute(
+                select(Folder)
+                .where(
+                    Folder.parent_id == parent_id,
+                    or_(
+                        Folder.organization_id == user.organization_id,
+                        Folder.organization_id.is_(None),
+                    ),
+                )
+                .order_by(Folder.name.asc())
+            ).scalars().all()
+        else:
+            folders = db.execute(
+                select(Folder)
+                .where(Folder.parent_id == parent_id, Folder.user_id == user.id)
+                .order_by(Folder.name.asc())
+            ).scalars().all()
 
         result = []
         for folder in folders:
