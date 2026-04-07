@@ -392,13 +392,13 @@
 
     let pickerTree = null;
 
-    // Use treejs
+    // Use treejs in radio mode (single select)
     pickerTree = new Tree("#folder-picker-tree", {
       data: folderTreeData,
       closeDepth: 1,
-      values: [],  // no pre-selected
+      selectMode: "radio",
+      values: [],
       onChange: function () {
-        // Sync: if a folder is selected in tree, deselect root
         if (pickerTree && pickerTree.values.length > 0) {
           rootRadio.checked = false;
         }
