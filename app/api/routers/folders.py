@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user
 from app.core.db import get_db
 from app.models import Deck, Folder, User
-from app.services.access import can_manage_deck, can_manage_decks
+from app.services.access import can_manage_deck, can_manage_decks, is_org_admin, is_system_admin
 
 router = APIRouter(prefix="/api/v1", tags=["folders"])
 
@@ -115,6 +115,31 @@ def _folder_to_response(db: Session, folder: Folder) -> FolderResponse:
     )
 
 
+def _can_view_folder(user: User, folder: Folder) -> bool:
+    if is_system_admin(user):
+        return True
+    if str(folder.user_id) == str(user.id):
+        return True
+    return bool(
+        user.organization_id
+        and folder.organization_id
+        and str(folder.organization_id) == str(user.organization_id)
+    )
+
+
+def _can_manage_folder(user: User, folder: Folder) -> bool:
+    if is_system_admin(user):
+        return True
+    if str(folder.user_id) == str(user.id):
+        return True
+    return bool(
+        is_org_admin(user)
+        and user.organization_id
+        and folder.organization_id
+        and str(folder.organization_id) == str(user.organization_id)
+    )
+
+
 @router.get("/folders", response_model=list[FolderResponse])
 def list_root_folders(
     user: User = Depends(current_user),
@@ -141,7 +166,7 @@ def get_folder(
 ):
     """Get a specific folder by ID."""
     folder = db.get(Folder, folder_id)
-    if not folder or folder.user_id != user.id:
+    if not folder or not _can_view_folder(user, folder):
         raise HTTPException(status_code=404, detail="Folder not found")
     return _folder_to_response(db, folder)
 
@@ -154,7 +179,7 @@ def list_subfolders(
 ):
     """List direct subfolders of a folder."""
     parent = db.get(Folder, folder_id)
-    if not parent or parent.user_id != user.id:
+    if not parent or not _can_view_folder(user, parent):
         raise HTTPException(status_code=404, detail="Folder not found")
 
     folders = db.execute(
@@ -174,7 +199,7 @@ def get_folder_breadcrumb(
 ):
     """Get breadcrumb path for a folder."""
     folder = db.get(Folder, folder_id)
-    if not folder or folder.user_id != user.id:
+    if not folder or not _can_view_folder(user, folder):
         raise HTTPException(status_code=404, detail="Folder not found")
     return _get_folder_tree_path(db, folder_id)
 
@@ -195,8 +220,7 @@ def create_folder(
         parent_folder = db.get(Folder, folder_data.parent_id)
         if not parent_folder:
             raise HTTPException(status_code=404, detail="Parent folder not found")
-        # Allow subfolders under own or org folders
-        if parent_folder.user_id != user.id and parent_folder.organization_id != user.organization_id:
+        if not _can_manage_folder(user, parent_folder):
             raise HTTPException(status_code=403, detail="You cannot create subfolders here")
 
     folder = Folder(
@@ -226,7 +250,7 @@ def update_folder(
 ):
     """Rename a folder."""
     folder = db.get(Folder, folder_id)
-    if not folder or folder.user_id != user.id:
+    if not folder or not _can_manage_folder(user, folder):
         raise HTTPException(status_code=404, detail="Folder not found")
 
     folder.name = folder_data.name
@@ -249,7 +273,7 @@ def delete_folder(
 ):
     """Delete a folder. Child decks are moved to parent folder (or root if root folder)."""
     folder = db.get(Folder, folder_id)
-    if not folder or folder.user_id != user.id:
+    if not folder or not _can_manage_folder(user, folder):
         raise HTTPException(status_code=404, detail="Folder not found")
 
     # Move child decks to parent folder (or root if this is root folder)
@@ -273,7 +297,7 @@ def list_folder_decks(
 ):
     """List decks in a folder, optionally including decks from subfolders."""
     folder = db.get(Folder, folder_id)
-    if not folder or folder.user_id != user.id:
+    if not folder or not _can_view_folder(user, folder):
         raise HTTPException(status_code=404, detail="Folder not found")
 
     if include_subfolders:
@@ -329,7 +353,7 @@ def move_decks(
     # Validate target folder if provided
     if request.folder_id:
         target_folder = db.get(Folder, request.folder_id)
-        if not target_folder or target_folder.user_id != user.id:
+        if not target_folder or not _can_manage_folder(user, target_folder):
             raise HTTPException(status_code=404, detail="Target folder not found")
 
     # Validate user can manage all decks
@@ -366,7 +390,7 @@ def move_folder(
 ):
     """Move a folder to a new parent (or root if parent_id is null)."""
     folder = db.get(Folder, folder_id)
-    if not folder or folder.user_id != user.id:
+    if not folder or not _can_manage_folder(user, folder):
         raise HTTPException(status_code=404, detail="Folder not found")
 
     # Prevent moving into itself or a descendant
@@ -383,15 +407,24 @@ def move_folder(
         if request.parent_id in descendant_ids or request.parent_id == folder_id:
             raise HTTPException(status_code=400, detail="Cannot move a folder into itself or its descendant")
 
-    # Check duplicate sibling name
-    existing = db.execute(
-        select(Folder).where(
-            Folder.parent_id == request.parent_id,
-            Folder.user_id == user.id,
-            Folder.name == folder.name,
-            Folder.id != folder_id,
-        )
-    ).scalars().first()
+    # Validate target parent folder permission
+    if request.parent_id:
+        target_parent = db.get(Folder, request.parent_id)
+        if not target_parent or not _can_manage_folder(user, target_parent):
+            raise HTTPException(status_code=404, detail="Target folder not found")
+
+    # Check duplicate sibling name within the same ownership scope
+    sibling_filters = [
+        Folder.parent_id == request.parent_id,
+        Folder.name == folder.name,
+        Folder.id != folder_id,
+    ]
+    if folder.organization_id and _can_manage_folder(user, folder) and str(folder.user_id) != str(user.id):
+        sibling_filters.append(Folder.organization_id == folder.organization_id)
+    else:
+        sibling_filters.append(Folder.user_id == folder.user_id)
+
+    existing = db.execute(select(Folder).where(*sibling_filters)).scalars().first()
     if existing:
         raise HTTPException(status_code=409, detail="A folder with this name already exists in the target location")
 

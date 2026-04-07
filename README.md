@@ -166,6 +166,15 @@ Requires PostgreSQL 15+ running locally.
 
 ---
 
+## Recent UI notes
+
+- Browse page supports role-based tabs: All, Global, Org, Mine (visibility depends on role).
+- Browse deck cards on mobile use a compact single-row layout with the favorite star kept as the last control.
+- Global/Org badge and deck access controls are intended to render below the deck title/description on mobile, not as a separate side column.
+- Template/CSS changes require rebuilding the Docker image because the app code is baked into the container.
+
+---
+
 ## AI Content Generation (Alpha)
 
 > **Alpha feature** — API and behavior may change in future releases.

@@ -1,10 +1,14 @@
-{% macro browse_item(deck, favorite_deck_ids, writable_deck_ids) %}
+{% macro browse_item(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) %}
 {% set can_write = deck.id|string in writable_deck_ids %}
+{% set can_delete = deck.id|string in deletable_deck_ids %}
+{% set can_manage_access = deck.id|string in access_manageable_deck_ids %}
+{% set is_owner = deck.user_id == user.id %}
 <article class="browse-item browse-item--deck"
   data-item-type="deck"
   data-item-id="{{ deck.id }}"
   data-deck-id="{{ deck.id }}"
   data-can-write="{{ 'true' if can_write else 'false' }}"
+  data-access-level="{{ deck.access_level }}"
 >
   {% if can_write %}
     <div class="item-cb-wrap">
@@ -36,6 +40,42 @@
     <span class="deck-item__text">
       <span class="deck-item-name">{{ deck.name }}</span>
       <span class="deck-item-desc">{{ deck.description or 'Study deck' }}</span>
+      {% if not (can_write or can_manage_access) %}
+        {% if deck.access_level|string == 'global' %}
+        <span class="deck-scope-badge deck-scope-badge--global deck-scope-badge--inline">Global</span>
+        {% elif deck.access_level|string == 'org' %}
+        <span class="deck-scope-badge deck-scope-badge--org deck-scope-badge--inline">Org</span>
+        {% endif %}
+      {% endif %}
+      {% if can_write or can_manage_access %}
+      <span class="deck-access-wrap">
+        {% if can_write %}
+        <select
+          class="deck-access-select"
+          data-deck-id="{{ deck.id }}"
+          title="Change access level"
+          aria-label="Access level for {{ deck.name }}"
+        >
+          {% for val, label in access_level_options %}
+            <option value="{{ val }}" {% if deck.access_level|string == val %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+        {% if can_manage_access %}
+        <button
+          type="button"
+          class="deck-security-btn"
+          data-deck-id="{{ deck.id }}"
+          title="Manage user access"
+          aria-label="Manage user access for {{ deck.name }}"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </button>
+        {% endif %}
+      </span>
+      {% endif %}
     </span>
   </a>
 </article>

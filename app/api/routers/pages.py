@@ -40,6 +40,8 @@ from app.services.access import (
     can_write_tab,
     deck_has_test_content,
     get_browse_tabs,
+    is_org_admin,
+    is_system_admin,
     normalize_deck_name,
 )
 from app.services.ai_auth import (
@@ -557,12 +559,12 @@ def _dashboard_response(
             "dashboard_success": dashboard_success if dashboard_success is not None else request.query_params.get("success"),
             "active_modal": active_modal,  # Don't use query params - prevents unwanted modal on reload
             "modal_deck": modal_deck,
-            "create_form": create_form or {"name": "", "description": "", "is_global": False},
+            "create_form": create_form or {"name": "", "description": "", "access_level": "user"},
             "edit_form": edit_form
             or {
                 "name": modal_deck.name if modal_deck else "",
                 "description": (modal_deck.description or "") if modal_deck else "",
-                "is_global": modal_deck.is_global if modal_deck else False,
+                "access_level": modal_deck.access_level if modal_deck else "user",
             },
             "tag_form": _tag_form_context(modal_deck) if modal_deck else {"tag_names": ""},
             "title": "Workspace | edu selviz",
@@ -781,7 +783,7 @@ def delete_folder(
     db.commit()
 
     return RedirectResponse(
-        "/decks/browse" + (f"?folder={parent_id}" if parent_id else "") + "?success=Folder+deleted",
+        "/decks/browse" + (f"?folder={parent_id}&success=Folder+deleted" if parent_id else "?success=Folder+deleted"),
         status_code=303,
     )
 
@@ -813,19 +815,66 @@ def browse_decks(
     show_tabs = bool(tabs)
     show_action_bar = can_write_tab(user, tab_param)
 
+    from app.services.access import (
+        browse_accessible_deck_clause,
+        can_delete_deck as _cdd,
+        can_set_deck_access as _csda,
+        can_write_deck as _cwd,
+        is_org_admin as _ioa,
+        is_system_admin as _isa,
+        load_browse_deck_query,
+    )
+
     folder_tree = get_folder_tree(user=user, db=db)
+
+    def _can_view_folder_local(folder: Folder | None) -> bool:
+        if not folder:
+            return False
+        if _isa(user):
+            return True
+        if str(folder.user_id) == str(user.id):
+            return True
+        return bool(
+            user.organization_id
+            and folder.organization_id
+            and str(folder.organization_id) == str(user.organization_id)
+        )
+
+    def _can_manage_folder_local(folder: Folder | None) -> bool:
+        if not folder:
+            return False
+        if _isa(user):
+            return True
+        if str(folder.user_id) == str(user.id):
+            return True
+        return bool(
+            _ioa(user)
+            and user.organization_id
+            and folder.organization_id
+            and str(folder.organization_id) == str(user.organization_id)
+        )
+
+    def _folder_payload(folder: Folder) -> dict:
+        return {
+            "id": str(folder.id),
+            "name": folder.name,
+            "deck_count": _count_decks_in_folder(db, folder.id),
+            "subfolder_count": _count_subfolders(db, folder.id),
+            "can_write": _can_manage_folder_local(folder),
+        }
 
     # Breadcrumb
     breadcrumb: list[tuple[str, str]] = []
     current_folder = None
     if folder_id:
-        current_folder = db.get(Folder, folder_id)
-        if current_folder and current_folder.user_id == user.id:
+        maybe_folder = db.get(Folder, folder_id)
+        if _can_view_folder_local(maybe_folder):
+            current_folder = maybe_folder
             node_id: UUID | None = folder_id
             path_ids = []
             while node_id:
                 node = db.get(Folder, node_id)
-                if not node:
+                if not node or not _can_view_folder_local(node):
                     break
                 path_ids.insert(0, node)
                 node_id = node.parent_id
@@ -838,11 +887,8 @@ def browse_decks(
             Folder.parent_id == folder_id,
         ).order_by(Folder.name.asc())
     ).scalars().all():
-        subfolders.append({
-            "id": str(f.id), "name": f.name,
-            "deck_count": _count_decks_in_folder(db, f.id),
-            "subfolder_count": _count_subfolders(db, f.id),
-        })
+        if _can_view_folder_local(f):
+            subfolders.append(_folder_payload(f))
 
     # Root folders (for sidebar or root-level display)
     root_folders = []
@@ -851,26 +897,17 @@ def browse_decks(
             Folder.parent_id == None,
         ).order_by(Folder.name.asc())
     ).scalars().all():
-        root_folders.append({
-            "id": str(f.id), "name": f.name,
-            "deck_count": _count_decks_in_folder(db, f.id),
-            "subfolder_count": _count_subfolders(db, f.id),
-        })
+        if _can_view_folder_local(f):
+            root_folders.append(_folder_payload(f))
 
     # Base query — apply tab filter only at root level (no folder, no search)
     apply_tab_filter = not folder_id and not q
     if apply_tab_filter:
         deck_filter = browse_filter_clause(user, tab_param)
     else:
-        deck_filter = True  # no tab filter in folder view or search
+        deck_filter = browse_accessible_deck_clause(user)  # include explicit shares in folder/search views
 
-    base_q = (
-        select(Deck)
-        .options(selectinload(Deck.organization), selectinload(Deck.tags))
-        .where(Deck.is_deleted.is_(False))
-    )
-    if deck_filter is not True:
-        base_q = base_q.where(deck_filter)
+    base_q = load_browse_deck_query(user).where(deck_filter).group_by(Deck.id)
 
     # Folder filter (only when inside a folder)
     if folder_id and not q:
@@ -905,7 +942,7 @@ def browse_decks(
     offset = (page - 1) * BROWSE_PAGE_SIZE
     decks = (
         db.execute(
-            base_q.order_by(Deck.is_global.desc(), Deck.created_at.desc())
+            base_q.order_by(Deck.access_level.desc(), Deck.created_at.desc())
             .limit(BROWSE_PAGE_SIZE).offset(offset)
         ).scalars().all()
     )
@@ -914,13 +951,12 @@ def browse_decks(
     root_decks = []
     if not q and not folder_id:
         root_q = (
-            select(Deck)
-            .options(selectinload(Deck.organization), selectinload(Deck.tags))
-            .where(Deck.is_deleted.is_(False))
+            load_browse_deck_query(user)
+            .where(deck_filter)
+            .where(Deck.folder_id == None)
+            .group_by(Deck.id)
+            .order_by(Deck.access_level.desc(), Deck.created_at.desc())
         )
-        if deck_filter is not True:
-            root_q = root_q.where(deck_filter)
-        root_q = root_q.where(Deck.folder_id == None).order_by(Deck.is_global.desc(), Deck.created_at.desc())
         root_decks = db.execute(root_q).scalars().all()
 
     # Favorite IDs
@@ -929,9 +965,11 @@ def browse_decks(
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
 
-    # Writable deck IDs for per-deck checkbox visibility
-    from app.services.access import can_write_deck as _cwd
-    writable_deck_ids = {str(d.id) for d in decks if _cwd(user, d)}
+    # Browse permissions for per-deck actions
+    visible_decks = {str(d.id): d for d in [*decks, *root_decks]}
+    writable_deck_ids = {deck_id for deck_id, d in visible_decks.items() if _cwd(user, d)}
+    deletable_deck_ids = {deck_id for deck_id, d in visible_decks.items() if _cdd(user, d)}
+    access_manageable_deck_ids = {deck_id for deck_id, d in visible_decks.items() if _csda(user, d)}
 
     return templates.TemplateResponse(
         "decks/browse.html",
@@ -941,6 +979,9 @@ def browse_decks(
             "decks": decks,
             "favorite_deck_ids": favorite_deck_ids,
             "writable_deck_ids": writable_deck_ids,
+            "deletable_deck_ids": deletable_deck_ids,
+            "access_manageable_deck_ids": access_manageable_deck_ids,
+            "access_level_options": [("global", "Global"), ("org", "Org"), ("user", "Mine")],
             "q": q,
             "page": page,
             "total_pages": total_pages,
@@ -961,7 +1002,6 @@ def browse_decks(
             "active_tab": tab_param,
             "show_tabs": show_tabs,
             "show_action_bar": show_action_bar,
-            "writable_deck_ids": writable_deck_ids,
         },
     )
 
@@ -1287,9 +1327,7 @@ def update_user_settings(
 @router.post("/decks")
 def create_deck(
     request: Request,
-    name: str = Form(...),
-    description: str = Form(default=""),
-    is_global: bool = Form(default=False),
+    access_level: str = Form(default="user"),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -1305,7 +1343,7 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name is required.",
-            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+            create_form={"name": cleaned_name, "description": cleaned_description, "access_level": access_level},
         )
     normalized_name = normalize_deck_name(cleaned_name)
     if not normalized_name:
@@ -1315,22 +1353,26 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name must include letters or numbers.",
-            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+            create_form={"name": cleaned_name, "description": cleaned_description, "access_level": access_level},
         )
 
-    if is_global and user.role != ROLE_SYSTEM_ADMIN:
-        raise HTTPException(status_code=403, detail="Only system admins can create global decks.")
+    valid_levels = {"global", "org", "user"}
+    if access_level not in valid_levels:
+        access_level = "user"
 
-    organization_id = None if is_global else user.organization_id
-    if not is_global and organization_id is None:
+    if access_level == "global" and not is_system_admin(user):
+        raise HTTPException(status_code=403, detail="Only system admins can create global decks.")
+    if access_level == "org" and not is_org_admin(user):
         return _dashboard_response(
             request,
             user=user,
             db=db,
             status_code=400,
             dashboard_error="Assign this admin to an organization before creating organization decks.",
-            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+            create_form={"name": cleaned_name, "description": cleaned_description, "access_level": access_level},
         )
+
+    organization_id = user.organization_id if access_level == "org" else None
 
     deck = Deck(
         user_id=user.id,
@@ -1338,7 +1380,8 @@ def create_deck(
         name=cleaned_name,
         normalized_name=normalized_name,
         description=cleaned_description or None,
-        is_global=is_global,
+        access_level=access_level,
+        is_global=(access_level == "global"),
     )
     db.add(deck)
     try:
@@ -1351,7 +1394,7 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="An active deck with that normalized name already exists in this scope.",
-            create_form={"name": cleaned_name, "description": cleaned_description, "is_global": is_global},
+            create_form={"name": cleaned_name, "description": cleaned_description, "access_level": access_level},
         )
 
     success_message = quote_plus("Deck created")
@@ -1362,9 +1405,7 @@ def create_deck(
 def update_deck(
     request: Request,
     deck_id: str,
-    name: str = Form(...),
-    description: str = Form(default=""),
-    is_global: bool = Form(default=False),
+    access_level: str = Form(default="user"),
     next_url: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -1424,17 +1465,22 @@ def update_deck(
     if not normalized_name:
         return _deck_update_error_response("Deck name must include letters or numbers.")
 
-    if is_global and user.role != ROLE_SYSTEM_ADMIN:
-        raise HTTPException(status_code=403, detail="Only system admins can make a deck global.")
+    valid_levels = {"global", "org", "user"}
+    if access_level not in valid_levels:
+        access_level = deck.access_level  # keep current if invalid
 
-    organization_id = None if is_global else user.organization_id
-    if not is_global and organization_id is None:
+    if access_level == "global" and not is_system_admin(user):
+        raise HTTPException(status_code=403, detail="Only system admins can make a deck global.")
+    if access_level == "org" and not is_org_admin(user):
         return _deck_update_error_response("Assign this admin to an organization before saving organization decks.")
+
+    organization_id = user.organization_id if access_level == "org" else None
 
     deck.name = cleaned_name
     deck.normalized_name = normalized_name
     deck.description = cleaned_description or None
-    deck.is_global = is_global
+    deck.access_level = access_level
+    deck.is_global = (access_level == "global")
     deck.organization_id = organization_id
 
     try:

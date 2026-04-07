@@ -80,7 +80,7 @@
       {% if decks %}
         <div class="browse-grid">
           {% for deck in decks %}
-            {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids) }}
+            {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
           {% endfor %}
         </div>
         {% if total_pages > 1 %}
@@ -99,10 +99,12 @@
       <div class="browse-grid">
         {% for f in subfolders %}
           <div class="browse-item browse-item--folder"
-            data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="true">
+            data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="{{ 'true' if f.can_write else 'false' }}" data-name="{{ f.name }}">
+            {% if f.can_write %}
             <div class="item-cb-wrap">
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
+            {% endif %}
             <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-item__folder-link">
               <span class="browse-item__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -117,7 +119,7 @@
           </div>
         {% endfor %}
         {% for deck in decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids) }}
+          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
         {% endfor %}
       </div>
       {% if not subfolders and not decks %}
@@ -128,10 +130,12 @@
       {# Root view: root folders + root decks #}
       <div class="browse-grid">
         {% for f in root_folders %}
-          <div class="browse-item browse-item--folder">
+          <div class="browse-item browse-item--folder" data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="{{ 'true' if f.can_write else 'false' }}" data-name="{{ f.name }}">
+            {% if f.can_write %}
             <div class="item-cb-wrap">
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
+            {% endif %}
             <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-item__folder-link">
               <span class="browse-item__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="currentColor">
@@ -146,7 +150,7 @@
           </div>
         {% endfor %}
         {% for deck in root_decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids) }}
+          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
         {% endfor %}
       </div>
       {% if not root_folders and not root_decks %}
@@ -187,7 +191,6 @@
     <div class="modal__surface">
       <header class="modal__header">
         <h2 class="modal__title">New folder</h2>
-        <button type="button" class="modal__close" data-modal-close="create-folder-modal">✕</button>
       </header>
       <form method="post" action="/folders" id="create-folder-form" class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
         <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
@@ -209,7 +212,6 @@
     <div class="modal__surface">
       <header class="modal__header">
         <h2 class="modal__title">Rename folder</h2>
-        <button type="button" class="modal__close" data-modal-close="rename-modal">✕</button>
       </header>
       <form method="post" id="rename-form" class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
         <input type="hidden" name="folder_id" id="rename-folder-id" />
@@ -221,6 +223,39 @@
       <footer class="modal__footer">
         <button type="submit" form="rename-form" class="browse-btn browse-btn--sm">Save</button>
         <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="rename-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
+
+  {# Deck security / access management #}
+  <dialog id="security-modal" class="modal">
+    <div class="modal__surface modal__surface--wide">
+      <header class="modal__header">
+        <h2 class="modal__title" id="security-modal-title">Manage Access</h2>
+      </header>
+      <div class="modal__body" style="min-height:200px; max-height:500px; overflow-y:auto;">
+        {# Access grants list #}
+        <div id="security-grants-list"></div>
+        {# Add new grant form #}
+        <div style="margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border-color);">
+          <p class="muted" style="margin:0 0 0.5rem; font-size:0.82rem; font-weight:600;">Grant access to another user</p>
+          <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            <input type="email" id="security-grant-email"
+              placeholder="user@email.com"
+              style="flex:1; min-width:180px; padding:0.4rem 0.6rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.85rem;" />
+            <select id="security-grant-level"
+              style="padding:0.4rem 0.6rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.85rem; min-width:90px;">
+              <option value="read">Read</option>
+              <option value="write">Write</option>
+              <option value="delete">Delete</option>
+            </select>
+            <button type="button" id="security-grant-btn" class="browse-btn browse-btn--sm browse-btn--primary">Grant</button>
+          </div>
+          <p id="security-grant-error" class="muted" style="margin:0.4rem 0 0; font-size:0.8rem; color:#dc2626; display:none;"></p>
+        </div>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="security-modal">Close</button>
       </footer>
     </div>
   </dialog>
@@ -256,9 +291,8 @@
   min-height:0;
   width:100%;
   overflow-y:auto;
-  overflow-x:hidden;
-  padding-right:0.15rem;
-  padding-bottom:0.5rem;
+  overflow-x:visible;
+  padding:0 0.2rem 0.5rem;
 }
 .browse-title { font-size:1.25rem; font-weight:700; margin:0; }
 .browse-header-right { display:flex; gap:0.5rem; align-items:center; }
@@ -383,8 +417,7 @@
     margin-bottom:0.5rem;
   }
   .browse-content-scroll {
-    padding-right:0;
-    padding-bottom:0.35rem;
+    padding:0 0.6rem 0.35rem 0.35rem;
   }
   .browse-grid {
     grid-template-columns:1fr;
@@ -416,15 +449,18 @@
 
 /* Deck cards */
 .browse-item--deck { background:var(--card-bg); }
+.browse-item--deck:not(:has(.deck-access-wrap)) .deck-item-card__link {
+  padding-right: 3rem;
+}
 
 /* Top-right controls */
 .browse-item > .item-cb-wrap {
-  position:absolute; top:0.5rem; right:3rem;
+  position:absolute; top:0.5rem; right:5.5rem;
 }
 .deck-favorite-btn {
   position:absolute;
   top:0.5rem;
-  right:0.5rem;
+  right:3.25rem;
   width:2rem;
   height:2rem;
   padding:0;
@@ -470,6 +506,73 @@
   justify-content:center;
   width:20px;
   height:20px;
+}
+
+/* Access level selector */
+.deck-access-wrap {
+  display:flex;
+  align-items:center;
+  gap:0.25rem;
+  margin-left:auto;
+  flex-shrink:0;
+}
+.deck-access-select {
+  padding:0.2rem 0.5rem;
+  border:1px solid var(--border-color);
+  border-radius:6px;
+  background:var(--card-bg);
+  color:var(--text-color);
+  font-size:0.78rem;
+  cursor:pointer;
+  min-width:70px;
+}
+.deck-access-select:hover {
+  border-color:var(--accent);
+}
+.deck-security-btn {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:1.75rem;
+  height:1.75rem;
+  border:1px solid var(--border-color);
+  border-radius:6px;
+  background:var(--card-bg);
+  color:var(--text-dim);
+  cursor:pointer;
+  padding:0;
+  flex-shrink:0;
+  transition:border-color 0.15s, color 0.15s, background 0.15s;
+}
+.deck-security-btn:hover {
+  border-color:var(--accent);
+  color:var(--accent);
+  background:var(--hover-bg);
+}
+.deck-scope-badge {
+  margin-left:auto;
+  padding:0.2rem 0.5rem;
+  border-radius:6px;
+  font-size:0.72rem;
+  font-weight:600;
+  letter-spacing:0.03em;
+  flex-shrink:0;
+}
+.deck-scope-badge--inline {
+  display:inline-flex;
+  align-items:center;
+  width:fit-content;
+  margin:0.25rem 0 0;
+}
+.deck-scope-badge--global {
+  background:rgba(34,197,94,0.12);
+  color:#16a34a;
+  border:1px solid rgba(34,197,94,0.3);
+}
+.deck-scope-badge--org {
+  background:rgba(59,130,246,0.12);
+  color:#2563eb;
+  border:1px solid rgba(59,130,246,0.3);
 }
 
 /* Cards */
@@ -658,13 +761,13 @@
   }
   .browse-item {
     min-height: unset;
-    padding: 0.85rem 0.95rem;
+    padding: 0.8rem 0.85rem;
     border-radius: 16px;
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
     text-align: left;
-    gap: 0.8rem;
+    gap: 0.45rem;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.06);
   }
   .browse-item > .item-cb-wrap {
@@ -678,26 +781,49 @@
   }
   .deck-favorite-btn {
     position: static;
-    order: 2;
+    order: 3;
     flex: 0 0 auto;
-    margin-left: auto;
+    margin: 0 0 0 auto;
     align-self: center;
+    width: 2.4rem;
+    height: 2.4rem;
   }
   .item-cb {
     width: 22px;
     height: 22px;
   }
+  .deck-favorite-btn svg {
+    width: 1.2rem;
+    height: 1.2rem;
+  }
   .browse-item__folder-link,
   .deck-item-card__link {
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     justify-content: flex-start;
     text-align: left;
-    gap: 0.2rem;
+    gap: 0.35rem;
     min-width: 0;
+    width: auto;
+    max-width: none;
     flex: 1 1 auto;
     align-self: stretch;
     padding-right: 0;
+    order: 2;
+  }
+  .deck-access-wrap {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.3rem;
+    margin: 0.25rem 0 0;
+    white-space: nowrap;
+    width: fit-content;
+    max-width: 100%;
+  }
+  .browse-item > .item-cb-wrap + .deck-item-card__link,
+  .browse-item > .item-cb-wrap + .browse-item__folder-link {
+    order: 1;
   }
   .browse-item__icon,
   .deck-item-icon {
@@ -785,6 +911,69 @@
 }
 #folder-picker-tree .picker-children {
   margin-top: 0.1rem;
+}
+
+/* Browse dialogs */
+dialog.modal {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+}
+dialog.modal::backdrop {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(2px);
+}
+.modal__surface {
+  width: min(92vw, 32rem);
+  margin: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--card-bg);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.modal__surface--wide {
+  width: min(92vw, 42rem);
+}
+.modal__header,
+.modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1rem 0.9rem;
+  background: var(--card-bg);
+  color: var(--text);
+}
+.modal__header {
+  border-bottom: 1px solid var(--border-color);
+}
+.modal__footer {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.9rem;
+}
+.modal__title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+.modal__body {
+  background: var(--card-bg);
+  color: var(--text);
+}
+.modal__body input,
+.modal__body select,
+.modal__body textarea {
+  background: var(--input-bg, var(--card-bg));
+  color: var(--text);
+  border-color: var(--border-color);
+}
+:root[data-theme="dark"] dialog.modal::backdrop,
+[data-theme="dark"] dialog.modal::backdrop {
+  background: rgba(2, 6, 23, 0.78);
 }
 </style>
 
@@ -1097,6 +1286,174 @@
       } finally { btn.disabled = false; }
     });
   });
+
+  // Access level change
+  document.querySelectorAll(".deck-access-select").forEach(sel => {
+    sel.addEventListener("change", async e => {
+      const deckId = sel.dataset.deckId;
+      const newLevel = sel.value;
+      const btn = sel;
+      btn.disabled = true;
+      try {
+        const r = await fetch("/api/v1/decks/" + deckId + "/access-level", {
+          method: "PUT",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ access_level: newLevel }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          alert(d.detail || "Failed to update access level");
+          // Revert
+          sel.value = sel.dataset._original || sel.options[0].value;
+        } else {
+          sel.dataset._original = newLevel;
+          // Update badge
+          const item = sel.closest(".browse-item");
+          if (item) {
+            item.dataset.accessLevel = newLevel;
+          }
+        }
+      } finally { btn.disabled = false; }
+    });
+    sel.dataset._original = sel.value;
+  });
+
+  // Security manage button
+  let _securityDeckId = null;
+  async function reloadSecurityModal() {
+    if (!_securityDeckId) return;
+    setTimeout(() => {
+      document.querySelector(".deck-security-btn[data-deck-id='"+_securityDeckId+"']")?.click();
+    }, 0);
+  }
+  document.querySelectorAll(".deck-security-btn").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const deckId = btn.dataset.deckId;
+      _securityDeckId = deckId;
+      const modal = document.getElementById("security-modal");
+      const title = document.getElementById("security-modal-title");
+      const list = document.getElementById("security-grants-list");
+      const grantError = document.getElementById("security-grant-error");
+      if (grantError) grantError.style.display = "none";
+
+      if (title) title.textContent = "Manage Access";
+      if (list) list.innerHTML = '<p class="muted" style="padding:1rem 0; text-align:center;">Loading...</p>';
+      if (modal) modal.showModal();
+
+      // Fetch current grants
+      try {
+        const r = await fetch("/api/v1/decks/" + deckId + "/access");
+        if (r.ok) {
+          const grants = await r.json();
+          if (list) {
+            if (!grants.length) {
+              list.innerHTML = '<p class="muted" style="padding:0.5rem 0; font-size:0.85rem;">No additional users granted access. Global decks are accessible to all.</p>';
+            } else {
+              list.innerHTML = grants.map(g => `
+                <div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0; border-bottom:1px solid var(--border-color); flex-wrap:wrap;">
+                  <span style="flex:1; min-width:120px; font-size:0.88rem; color:var(--text);">${g.user_email || g.user_id}</span>
+                  <select data-grant-id="${g.id}" data-deck-id="${deckId}" class="deck-access-select" style="min-width:80px; padding:0.2rem 0.4rem; font-size:0.8rem;">
+                    <option value="read" ${g.access_level==='read'?'selected':''}>Read</option>
+                    <option value="write" ${g.access_level==='write'?'selected':''}>Write</option>
+                    <option value="delete" ${g.access_level==='delete'?'selected':''}>Delete</option>
+                    <option value="none">None</option>
+                  </select>
+                  <button type="button" class="browse-btn browse-btn--sm browse-btn--danger" data-grant-id="${g.id}" data-deck-id="${deckId}" data-action="revoke" style="padding:0.2rem 0.5rem; font-size:0.78rem;">Revoke</button>
+                </div>
+              `).join("");
+
+              // Grant update
+              list.querySelectorAll("select[data-grant-id]").forEach(s => {
+                s.addEventListener("change", async e2 => {
+                  const grantId = s.dataset.grantId;
+                  const did = s.dataset.deckId;
+                  const level = s.value;
+                  if (level === "none") {
+                    const rr = await fetch("/api/v1/decks/" + did + "/access/" + grantId, {method:"DELETE"});
+                    if (!rr.ok) {
+                      alert("Failed to revoke access");
+                      return;
+                    }
+                    await reloadSecurityModal();
+                    return;
+                  }
+                  const rr = await fetch("/api/v1/decks/" + did + "/access/" + grantId, {
+                    method: "PUT",
+                    headers:{"Content-Type":"application/json"},
+                    body: JSON.stringify({access_level: level}),
+                  });
+                  if (!rr.ok) {
+                    const d = await rr.json().catch(()=>({}));
+                    alert(d.detail || "Failed to update access");
+                    await reloadSecurityModal();
+                    return;
+                  }
+                  await reloadSecurityModal();
+                });
+              });
+
+              // Revoke button
+              list.querySelectorAll("button[data-action='revoke']").forEach(b => {
+                b.addEventListener("click", async e2 => {
+                  const grantId = b.dataset.grantId;
+                  const did = b.dataset.deckId;
+                  if (!confirm("Revoke access?")) return;
+                  const r2 = await fetch("/api/v1/decks/" + did + "/access/" + grantId, {method:"DELETE"});
+                  if (!r2.ok) {
+                    alert("Failed to revoke access");
+                    return;
+                  }
+                  await reloadSecurityModal();
+                });
+              });
+            }
+          }
+        } else {
+          if (list) list.innerHTML = '<p class="muted" style="padding:1rem 0; color:#dc2626;">Failed to load access grants.</p>';
+        }
+      } catch {
+        if (list) list.innerHTML = '<p class="muted" style="padding:1rem 0;">Failed to load.</p>';
+      }
+    });
+  });
+
+  // Grant new user access from modal
+  const grantBtn = document.getElementById("security-grant-btn");
+  if (grantBtn) {
+    grantBtn.addEventListener("click", async () => {
+      if (!_securityDeckId) return;
+      const email = document.getElementById("security-grant-email")?.value?.trim();
+      const level = document.getElementById("security-grant-level")?.value;
+      const errEl = document.getElementById("security-grant-error");
+      if (!email) { if(errEl){errEl.textContent="Enter an email";errEl.style.display="block";} return; }
+      grantBtn.disabled = true;
+      try {
+        // First resolve email to user_id
+        const userR = await fetch("/api/v1/users/by-email?email=" + encodeURIComponent(email));
+        if (!userR.ok) {
+          if(errEl){errEl.textContent="User not found with that email.";errEl.style.display="block";}
+          return;
+        }
+        const targetUser = await userR.json();
+        const r = await fetch("/api/v1/decks/" + _securityDeckId + "/access", {
+          method: "POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({user_id: targetUser.id, access_level: level}),
+        });
+        if (r.ok) {
+          if(errEl) errEl.style.display = "none";
+          // Reload modal
+          document.getElementById("security-grant-email").value = "";
+          document.querySelector(".deck-security-btn[data-deck-id='"+_securityDeckId+"']")?.click();
+        } else {
+          const d = await r.json().catch(()=>({}));
+          if(errEl){errEl.textContent = d.detail || "Failed to grant access."; errEl.style.display="block";}
+        }
+      } finally { grantBtn.disabled = false; }
+    });
+  }
 })();
 </script>
 {% endblock %}

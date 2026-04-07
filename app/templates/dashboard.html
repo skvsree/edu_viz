@@ -139,10 +139,22 @@
           <textarea id="create-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ create_form.description }}</textarea>
         </div>
         {% if user.role == "system_admin" %}
-          <label class="checkbox-row">
-            <input type="checkbox" name="is_global" value="true" {% if create_form.is_global %}checked{% endif %} />
-            <span>Make this a global deck</span>
-          </label>
+          <div>
+            <label for="create-access-level">Access level</label>
+            <select id="create-access-level" name="access_level" style="padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
+              <option value="user" {% if create_form.access_level=='user' %}selected{% endif %}>Mine</option>
+              <option value="org" {% if create_form.access_level=='org' %}selected{% endif %}>Org</option>
+              <option value="global" {% if create_form.access_level=='global' %}selected{% endif %}>Global</option>
+            </select>
+          </div>
+        {% elif user.role == "admin" %}
+          <div>
+            <label for="create-access-level">Access level</label>
+            <select id="create-access-level" name="access_level" style="padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
+              <option value="user" {% if create_form.access_level=='user' %}selected{% endif %}>Mine</option>
+              <option value="org" {% if create_form.access_level=='org' %}selected{% endif %}>Org</option>
+            </select>
+          </div>
         {% endif %}
         <div class="deck-card__actions">
           <button type="submit" class="button">Create deck</button>
@@ -171,10 +183,22 @@
           <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_form.description }}</textarea>
         </div>
         {% if user.role == "system_admin" %}
-          <label class="checkbox-row">
-            <input type="checkbox" name="is_global" value="true" {% if edit_form.is_global %}checked{% endif %} />
-            <span>Make this a global deck</span>
-          </label>
+          <div>
+            <label for="edit-access-level">Access level</label>
+            <select id="edit-access-level" name="access_level" style="padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
+              <option value="user" {% if edit_form.access_level=='user' %}selected{% endif %}>Mine</option>
+              <option value="org" {% if edit_form.access_level=='org' %}selected{% endif %}>Org</option>
+              <option value="global" {% if edit_form.access_level=='global' %}selected{% endif %}>Global</option>
+            </select>
+          </div>
+        {% elif user.role == "admin" %}
+          <div>
+            <label for="edit-access-level">Access level</label>
+            <select id="edit-access-level" name="access_level" style="padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
+              <option value="user" {% if edit_form.access_level=='user' %}selected{% endif %}>Mine</option>
+              <option value="org" {% if edit_form.access_level=='org' %}selected{% endif %}>Org</option>
+            </select>
+          </div>
         {% endif %}
         <div class="deck-card__actions">
           <button type="submit" class="button">Save deck</button>
@@ -213,10 +237,22 @@
             >{{ create_form.description }}</textarea>
           </div>
           {% if user.role == "system_admin" %}
-            <label class="checkbox-row">
-              <input type="checkbox" name="is_global" value="true" {% if create_form.is_global %}checked{% endif %} />
-              <span>Make this a global deck</span>
-            </label>
+            <div>
+              <label for="modal-access-level">Access level</label>
+              <select id="modal-access-level" name="access_level" style="width:100%; padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
+                <option value="user" {% if create_form.access_level=='user' %}selected{% endif %}>Mine</option>
+                <option value="org" {% if create_form.access_level=='org' %}selected{% endif %}>Org</option>
+                <option value="global" {% if create_form.access_level=='global' %}selected{% endif %}>Global</option>
+              </select>
+            </div>
+          {% elif user.role == "admin" %}
+            <div>
+              <label for="modal-access-level">Access level</label>
+              <select id="modal-access-level" name="access_level" style="width:100%; padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
+                <option value="user" {% if create_form.access_level=='user' %}selected{% endif %}>Mine</option>
+                <option value="org" {% if create_form.access_level=='org' %}selected{% endif %}>Org</option>
+              </select>
+            </div>
           {% endif %}
           <button type="submit" class="button">Create deck</button>
         </form>

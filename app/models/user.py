@@ -28,3 +28,4 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     organization = relationship("Organization", back_populates="users")
+    deck_accesses = relationship("DeckAccess", back_populates="user", cascade="all, delete-orphan")
