@@ -9,49 +9,56 @@
   {# ── Main ──────────────────────────────────────────────────────────── #}
   <main class="browse-main" style="padding-left: 1.5rem;">
 
-    {# Breadcrumb #}
-    {% if breadcrumb or current_folder %}
-      <nav class="breadcrumb" aria-label="Folder navigation">
-        <a href="/decks/browse" class="breadcrumb__item">All</a>
-        {% for crumb_id, crumb_name in breadcrumb %}
-          <span class="breadcrumb__sep">›</span>
-          {% if loop.last %}
-            <span class="breadcrumb__item breadcrumb__item--current">{{ crumb_name }}</span>
-          {% else %}
-            <a href="/decks/browse?folder={{ crumb_id }}" class="breadcrumb__item">{{ crumb_name }}</a>
-          {% endif %}
-        {% endfor %}
-      </nav>
-    {% endif %}
+    <div class="browse-top-sticky">
+      {# Breadcrumb #}
+      {% if breadcrumb or current_folder %}
+        <nav class="breadcrumb" aria-label="Folder navigation">
+          <a href="/decks/browse" class="breadcrumb__item">All</a>
+          {% for crumb_id, crumb_name in breadcrumb %}
+            <span class="breadcrumb__sep">›</span>
+            {% if loop.last %}
+              <span class="breadcrumb__item breadcrumb__item--current">{{ crumb_name }}</span>
+            {% else %}
+              <a href="/decks/browse?folder={{ crumb_id }}" class="breadcrumb__item">{{ crumb_name }}</a>
+            {% endif %}
+          {% endfor %}
+        </nav>
+      {% endif %}
 
-    {# Header #}
-    <div class="browse-header">
-      <div>
-        <h1 class="browse-title">
-          {% if current_folder %}{{ current_folder.name }}{% else %}All{% endif %}
-        </h1>
+      {# Header #}
+      <div class="browse-header">
+        <div>
+          <h1 class="browse-title">
+            {% if current_folder %}{{ current_folder.name }}{% else %}All{% endif %}
+          </h1>
+        </div>
+        <div class="browse-header-right">
+          <form method="get" action="/decks/browse" class="browse-search">
+            <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
+            <input type="text" name="q" value="{{ q }}" placeholder="Search..." autocomplete="off" class="browse-search-input" />
+            <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost browse-search-submit" aria-label="Search" title="Search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-3.5-3.5"></path>
+              </svg>
+            </button>
+            {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">✕</a>{% endif %}
+          </form>
+        </div>
       </div>
-      <div class="browse-header-right">
-        <form method="get" action="/decks/browse" class="browse-search">
-          <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
-          <input type="text" name="q" value="{{ q }}" placeholder="Search..." autocomplete="off" class="browse-search-input" />
-          <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost" style="border:none; padding:0.35rem;">🔍</button>
-          {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">✕</a>{% endif %}
-        </form>
-      </div>
-    </div>
 
-    {# ── Action bar ──────────────────────────────────────────────────── #}
-    {% if can_manage_decks %}
-    <div class="browse-action-bar" id="browse-action-bar">
-      <div class="browse-action-bar__actions">
-        <button type="button" class="browse-btn browse-btn--icon" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
-        <button type="button" class="browse-btn browse-btn--icon browse-btn--ghost" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
-        <button type="button" class="browse-btn browse-btn--icon browse-btn--ghost" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
-        <button type="button" class="browse-btn browse-btn--icon browse-btn--ghost browse-btn--danger" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
+      {# ── Action bar ──────────────────────────────────────────────────── #}
+      {% if can_manage_decks %}
+      <div class="browse-action-bar" id="browse-action-bar">
+        <div class="browse-action-bar__actions">
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-new" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-rename" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-move" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-delete" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
+        </div>
       </div>
+      {% endif %}
     </div>
-    {% endif %}
 
     {# ── Content grid ────────────────────────────────────────────────── #}
     <div class="browse-content-scroll">
@@ -219,6 +226,13 @@
   max-height:calc(100vh - 8rem);
   min-height:0;
 }
+.browse-top-sticky {
+  position:sticky;
+  top:0;
+  z-index:6;
+  background:var(--bg, var(--background-color));
+  padding-bottom:0.5rem;
+}
 .browse-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem; flex-wrap:wrap; }
 .browse-content-scroll {
   flex:1 1 auto;
@@ -234,6 +248,19 @@
   padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:8px;
   background:var(--input-bg); color:var(--text); font-size:0.8rem; width:140px;
 }
+.browse-search-submit {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:2.25rem;
+  min-width:2.25rem;
+  padding:0.35rem;
+}
+.browse-search-submit svg {
+  width:1rem;
+  height:1rem;
+  display:block;
+}
 
 /* ── Action bar ─────────────────────────────────────────────────────── */
 .browse-action-bar {
@@ -241,7 +268,6 @@
   padding:0.5rem 0.75rem; margin-bottom:0.75rem;
   background:var(--card-bg); border:1px solid var(--border-color);
   border-radius:10px; overflow-x:auto;
-  position:sticky; top:0; z-index:5;
 }
 .browse-action-bar.has-selection { box-shadow: 0 0 0 1px rgba(59,130,246,0.25) inset; }
 .browse-action-bar__actions { display:flex; gap:0.375rem; flex-wrap:nowrap; white-space:nowrap; }
@@ -374,8 +400,39 @@
   background:var(--card-bg); color:var(--text);
   border-radius:12px; font-size:1.05rem; line-height:1;
   touch-action:manipulation;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 .browse-btn--icon:hover { background:var(--hover-bg); }
+.browse-btn--icon:disabled {
+  color:var(--muted-color);
+  background:var(--card-bg);
+  border-color:var(--border-color);
+  opacity:0.65;
+}
+.browse-btn--icon-new:not(:disabled) {
+  color:#15803d;
+  background:rgba(34,197,94,0.12);
+  border-color:rgba(34,197,94,0.35);
+}
+.browse-btn--icon-new:not(:disabled):hover { background:rgba(34,197,94,0.18); }
+.browse-btn--icon-rename:not(:disabled) {
+  color:#7c3aed;
+  background:rgba(124,58,237,0.12);
+  border-color:rgba(124,58,237,0.35);
+}
+.browse-btn--icon-rename:not(:disabled):hover { background:rgba(124,58,237,0.18); }
+.browse-btn--icon-move:not(:disabled) {
+  color:#2563eb;
+  background:rgba(37,99,235,0.12);
+  border-color:rgba(37,99,235,0.35);
+}
+.browse-btn--icon-move:not(:disabled):hover { background:rgba(37,99,235,0.18); }
+.browse-btn--icon-delete:not(:disabled) {
+  color:#dc2626;
+  background:rgba(220,38,38,0.12);
+  border-color:rgba(220,38,38,0.35);
+}
+.browse-btn--icon-delete:not(:disabled):hover { background:rgba(220,38,38,0.18); }
 .browse-btn--icon:focus-visible {
   outline:2px solid var(--accent);
   outline-offset:2px;
@@ -423,6 +480,9 @@
 @media (max-width: 640px) {
   .browse-main {
     max-height:calc(100vh - 6.5rem);
+  }
+  .browse-top-sticky {
+    padding-bottom:0.4rem;
   }
   .browse-grid {
     grid-template-columns: 1fr;
