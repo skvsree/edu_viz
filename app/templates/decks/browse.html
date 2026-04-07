@@ -236,7 +236,10 @@
   cursor:default;
   min-height:100px;
 }
-.browse-item:hover { box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+.browse-item {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+.browse-item:hover { box-shadow:0 4px 14px rgba(15,23,42,0.10); }
 .browse-item.is-selected { border-color:var(--accent); background:var(--active-bg); }
 
 /* Folder cards — theme aware */
@@ -320,7 +323,11 @@
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  color: color-mix(in srgb, var(--text) 72%, var(--muted) 28%);
+  color: color-mix(in srgb, #8b5cf6 44%, var(--text) 56%);
+}
+:root[data-theme="dark"] .deck-item-icon,
+[data-theme="dark"] .deck-item-icon {
+  color: color-mix(in srgb, #8b5cf6 28%, var(--text) 72%);
 }
 .deck-item-card__link:hover .deck-item-icon { opacity:0.7; }
 
@@ -385,18 +392,23 @@
   }
   .browse-item {
     min-height: unset;
-    padding: 0.8rem 0.9rem;
-    border-radius: 14px;
+    padding: 0.85rem 0.95rem;
+    border-radius: 16px;
     flex-direction: row;
     align-items: center;
     justify-content: flex-start;
     text-align: left;
-    gap: 0.75rem;
+    gap: 0.8rem;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.06);
   }
   .browse-item > .item-cb-wrap {
     position: static;
     order: 0;
     flex: 0 0 auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .item-cb {
     width: 22px;
@@ -411,6 +423,7 @@
     gap: 0.75rem;
     min-width: 0;
     flex: 1 1 auto;
+    align-self: stretch;
   }
   .browse-item__icon,
   .deck-item-icon {
