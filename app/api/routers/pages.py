@@ -450,8 +450,23 @@ def _dashboard_response(
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
 
+    def _folder_path_label(folder_id: UUID | None) -> str:
+        if not folder_id:
+            return "Root"
+        parts: list[str] = []
+        current_id: UUID | None = folder_id
+        while current_id:
+            node = db.get(Folder, current_id)
+            if not node:
+                break
+            parts.insert(0, node.name)
+            current_id = node.parent_id
+        return " / ".join(parts) if parts else "Root"
+
     # Filter deck_stats to only favorites (for display on dashboard)
     favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
+    for item in favorite_deck_stats:
+        setattr(item, "folder_path", _folder_path_label(getattr(item.deck, "folder_id", None)))
 
     # Folder context
     folders = []
