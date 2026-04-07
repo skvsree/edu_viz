@@ -235,9 +235,9 @@ Notes:
 
 | Role | Permissions |
 |------|-------------|
-| `system_admin` | Full access — manage all orgs, users, decks |
-| `admin` | Manage decks in their organization, manage card content |
-| `user` | Review and take tests on assigned/organization decks |
+| `system_admin` | Full platform access — manage all organizations, users, decks, deck scope, and sharing |
+| `admin` | Organization admin — manage users/org settings in their org, create/manage decks they own, and write/delete org-scope decks in their organization |
+| `user` | Standard user — create and manage their own decks, review accessible decks, and take tests when enabled |
 
 ## Deck access and sharing
 
