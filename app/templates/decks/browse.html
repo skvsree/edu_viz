@@ -101,7 +101,10 @@
                   <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
                 </svg>
               </span>
-              <span class="browse-item__name">{{ f.name }}</span>
+              <span class="browse-item__text">
+                <span class="browse-item__name">{{ f.name }}</span>
+                <span class="browse-item__desc">Folder</span>
+              </span>
             </a>
           </div>
         {% endfor %}
@@ -127,7 +130,10 @@
                   <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
                 </svg>
               </span>
-              <span class="browse-item__name">{{ f.name }}</span>
+              <span class="browse-item__text">
+                <span class="browse-item__name">{{ f.name }}</span>
+                <span class="browse-item__desc">Folder</span>
+              </span>
             </a>
           </div>
         {% endfor %}
@@ -264,7 +270,7 @@
   align-items:center;
   justify-content:center;
   line-height:1;
-  color: color-mix(in srgb, var(--text) 55%, var(--accent) 45%);
+  color: color-mix(in srgb, #a855f7 72%, var(--text) 28%);
 }
 .browse-item__icon svg,
 .deck-item-icon svg {
@@ -272,7 +278,36 @@
   height:100%;
   display:block;
 }
-.browse-item__name { font-weight:600; font-size:0.85rem; color:var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 0.25rem; }
+.browse-item__text,
+.deck-item__text {
+  display:flex;
+  flex-direction:column;
+  gap:0.18rem;
+  min-width:0;
+  width:100%;
+}
+.browse-item__name,
+.deck-item-name {
+  font-weight:600;
+  font-size:0.85rem;
+  color:var(--text);
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  padding:0 0.25rem;
+}
+.browse-item__desc,
+.deck-item-desc {
+  font-size:0.74rem;
+  line-height:1.25;
+  color:var(--muted-color, var(--muted));
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  padding:0 0.25rem;
+}
 
 /* Link wrappers */
 .browse-item__folder-link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.4rem; width:100%; justify-content:center; }
@@ -383,10 +418,23 @@
     height: 2rem;
     flex: 0 0 auto;
   }
+  .browse-item__text,
+  .deck-item__text {
+    align-items: flex-start;
+  }
   .browse-item__name,
   .deck-item-name {
     padding: 0;
     font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .browse-item__desc,
+  .deck-item-desc {
+    padding: 0;
+    font-size: 0.8rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
