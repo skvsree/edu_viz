@@ -11,7 +11,14 @@
   {% endif %}
 
   <a href="/decks/{{ deck.id }}" class="deck-item-card__link">
-    <span class="deck-item-icon">📄</span>
+    <span class="deck-item-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="3" width="16" height="18" rx="2"></rect>
+        <path d="M8 8h8"></path>
+        <path d="M8 12h8"></path>
+        <path d="M8 16h5"></path>
+      </svg>
+    </span>
     <span class="deck-item-name">{{ deck.name }}</span>
   </a>
 </article>

@@ -96,7 +96,11 @@
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
             <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
-              <span class="browse-item__icon">📁</span>
+              <span class="browse-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"></path>
+                </svg>
+              </span>
               <span class="browse-item__name">{{ f.name }}</span>
             </a>
           </div>
@@ -118,7 +122,11 @@
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
             <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
-              <span class="browse-item__icon">📁</span>
+              <span class="browse-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"></path>
+                </svg>
+              </span>
               <span class="browse-item__name">{{ f.name }}</span>
             </a>
           </div>
@@ -241,7 +249,21 @@
 .item-cb-wrap { display:flex; align-items:center; justify-content:center; }
 
 /* Cards */
-.browse-item__icon { font-size:2.5rem; line-height:1; }
+.browse-item__icon {
+  width:2.5rem;
+  height:2.5rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1;
+  color:#2563eb;
+}
+.browse-item__icon svg,
+.deck-item-icon svg {
+  width:100%;
+  height:100%;
+  display:block;
+}
 .browse-item__name { font-weight:600; font-size:0.85rem; color:var(--text); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 0.25rem; }
 
 /* Link wrappers */
@@ -249,6 +271,14 @@
 .browse-item__folder-link:hover .browse-item__icon { opacity:0.7; }
 
 .deck-item-card__link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.35rem; width:100%; justify-content:center; }
+.deck-item-icon {
+  width:2.5rem;
+  height:2.5rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--text-dim, #64748b);
+}
 .deck-item-card__link:hover .deck-item-icon { opacity:0.7; }
 
 /* ── Buttons ─────────────────────────────────────────────────────────── */
