@@ -464,9 +464,17 @@ def _dashboard_response(
         return " / ".join(parts) if parts else "Root"
 
     # Filter deck_stats to only favorites (for display on dashboard)
-    favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
-    for item in favorite_deck_stats:
-        setattr(item, "folder_path", _folder_path_label(getattr(item.deck, "folder_id", None)))
+    favorite_deck_stats = [
+        {
+            "deck": item.deck,
+            "new_count": item.new_count,
+            "due_count": item.due_count,
+            "reviewed_today": item.reviewed_today,
+            "folder_path": _folder_path_label(getattr(item.deck, "folder_id", None)),
+        }
+        for item in deck_stats
+        if str(item.deck.id) in favorite_deck_ids
+    ]
 
     # Folder context
     folders = []
