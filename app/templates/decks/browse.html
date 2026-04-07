@@ -42,7 +42,7 @@
                 <path d="m20 20-3.5-3.5"></path>
               </svg>
             </button>
-            {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost">✕</a>{% endif %}
+            {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost browse-search-clear" aria-label="Clear search" title="Clear search">✕</a>{% endif %}
           </form>
         </div>
       </div>
@@ -248,18 +248,26 @@
   padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:8px;
   background:var(--input-bg); color:var(--text); font-size:0.8rem; width:140px;
 }
-.browse-search-submit {
+.browse-search-submit,
+.browse-search-clear {
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  width:2.25rem;
-  min-width:2.25rem;
+  width:2.6rem;
+  min-width:2.6rem;
+  height:2.6rem;
   padding:0.35rem;
+  font-size:1.15rem;
+  line-height:1;
 }
 .browse-search-submit svg {
-  width:1rem;
-  height:1rem;
+  width:1.25rem;
+  height:1.25rem;
   display:block;
+}
+.browse-search-clear {
+  font-size:1.35rem;
+  font-weight:600;
 }
 
 /* ── Action bar ─────────────────────────────────────────────────────── */
