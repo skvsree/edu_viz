@@ -144,6 +144,88 @@ def accessible_deck_clause(user: "User") -> "ColumnElement[bool]":
     return clauses[0] & clauses[1]
 
 
+# ── Browse tab helpers ────────────────────────────────────────────────────────
+
+TAB_ALL = "all"
+TAB_GLOBAL = "global"
+TAB_ORG = "org"
+TAB_USER = "user"
+
+TAB_LABELS = {
+    TAB_ALL: "All",
+    TAB_GLOBAL: "Global",
+    TAB_ORG: "Org",
+    TAB_USER: "Mine",
+}
+
+TAB_ORDER = [TAB_ALL, TAB_GLOBAL, TAB_ORG, TAB_USER]
+
+
+def get_browse_tabs(user: "User") -> list[dict]:
+    """Return list of visible tabs for the given user's role."""
+    if is_system_admin(user):
+        return [{"key": TAB_ALL, "label": TAB_LABELS[TAB_ALL]}, {"key": TAB_GLOBAL, "label": TAB_LABELS[TAB_GLOBAL]}, {"key": TAB_ORG, "label": TAB_LABELS[TAB_ORG]}, {"key": TAB_USER, "label": TAB_LABELS[TAB_USER]}]
+    if user.role == ROLE_ADMIN:
+        return [{"key": TAB_GLOBAL, "label": TAB_LABELS[TAB_GLOBAL]}, {"key": TAB_ORG, "label": TAB_LABELS[TAB_ORG]}, {"key": TAB_USER, "label": TAB_LABELS[TAB_USER]}]
+    return [{"key": TAB_GLOBAL, "label": TAB_LABELS[TAB_GLOBAL]}, {"key": TAB_USER, "label": TAB_LABELS[TAB_USER]}]
+
+
+def default_tab(user: "User") -> str:
+    """Return the default active tab for a user."""
+    tabs = get_browse_tabs(user)
+    return tabs[0]["key"] if tabs else TAB_GLOBAL
+
+
+def browse_filter_clause(user: "User", tab: str) -> "ColumnElement[bool]":
+    """Return SQLAlchemy filter clause for the given browse tab."""
+    from sqlalchemy import or_
+
+    from app.models import Deck
+
+    base = accessible_deck_clause(user)
+
+    if tab == TAB_ALL:
+        # system_admin sees everything — no extra filter
+        return base
+    if tab == TAB_GLOBAL:
+        return base & Deck.is_global.is_(True)
+    if tab == TAB_ORG:
+        if user.organization_id:
+            return base & Deck.organization_id.isnot(None) & Deck.is_global.is_(False)
+        return base & Deck.organization_id.isnot(None)  # fallback: show org if user has one
+    if tab == TAB_USER:
+        return base & Deck.organization_id.is_(None) & Deck.is_global.is_(False)
+    return base
+
+
+def can_write_deck(user: "User", deck: "Deck") -> bool:
+    """Check if user can write/modify a specific deck."""
+    if is_system_admin(user):
+        return True
+    if deck.is_deleted:
+        return False
+    # Org decks: org_admin can write
+    if user.role == ROLE_ADMIN and user.organization_id and deck.organization_id == user.organization_id:
+        return True
+    # Personal decks: owner can write
+    if deck.organization_id is None and deck.user_id == user.id:
+        return True
+    return False
+
+
+def can_write_tab(user: "User", tab: str) -> bool:
+    """Check if user has write access to any deck in the given tab."""
+    if is_system_admin(user):
+        return True
+    if tab == TAB_GLOBAL:
+        return False  # global is read-only for non-system-admins
+    if tab == TAB_ORG:
+        return user.role == ROLE_ADMIN and user.organization_id is not None
+    if tab == TAB_USER:
+        return True  # users can always write their own decks
+    return False
+
+
 @dataclass(slots=True)
 class DashboardDeckStats:
     deck: Deck

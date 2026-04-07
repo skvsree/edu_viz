@@ -35,20 +35,33 @@
       {# Breadcrumb #}
       {% if breadcrumb or current_folder %}
         <nav class="breadcrumb browse-breadcrumb" aria-label="Folder navigation">
-          <a href="/decks/browse" class="breadcrumb__item">All</a>
+          <a href="/decks/browse{% if active_tab %}?tab={{ active_tab }}{% endif %}" class="breadcrumb__item">All</a>
           {% for crumb_id, crumb_name in breadcrumb %}
             <span class="breadcrumb__sep">›</span>
             {% if loop.last %}
               <span class="breadcrumb__item breadcrumb__item--current">{{ crumb_name }}</span>
             {% else %}
-              <a href="/decks/browse?folder={{ crumb_id }}" class="breadcrumb__item">{{ crumb_name }}</a>
+              <a href="/decks/browse?folder={{ crumb_id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="breadcrumb__item">{{ crumb_name }}</a>
             {% endif %}
           {% endfor %}
         </nav>
       {% endif %}
 
+      {# ── Tab bar ──────────────────────────────────────────────────────── #}
+      {% if show_tabs and not q and not current_folder %}
+      <nav class="browse-tab-bar" aria-label="Browse categories">
+        {% for tab in tabs %}
+          {% set tab_href = '/decks/browse?tab=' + tab.key %}
+          <a href="{{ tab_href }}"
+             class="browse-tab{% if tab.key == active_tab %} browse-tab--active{% endif %}">
+            {{ tab.label }}
+          </a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+
       {# ── Action bar ──────────────────────────────────────────────────── #}
-      {% if can_manage_decks %}
+      {% if show_action_bar %}
       <div class="browse-action-bar" id="browse-action-bar">
         <div class="browse-action-bar__actions">
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-new" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
@@ -67,7 +80,7 @@
       {% if decks %}
         <div class="browse-grid">
           {% for deck in decks %}
-            {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
+            {{ browse_item_macro(deck, favorite_deck_ids, show_action_bar) }}
           {% endfor %}
         </div>
         {% if total_pages > 1 %}
@@ -90,7 +103,7 @@
             <div class="item-cb-wrap">
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
-            <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
+            <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-item__folder-link">
               <span class="browse-item__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
@@ -104,7 +117,7 @@
           </div>
         {% endfor %}
         {% for deck in decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
+          {{ browse_item_macro(deck, favorite_deck_ids, show_action_bar) }}
         {% endfor %}
       </div>
       {% if not subfolders and not decks %}
@@ -119,7 +132,7 @@
             <div class="item-cb-wrap">
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
-            <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
+            <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-item__folder-link">
               <span class="browse-item__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                   <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
@@ -133,7 +146,7 @@
           </div>
         {% endfor %}
         {% for deck in root_decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
+          {{ browse_item_macro(deck, favorite_deck_ids, show_action_bar) }}
         {% endfor %}
       </div>
       {% if not root_folders and not root_decks %}
@@ -310,6 +323,27 @@
 .browse-action-bar.has-selection { box-shadow: 0 0 0 1px rgba(59,130,246,0.25) inset; }
 .browse-action-bar__actions { display:flex; gap:0.375rem; flex-wrap:nowrap; white-space:nowrap; }
 .browse-action-bar__actions .browse-btn { flex:0 0 auto; }
+
+/* ── Tab bar ─────────────────────────────────────────────────────────── */
+.browse-tab-bar {
+  display:flex; gap:0.25rem; align-items:center;
+  padding:0.5rem 0.75rem; margin-bottom:0.5rem;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  border-radius:8px; flex-wrap:wrap;
+}
+.browse-tab {
+  display:inline-flex; align-items:center;
+  padding:0.3rem 0.75rem; border-radius:6px;
+  font-size:0.85rem; font-weight:500;
+  color:var(--text-color); text-decoration:none;
+  transition:background 0.15s, color 0.15s;
+}
+.browse-tab:hover { background:var(--hover-bg); }
+.browse-tab--active {
+  background:var(--accent-color,#3b82f6);
+  color:#fff;
+}
+.browse-tab--active:hover { background:var(--accent-color,#2563eb); }
 
 /* ── Grid ────────────────────────────────────────────────────────────── */
 .browse-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:0.75rem; }

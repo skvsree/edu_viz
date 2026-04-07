@@ -26,12 +26,20 @@ from app.services.access import (
     ROLE_ADMIN,
     ROLE_SYSTEM_ADMIN,
     ROLE_USER,
+    TAB_ALL,
+    TAB_GLOBAL,
+    TAB_LABELS,
+    TAB_ORG,
+    TAB_USER,
+    browse_filter_clause,
     can_access_deck,
     can_manage_deck,
     can_manage_decks,
     can_open_test_center,
     can_use_ai_generation,
+    can_write_tab,
     deck_has_test_content,
+    get_browse_tabs,
     normalize_deck_name,
 )
 from app.services.ai_auth import (
@@ -788,7 +796,6 @@ def browse_decks(
     db: Session = Depends(get_db),
 ):
     from app.models import Folder
-    from app.services.access import accessible_deck_clause
     from app.api.routers.folders import get_folder_tree, _count_decks_in_folder, _count_subfolders
 
     q = request.query_params.get("q", "").strip()
@@ -797,6 +804,14 @@ def browse_decks(
         folder_id = UUID(folder_param) if folder_param else None
     except ValueError:
         folder_id = None
+
+    # Tab handling (only for root-level, not folder or search)
+    tabs = get_browse_tabs(user)
+    tab_param = request.query_params.get("tab", "")
+    if tab_param not in {t["key"] for t in tabs}:
+        tab_param = tabs[0]["key"] if tabs else TAB_GLOBAL
+    show_tabs = bool(tabs)
+    show_action_bar = can_write_tab(user, tab_param)
 
     folder_tree = get_folder_tree(user=user, db=db)
 
@@ -842,18 +857,26 @@ def browse_decks(
             "subfolder_count": _count_subfolders(db, f.id),
         })
 
-    # Base query for decks
+    # Base query — apply tab filter only at root level (no folder, no search)
+    apply_tab_filter = not folder_id and not q
+    if apply_tab_filter:
+        deck_filter = browse_filter_clause(user, tab_param)
+    else:
+        deck_filter = True  # no tab filter in folder view or search
+
     base_q = (
         select(Deck)
         .options(selectinload(Deck.organization), selectinload(Deck.tags))
-        .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
+        .where(Deck.is_deleted.is_(False))
     )
+    if deck_filter is not True:
+        base_q = base_q.where(deck_filter)
 
-    # Folder filter
+    # Folder filter (only when inside a folder)
     if folder_id and not q:
         base_q = base_q.where(Deck.folder_id == folder_id)
 
-    # Search
+    # Search (search always shows accessible decks across all tabs)
     if q:
         from app.services.access import normalize_deck_name
         from sqlalchemy import or_
@@ -889,19 +912,16 @@ def browse_decks(
 
     # Root-level decks only (no folder, for root view)
     root_decks = []
-    if not q:
-        root_decks = (
-            db.execute(
-                select(Deck)
-                .options(selectinload(Deck.organization), selectinload(Deck.tags))
-                .where(
-                    accessible_deck_clause(user),
-                    Deck.is_deleted.is_(False),
-                    Deck.folder_id == None,
-                )
-                .order_by(Deck.is_global.desc(), Deck.created_at.desc())
-            ).scalars().all()
+    if not q and not folder_id:
+        root_q = (
+            select(Deck)
+            .options(selectinload(Deck.organization), selectinload(Deck.tags))
+            .where(Deck.is_deleted.is_(False))
         )
+        if deck_filter is not True:
+            root_q = root_q.where(deck_filter)
+        root_q = root_q.where(Deck.folder_id == None).order_by(Deck.is_global.desc(), Deck.created_at.desc())
+        root_decks = db.execute(root_q).scalars().all()
 
     # Favorite IDs
     fav_rows = db.execute(
@@ -931,6 +951,11 @@ def browse_decks(
             "current_folder": current_folder,
             "folder_tree": folder_tree,
             "can_manage_decks": can_manage_decks(user),
+            # Tab context
+            "tabs": tabs,
+            "active_tab": tab_param,
+            "show_tabs": show_tabs,
+            "show_action_bar": show_action_bar,
         },
     )
 

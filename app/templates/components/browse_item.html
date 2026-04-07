@@ -1,10 +1,10 @@
-{% macro browse_item(deck, favorite_deck_ids, can_manage=False) %}
+{% macro browse_item(deck, favorite_deck_ids, can_write=False) %}
 <article class="browse-item browse-item--deck"
   data-item-type="deck"
   data-item-id="{{ deck.id }}"
   data-deck-id="{{ deck.id }}"
 >
-  {% if can_manage %}
+  {% if can_write %}
     <div class="item-cb-wrap">
       <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
     </div>
