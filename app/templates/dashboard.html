@@ -418,18 +418,34 @@
         if (e.key === "Escape") {
           inlineCreate.style.display = "none";
         }
-        if (!/[a-zA-Z0-9_]/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab"].includes(e.key) && e.key.length === 1) {
-          e.preventDefault();
-        }
       });
-      // Validate on submit
-      newFolderInput.closest("form")?.addEventListener("submit", (e) => {
-        if (!/^[a-zA-Z0-9_]+$/.test(newFolderInput.value)) {
-          e.preventDefault();
+      const validateNewFolderName = () => {
+        const value = newFolderInput.value;
+        if (!value.trim()) {
+          newFolderInput.setCustomValidity("Folder name is required");
+          if (createError) {
+            createError.textContent = "Folder name is required.";
+            createError.style.display = "block";
+          }
+          return false;
+        }
+        if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+          newFolderInput.setCustomValidity("Use only letters, numbers, and underscore");
           if (createError) {
             createError.textContent = "Only letters, numbers, and underscores allowed.";
             createError.style.display = "block";
           }
+          return false;
+        }
+        newFolderInput.setCustomValidity("");
+        if (createError) createError.style.display = "none";
+        return true;
+      };
+      newFolderInput.addEventListener("input", validateNewFolderName);
+      newFolderInput.closest("form")?.addEventListener("submit", (e) => {
+        if (!validateNewFolderName()) {
+          e.preventDefault();
+          newFolderInput.reportValidity();
         }
       });
     }
@@ -459,12 +475,39 @@
       });
     }
     if (renameInput) {
+      const renameError = document.getElementById("folder-rename-error");
       renameInput.addEventListener("keydown", (e) => {
         if (e.key === "Escape") {
           if (inlineRename) inlineRename.style.display = "none";
         }
-        if (!/^[a-zA-Z0-9_]$/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","Tab"].includes(e.key) && e.key.length === 1) {
+      });
+      const validateRenameFolderName = () => {
+        const value = renameInput.value;
+        if (!value.trim()) {
+          renameInput.setCustomValidity("Folder name is required");
+          if (renameError) {
+            renameError.textContent = "Folder name is required.";
+            renameError.style.display = "block";
+          }
+          return false;
+        }
+        if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+          renameInput.setCustomValidity("Use only letters, numbers, and underscore");
+          if (renameError) {
+            renameError.textContent = "Only letters, numbers, and underscores allowed.";
+            renameError.style.display = "block";
+          }
+          return false;
+        }
+        renameInput.setCustomValidity("");
+        if (renameError) renameError.style.display = "none";
+        return true;
+      };
+      renameInput.addEventListener("input", validateRenameFolderName);
+      renameForm?.addEventListener("submit", (e) => {
+        if (!validateRenameFolderName()) {
           e.preventDefault();
+          renameInput.reportValidity();
         }
       });
     }

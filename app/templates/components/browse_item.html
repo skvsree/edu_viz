@@ -10,6 +10,20 @@
     </div>
   {% endif %}
 
+  <button
+    type="button"
+    class="deck-favorite-btn{% if deck.id|string in favorite_deck_ids %} deck-favorite-btn--active{% endif %}"
+    data-deck-id="{{ deck.id }}"
+    aria-label="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
+    title="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
+  >
+    {% if deck.id|string in favorite_deck_ids %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+    {% else %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+    {% endif %}
+  </button>
+
   <a href="/decks/{{ deck.id }}" class="deck-item-card__link">
     <span class="deck-item-icon" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="currentColor">

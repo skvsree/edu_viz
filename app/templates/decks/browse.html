@@ -339,9 +339,42 @@
 /* Deck cards */
 .browse-item--deck { background:var(--card-bg); }
 
-/* Top-right checkbox */
+/* Top-right controls */
 .browse-item > .item-cb-wrap {
   position:absolute; top:0.5rem; right:0.5rem;
+}
+.deck-favorite-btn {
+  position:absolute;
+  top:0.5rem;
+  left:0.5rem;
+  width:2rem;
+  height:2rem;
+  padding:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--border-color);
+  border-radius:999px;
+  background:var(--card-bg);
+  color:var(--muted-color, var(--muted));
+  cursor:pointer;
+  transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+  z-index:1;
+}
+.deck-favorite-btn:hover {
+  background:var(--hover-bg);
+  border-color:#f59e0b;
+  color:#f59e0b;
+}
+.deck-favorite-btn--active {
+  color:#f59e0b;
+  border-color:rgba(245,158,11,0.4);
+  background:rgba(245,158,11,0.12);
+}
+.deck-favorite-btn svg {
+  display:block;
+  width:1rem;
+  height:1rem;
 }
 .item-cb {
   width:20px;
@@ -933,26 +966,22 @@
     if (modal) modal.showModal();
   });
 
-  // Folder name validation/filter for modal inputs
+  // Folder name validation for modal inputs - show errors, do not mutate typed text
   ["create-folder-name", "rename-folder-name"].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener("keydown", e => {
-      if (!/[a-zA-Z0-9_]/.test(e.key) && !["Backspace","Delete","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Tab","Escape","Enter","Home","End"].includes(e.key) && !e.ctrlKey && !e.metaKey && e.key.length === 1)
-        e.preventDefault();
-    });
-    el.addEventListener("input", () => {
-      const cleaned = el.value.replace(/[^a-zA-Z0-9_]/g, "");
-      if (cleaned !== el.value) el.value = cleaned;
-      el.setCustomValidity(el.value && !/^[a-zA-Z0-9_]+$/.test(el.value) ? "Use only letters, numbers, and underscore" : "");
-    });
-    el.addEventListener("invalid", () => {
-      if (!el.value) {
+    const validateFolderName = () => {
+      const value = el.value;
+      if (!value.trim()) {
         el.setCustomValidity("Folder name is required");
-      } else if (!/^[a-zA-Z0-9_]+$/.test(el.value)) {
+      } else if (!/^[a-zA-Z0-9_]+$/.test(value)) {
         el.setCustomValidity("Use only letters, numbers, and underscore");
+      } else {
+        el.setCustomValidity("");
       }
-    });
+    };
+    el.addEventListener("input", validateFolderName);
+    el.addEventListener("invalid", validateFolderName);
   });
 
   // Modal backdrop close
