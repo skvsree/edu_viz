@@ -316,9 +316,15 @@
 
 {% if can_manage_decks %}
   {# Folder picker modal for multi-move #}
-  {% with folder_tree=folder_tree, current_folder_id=current_folder.id if current_folder else None %}
-    {% include "components/folder_picker_modal.html" %}
-  {% endwith %}
+  {% if current_folder %}
+    {% with folder_tree=folder_tree, current_folder_id=current_folder.id %}
+      {% include "components/folder_picker_modal.html" %}
+    {% endwith %}
+  {% else %}
+    {% with folder_tree=folder_tree, current_folder_id=None %}
+      {% include "components/folder_picker_modal.html" %}
+    {% endwith %}
+  {% endif %}
 
   {# Inline folder rename form (hidden) #}
   <div id="inline-folder-rename" style="display:none; margin-bottom: 1rem;">
