@@ -370,6 +370,13 @@
     });
   }
 
+  // Close folder-picker-modal buttons
+  document.querySelectorAll('[data-modal-close="folder-picker-modal"]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.getElementById("folder-picker-modal")?.close();
+    });
+  });
+
   function populatePicker() {
     const container = document.getElementById("folder-picker-tree");
     if (!container) return;
