@@ -149,12 +149,15 @@
         <h2 class="modal__title">Move to folder</h2>
         <button type="button" class="modal__close" data-modal-close="folder-picker-modal">✕</button>
       </header>
-      <div class="modal__body fp-tree-wrap" style="min-height:200px; max-height:400px; overflow-y:auto;">
-        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.875rem;padding:0.25rem 0;">
-          <input type="radio" name="target_folder" value="" checked />
-          <span>📁 Root (no folder)</span>
-        </label>
-        <div id="folder-picker-tree" class="fp-tree"></div>
+      <div class="modal__body" style="min-height:250px; max-height:450px; overflow-y:auto;">
+        <div style="display:flex;flex-direction:column;gap:0.25rem;">
+          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.875rem;padding:0.3rem 0.5rem;border-radius:6px;" id="root-option-label">
+            <input type="radio" name="target_folder" value="" id="root-radio" checked />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Root (no folder)</span>
+          </label>
+          <div id="folder-picker-tree"></div>
+        </div>
         <p id="folder-picker-error" class="error-text" style="display:none;"></p>
       </div>
       <footer class="modal__footer">
@@ -372,107 +375,41 @@
     if (!container) return;
     container.innerHTML = "";
 
-    function buildBranch(n, depth=0) {
-      const hasChildren = n.children?.length > 0;
-      const row = document.createElement("div");
-      row.className = "fp-row";
-      row.style.paddingLeft = (depth * 1.25) + "rem";
+    if (!folderTreeData || folderTreeData.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);font-size:0.875rem;padding:0.5rem 0;">No folders yet. Create one first.</p>';
+      return;
+    }
 
-      if (hasChildren) {
-        // Collapsible folder with chevron toggle
-        const chev = document.createElement("button");
-        chev.type = "button";
-        chev.className = "fp-chevron";
-        chev.setAttribute("aria-label", "Expand");
-        chev.innerHTML = "&#9660;";
-        chev.addEventListener("click", () => {
-          const expanded = chev.getAttribute("data-expanded") === "true";
-          chev.setAttribute("data-expanded", String(!expanded));
-          chev.innerHTML = expanded ? "&#9658;" : "&#9660;";
-          childDiv.style.display = expanded ? "none" : "block";
-        });
-        chev.setAttribute("data-expanded", "true");
+    const rootLabel = document.getElementById("root-option-label");
+    const rootRadio = document.getElementById("root-radio");
 
-        const icon = document.createElement("svg");
-        icon.setAttribute("width", "16");
-        icon.setAttribute("height", "16");
-        icon.setAttribute("viewBox", "0 0 24 24");
-        icon.setAttribute("fill", "none");
-        icon.setAttribute("stroke", "currentColor");
-        icon.setAttribute("stroke-width", "1.5");
-        icon.setAttribute("stroke-linecap", "round");
-        icon.setAttribute("stroke-linejoin", "round");
-        icon.innerHTML = '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>';
+    let pickerTree = null;
 
-        const label = document.createElement("label");
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = "target_folder";
-        radio.value = n.id;
-        label.appendChild(radio);
-        label.appendChild(icon.cloneNode(true));
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "fp-name";
-        nameSpan.textContent = n.name;
-        label.appendChild(nameSpan);
-
-        row.appendChild(chev);
-        row.appendChild(label);
-
-        const childDiv = document.createElement("div");
-        childDiv.className = "fp-children";
-        for (const child of n.children) {
-          childDiv.appendChild(buildBranch(child, 0));
+    // Use treejs
+    pickerTree = new Tree("#folder-picker-tree", {
+      data: folderTreeData,
+      closeDepth: 1,
+      values: [],  // no pre-selected
+      onChange: function () {
+        // Sync: if a folder is selected in tree, deselect root
+        if (pickerTree && pickerTree.values.length > 0) {
+          rootRadio.checked = false;
         }
-        row.appendChild(childDiv);
-      } else {
-        // Leaf folder — no chevron, just icon + name + radio
-        const placeholder = document.createElement("span");
-        placeholder.className = "fp-chevron";
-        placeholder.style.visibility = "hidden";
-        placeholder.innerHTML = "&#9658;";
+      },
+    });
 
-        const icon = document.createElement("svg");
-        icon.setAttribute("width", "16");
-        icon.setAttribute("height", "16");
-        icon.setAttribute("viewBox", "0 0 24 24");
-        icon.setAttribute("fill", "none");
-        icon.setAttribute("stroke", "currentColor");
-        icon.setAttribute("stroke-width", "1.5");
-        icon.setAttribute("stroke-linecap", "round");
-        icon.setAttribute("stroke-linejoin", "round");
-        icon.innerHTML = '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>';
-
-        const label = document.createElement("label");
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = "target_folder";
-        radio.value = n.id;
-        label.appendChild(radio);
-        label.appendChild(icon);
-        const nameSpan = document.createElement("span");
-        nameSpan.className = "fp-name";
-        nameSpan.textContent = n.name;
-        label.appendChild(nameSpan);
-
-        row.appendChild(placeholder);
-        row.appendChild(label);
+    // When root radio is clicked, clear tree selection
+    rootRadio.addEventListener("change", () => {
+      if (rootRadio.checked && pickerTree) {
+        pickerTree.values = [];
       }
-      return row;
-    }
-
-    for (const n of folderTreeData) {
-      container.appendChild(buildBranch(n));
-    }
-
-    if (!folderTreeData.length) {
-      container.innerHTML = '<p style="color:var(--text-dim);font-size:0.8rem;padding:0.5rem 0;">No folders yet</p>';
-    }
+    });
   }
 
   document.getElementById("picker-confirm")?.addEventListener("click", async () => {
-    const target = document.querySelector('input[name="target_folder"]:checked')?.value ?? "";
-    const folderIds = [...document.querySelectorAll('input[name="target_folder"]:checked')].map(i => i.value).filter(Boolean);
+    // Get selected folder from treejs, or root if root radio is checked
+    const rootRadio = document.getElementById("root-radio");
+    const folderId = rootRadio.checked ? null : (pickerTree ? pickerTree.values[0] || null : null);
     const folders = selected.filter(i => i.type === "folder").map(i => i.id);
     const decks = selected.filter(i => i.type === "deck").map(i => i.id);
     let ok = true;
@@ -480,7 +417,7 @@
       const r = await fetch("/api/v1/decks/move", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ deck_ids: decks, folder_id: folderIds[0] || null }),
+        body: JSON.stringify({ deck_ids: decks, folder_id: folderId }),
       });
       if (!r.ok) ok = false;
     }
@@ -489,7 +426,7 @@
         const r = await fetch("/api/v1/folders/" + fid + "/move", {
           method: "PUT",
           headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ parent_id: folderIds[0] || null }),
+          body: JSON.stringify({ parent_id: folderId }),
         });
         if (!r.ok) ok = false;
       }
