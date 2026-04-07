@@ -97,8 +97,8 @@
             </div>
             <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
               <span class="browse-item__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"></path>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
                 </svg>
               </span>
               <span class="browse-item__name">{{ f.name }}</span>
@@ -123,8 +123,8 @@
             </div>
             <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
               <span class="browse-item__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"></path>
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
                 </svg>
               </span>
               <span class="browse-item__name">{{ f.name }}</span>
@@ -344,13 +344,54 @@
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .browse-grid { grid-template-columns:repeat(auto-fill, minmax(100px,1fr)); gap:0.5rem; }
-  .browse-item { padding:0.625rem; min-height:80px; }
-  .item-cb { width:22px; height:22px; }
-  .browse-item__icon { font-size:2rem; }
-  .deck-item-icon { font-size:2rem; }
-  .browse-item__name { font-size:0.75rem; }
-  .deck-item-name { font-size:0.75rem; }
+  .browse-grid {
+    grid-template-columns: 1fr;
+    gap: 0.625rem;
+  }
+  .browse-item {
+    min-height: unset;
+    padding: 0.8rem 0.9rem;
+    border-radius: 14px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 0.75rem;
+  }
+  .browse-item > .item-cb-wrap {
+    position: static;
+    order: 0;
+    flex: 0 0 auto;
+  }
+  .item-cb {
+    width: 22px;
+    height: 22px;
+  }
+  .browse-item__folder-link,
+  .deck-item-card__link {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 0.75rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .browse-item__icon,
+  .deck-item-icon {
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+  }
+  .browse-item__name,
+  .deck-item-name {
+    padding: 0;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
   .browse-action-bar { padding:0.5rem; gap:0.5rem; }
   .browse-action-bar__actions { margin-left:0; flex-wrap:wrap; }
   .browse-title { font-size:1rem; }
