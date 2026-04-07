@@ -54,3 +54,35 @@
 - Global/Org badge and access icon may sit side by side
 - Star on the right, not overlapping checkbox
 - Avoid extra right-edge clipping by keeping some right padding in `.browse-content-scroll`
+
+## Deck access model
+- Deck visibility scope lives on `Deck.access_level` with values:
+  - `global`: anyone can read
+  - `org`: users in the same organization can read
+  - `user`: only the owner can read unless explicitly shared
+- Per-user deck grants live in `deck_accesses` / `DeckAccess`.
+- Per-user grant levels are:
+  - `none`
+  - `read`
+  - `write`
+  - `delete`
+- Access grants are per deck, per user, unique by `(deck_id, user_id)`.
+- Owner always has read/write/delete on their own deck.
+- System admin always has full access.
+- Org admin can write/delete org-scope decks in their own organization.
+- Explicit per-user grants can expand access beyond the deck scope.
+- A `read` grant allows viewing a user-scope deck even if the user is not the owner.
+- A `write` grant allows modifying the deck.
+- A `delete` grant allows deleting the deck.
+
+## Changing access
+- Changing the deck scope (`global` / `org` / `user`) is separate from granting per-user deck access.
+- Only the owner can change a deck's scope by default.
+- System admin can change any deck scope.
+- Regular users cannot promote a deck to `global`.
+- `org` scope requires org-admin capability.
+- Granting/revoking per-user deck access is allowed for:
+  - deck owner
+  - system admin
+  - org admin for org-scope decks in their own organization
+- In the UI, the scope selector controls deck scope, while the security/manage-access action is for per-user grants.
