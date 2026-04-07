@@ -27,7 +27,7 @@
                 <path d="m20 20-3.5-3.5"></path>
               </svg>
             </button>
-            {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost browse-search-clear" aria-label="Clear search" title="Clear search">✕</a>{% endif %}
+            {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost browse-search-clear" aria-label="Clear search" title="Clear search"><span aria-hidden="true">✕</span></a>{% endif %}
           </form>
         </div>
       </div>
@@ -254,6 +254,7 @@
   display:inline-flex;
   align-items:center;
   justify-content:center;
+  align-self:center;
   width:2.75rem;
   min-width:2.75rem;
   height:2.75rem;
@@ -261,15 +262,22 @@
   font-size:1.15rem;
   line-height:1;
   border-radius:12px;
+  vertical-align:middle;
 }
 .browse-search-submit svg {
   width:1.35rem;
   height:1.35rem;
   display:block;
+  flex:0 0 auto;
 }
 .browse-search-clear {
   font-size:1.5rem;
   font-weight:600;
+}
+.browse-search-clear span {
+  display:block;
+  line-height:1;
+  transform:translateY(-1px);
 }
 
 /* ── Action bar ─────────────────────────────────────────────────────── */
@@ -321,8 +329,23 @@
 .browse-item > .item-cb-wrap {
   position:absolute; top:0.5rem; right:0.5rem;
 }
-.item-cb { width:20px; height:20px; accent-color:var(--accent); cursor:pointer; }
-.item-cb-wrap { display:flex; align-items:center; justify-content:center; }
+.item-cb {
+  width:20px;
+  height:20px;
+  margin:0;
+  padding:0;
+  display:block;
+  accent-color:var(--accent);
+  cursor:pointer;
+  vertical-align:middle;
+}
+.item-cb-wrap {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:20px;
+  height:20px;
+}
 
 /* Cards */
 .browse-item__icon {
