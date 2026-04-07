@@ -6,16 +6,18 @@
 - UX direction is intentionally calm, minimal, and professional rather than "gamified".
 
 ## Branch strategy
-- `main`: active development branch — all new features land here.
+- `main`: stable base branch.
+- `feature/folder_structure`: active branch for nested folder organization and browse/dashboard folder UX.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
-- Unless told otherwise, new work happens on `main` and gets deployed from there.
+- Current live deploy is running from `/opt/edu_viz` on `feature/folder_structure`.
+- Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from the branch currently used by production.
 
 ## Stack / architecture
 - Python 3.12
 - FastAPI app entry: `app.main:app`
 - Templates: `app/templates`
 - Static assets: `app/static`
-- Styles: `app/static/styles.css`
+- Styles: mostly inline per-page styles in templates plus shared CSS in `app/static/styles.css`
 - DB: PostgreSQL via SQLAlchemy
 - Connection pooling: PgBouncer (transaction mode) in Docker Compose
 - Migrations: Alembic
@@ -33,6 +35,16 @@
   - auth routes: `app/api/routers/auth.py`
   - legacy compatibility shim: `app/services/azure_b2c.py`
 - Do not hardcode tenant/app values in code or docs. Keep secrets only in env files / deploy config.
+
+## Folder feature notes
+- Nested folders are implemented with `Folder` model + `Deck.folder_id`.
+- Main files for folder UX: `app/api/routers/folders.py`, `app/api/routers/pages.py`, `app/templates/dashboard.html`, `app/templates/decks/browse.html`.
+- `DashboardDeckStats` is a slotted dataclass. Do not attach ad-hoc attributes to it in page handlers.
+- Real `DashboardDeckStats` fields are `deck`, `cards_reviewed`, `cards_due`, `accuracy`, `last_reviewed`.
+- Dashboard favorites folder labels should be passed as template-safe dict data instead of mutating stats objects.
+- Browse page should keep the top controls sticky while only the deck/folder list scrolls inside `.browse-content-scroll`.
+- Avoid reintroducing old left padding on browse mobile layout; it creates obvious dead space.
+- When dashboard/browse breaks, reproduce once and inspect `docker logs edu_viz-app-1` immediately for the real traceback.
 
 ## Roles / organizations model
 - Roles: `user`, `admin`, `system_admin`.
@@ -70,10 +82,13 @@
 ## Deployment notes
 - Live deployment path: `/opt/edu_viz`.
 - Runtime uses Docker Compose.
+- Production code is baked into the image, not bind-mounted.
+- Current production branch is `feature/folder_structure`.
 - Common deploy flow:
-  1. Pull/merge to `main`
-  2. Deploy with `docker compose up --build -d`
-  3. Test on `https://qa.edu.selviz.in`
+  1. Confirm branch/status in `/opt/edu_viz`
+  2. Commit and push the active branch
+  3. Deploy with `docker compose up --build -d app`
+  4. Reproduce and inspect `docker logs edu_viz-app-1` if anything fails
 - `entrypoint.sh` waits for Postgres, runs `alembic upgrade head`, then starts Uvicorn.
 - Static assets are cache-busted through `static_asset_url()` in `app/api/routers/pages.py`, which hashes file contents and serves `/assets/<version>/...` URLs.
 - Because of hashed asset URLs, CSS/image changes normally do not need manual cache purges after deploy.

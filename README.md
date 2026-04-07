@@ -258,6 +258,9 @@ EduViz supports nested folders for deck organization.
 - Breadcrumbs are shown while browsing inside folders.
 - Folder names allow only letters, numbers, and underscore (`[a-zA-Z0-9_]+`).
 - Moving a folder into itself or one of its descendants is blocked server-side and prevented in the browse picker UI.
+- Browse keeps the search + action area sticky while the folder/deck list scrolls below it.
+- Mobile browse layout removes extra left padding and tightens action/search spacing to avoid dead space.
+- Dashboard favorites show each deck's folder path label.
 
 Relevant APIs:
 
