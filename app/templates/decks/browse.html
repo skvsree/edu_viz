@@ -7,7 +7,7 @@
 <div class="browse-layout">
 
   {# ── Main ──────────────────────────────────────────────────────────── #}
-  <main class="browse-main" style="padding-left: 1.5rem;">
+  <main class="browse-main">
 
     <div class="browse-top-sticky">
       {# Header #}
@@ -217,14 +217,17 @@
 
 <style>
 /* ── Layout ────────────────────────────────────────────────────────── */
-.browse-layout { display:flex; gap:1.5rem; align-items:flex-start; flex-direction:column; }
+.browse-layout { display:flex; gap:1rem; align-items:flex-start; flex-direction:column; }
 
 /* ── Main ───────────────────────────────────────────────────────────── */
 .browse-main {
-  flex:1; min-width:0; width:100%;
-  display:flex; flex-direction:column;
-  max-height:calc(100vh - 8rem);
+  flex:1;
+  min-width:0;
+  width:100%;
+  display:flex;
+  flex-direction:column;
   min-height:0;
+  padding-left:1.5rem;
 }
 .browse-top-sticky {
   position:sticky;
@@ -233,13 +236,11 @@
   background:var(--bg, var(--background-color));
   padding-bottom:0.5rem;
 }
-.browse-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem; flex-wrap:wrap; }
+.browse-header { display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap; }
 .browse-content-scroll {
-  flex:1 1 auto;
-  min-height:0;
-  overflow-y:auto;
-  overflow-x:hidden;
-  padding-right:0.25rem;
+  width:100%;
+  overflow:visible;
+  padding-right:0;
 }
 .browse-title { font-size:1.25rem; font-weight:700; margin:0; }
 .browse-header-right { display:flex; gap:0.5rem; align-items:center; }
@@ -318,8 +319,36 @@
   min-height:100px;
 }
 @media (max-width: 720px) {
+  .browse-main {
+    padding-left: 0;
+  }
+  .browse-top-sticky {
+    position:static;
+    padding-bottom:0.35rem;
+  }
+  .browse-header {
+    align-items:flex-start;
+  }
+  .browse-header-right,
+  .browse-search {
+    width:100%;
+  }
+  .browse-search-input {
+    flex:1 1 auto;
+    width:auto;
+    min-width:0;
+  }
+  .browse-action-bar {
+    padding:0.4rem 0.5rem;
+    margin-bottom:0.5rem;
+  }
+  .browse-grid {
+    grid-template-columns:1fr;
+    gap:0.65rem;
+  }
   .browse-item {
-    padding-left: 0.4rem;
+    min-height:88px;
+    padding-left:0.4rem;
   }
 }
 .browse-item {
