@@ -144,12 +144,12 @@
 {% if can_manage_decks %}
   {# Folder picker #}
   <dialog id="folder-picker-modal" class="modal">
-    <div class="modal__surface">
+    <div class="modal__surface modal__surface--wide">
       <header class="modal__header">
         <h2 class="modal__title">Move to folder</h2>
         <button type="button" class="modal__close" data-modal-close="folder-picker-modal">✕</button>
       </header>
-      <div class="modal__body" style="min-height:200px;">
+      <div class="modal__body fp-tree-wrap" style="min-height:200px; max-height:400px; overflow-y:auto;">
         <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.875rem;padding:0.25rem 0;">
           <input type="radio" name="target_folder" value="" checked />
           <span>📁 Root (no folder)</span>
@@ -296,12 +296,14 @@
 
 /* ── Folder picker ───────────────────────────────────────────────────── */
 .fp-tree { margin-top: 0.25rem; }
-.fp-details, .fp-leaf { padding: 0.15rem 0; }
-.fp-details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.3rem; font-size: 0.875rem; color: var(--text); }
-.fp-details > summary::-webkit-details-marker { display: none; }
-.fp-details > summary:hover .fp-label { color: var(--accent); }
-.fp-leaf { padding-left: 1.5rem; }
-.fp-children { margin-left: 0.5rem; border-left: 1px solid var(--border); padding-left: 0.25rem; }
+.fp-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0; flex-wrap: wrap; }
+.fp-chevron { background: none; border: none; padding: 0 0.15rem; cursor: pointer; color: var(--text-dim); font-size: 0.7rem; line-height: 1; display: inline-flex; align-items: center; }
+.fp-chevron:hover { color: var(--accent); }
+.fp-row label { display: flex; align-items: center; gap: 0.3rem; cursor: pointer; font-size: 0.875rem; color: var(--text); padding: 0.1rem 0.25rem; border-radius: 4px; flex: 1; }
+.fp-row label:hover { background: var(--hover-bg); }
+.fp-row label input { accent-color: var(--accent); cursor: pointer; }
+.fp-name { color: var(--text); }
+.fp-children { margin-left: 0.75rem; border-left: 1px solid var(--border); padding-left: 0.5rem; display: block; }
 .fp-toggle { font-size: 0.6rem; color: var(--text-dim); width: 1rem; display: inline-block; text-align: center; flex-shrink: 0; }
 .fp-label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; flex: 1; }
 .fp-label input { cursor: pointer; }
@@ -372,32 +374,91 @@
 
     function buildBranch(n, depth=0) {
       const hasChildren = n.children?.length > 0;
-      const item = document.createElement(hasChildren ? "details" : "div");
-      item.className = hasChildren ? "fp-details" : "fp-leaf";
-      item.style.paddingLeft = (depth * 1.25) + "rem";
-      item.open = depth === 0;
+      const row = document.createElement("div");
+      row.className = "fp-row";
+      row.style.paddingLeft = (depth * 1.25) + "rem";
 
       if (hasChildren) {
-        const summary = document.createElement("summary");
-        summary.innerHTML = `<span class="fp-toggle" aria-hidden="true">▶</span><label class="fp-label"><input type="radio" name="target_folder" value="${n.id}" /> <span>📁 ${n.name}</span></label>`;
-        item.appendChild(summary);
-
-        const childGroup = document.createElement("div");
-        childGroup.className = "fp-children";
-        for (const child of n.children) {
-          childGroup.appendChild(buildBranch(child, 0));
-        }
-        item.appendChild(childGroup);
-
-        // toggle chevron on open/close
-        item.addEventListener("toggle", () => {
-          const chev = summary.querySelector(".fp-toggle");
-          if (chev) chev.textContent = item.open ? "▼" : "▶";
+        // Collapsible folder with chevron toggle
+        const chev = document.createElement("button");
+        chev.type = "button";
+        chev.className = "fp-chevron";
+        chev.setAttribute("aria-label", "Expand");
+        chev.innerHTML = "&#9660;";
+        chev.addEventListener("click", () => {
+          const expanded = chev.getAttribute("data-expanded") === "true";
+          chev.setAttribute("data-expanded", String(!expanded));
+          chev.innerHTML = expanded ? "&#9658;" : "&#9660;";
+          childDiv.style.display = expanded ? "none" : "block";
         });
+        chev.setAttribute("data-expanded", "true");
+
+        const icon = document.createElement("svg");
+        icon.setAttribute("width", "16");
+        icon.setAttribute("height", "16");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.setAttribute("fill", "none");
+        icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "1.5");
+        icon.setAttribute("stroke-linecap", "round");
+        icon.setAttribute("stroke-linejoin", "round");
+        icon.innerHTML = '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>';
+
+        const label = document.createElement("label");
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "target_folder";
+        radio.value = n.id;
+        label.appendChild(radio);
+        label.appendChild(icon.cloneNode(true));
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "fp-name";
+        nameSpan.textContent = n.name;
+        label.appendChild(nameSpan);
+
+        row.appendChild(chev);
+        row.appendChild(label);
+
+        const childDiv = document.createElement("div");
+        childDiv.className = "fp-children";
+        for (const child of n.children) {
+          childDiv.appendChild(buildBranch(child, 0));
+        }
+        row.appendChild(childDiv);
       } else {
-        item.innerHTML = `<label class="fp-label"><input type="radio" name="target_folder" value="${n.id}" /> <span>📁 ${n.name}</span></label>`;
+        // Leaf folder — no chevron, just icon + name + radio
+        const placeholder = document.createElement("span");
+        placeholder.className = "fp-chevron";
+        placeholder.style.visibility = "hidden";
+        placeholder.innerHTML = "&#9658;";
+
+        const icon = document.createElement("svg");
+        icon.setAttribute("width", "16");
+        icon.setAttribute("height", "16");
+        icon.setAttribute("viewBox", "0 0 24 24");
+        icon.setAttribute("fill", "none");
+        icon.setAttribute("stroke", "currentColor");
+        icon.setAttribute("stroke-width", "1.5");
+        icon.setAttribute("stroke-linecap", "round");
+        icon.setAttribute("stroke-linejoin", "round");
+        icon.innerHTML = '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>';
+
+        const label = document.createElement("label");
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = "target_folder";
+        radio.value = n.id;
+        label.appendChild(radio);
+        label.appendChild(icon);
+        const nameSpan = document.createElement("span");
+        nameSpan.className = "fp-name";
+        nameSpan.textContent = n.name;
+        label.appendChild(nameSpan);
+
+        row.appendChild(placeholder);
+        row.appendChild(label);
       }
-      return item;
+      return row;
     }
 
     for (const n of folderTreeData) {
