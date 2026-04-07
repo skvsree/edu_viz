@@ -194,6 +194,9 @@ def browse_filter_clause(user: "User", tab: str) -> "ColumnElement[bool]":
             return base & Deck.organization_id.isnot(None) & Deck.is_global.is_(False)
         return base & Deck.organization_id.isnot(None)  # fallback: show org if user has one
     if tab == TAB_USER:
+        # Personal decks only: not global, not org — must have user_id = current user
+        if user.organization_id:
+            return base & Deck.organization_id.is_(None) & Deck.is_global.is_(False) & Deck.user_id == user.id
         return base & Deck.organization_id.is_(None) & Deck.is_global.is_(False)
     return base
 

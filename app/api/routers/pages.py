@@ -929,6 +929,10 @@ def browse_decks(
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
 
+    # Writable deck IDs for per-deck checkbox visibility
+    from app.services.access import can_write_deck as _cwd
+    writable_deck_ids = {str(d.id) for d in decks if _cwd(user, d)}
+
     return templates.TemplateResponse(
         "decks/browse.html",
         {
@@ -936,6 +940,7 @@ def browse_decks(
             "user": user,
             "decks": decks,
             "favorite_deck_ids": favorite_deck_ids,
+            "writable_deck_ids": writable_deck_ids,
             "q": q,
             "page": page,
             "total_pages": total_pages,
@@ -956,6 +961,7 @@ def browse_decks(
             "active_tab": tab_param,
             "show_tabs": show_tabs,
             "show_action_bar": show_action_bar,
+            "writable_deck_ids": writable_deck_ids,
         },
     )
 

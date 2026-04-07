@@ -7,9 +7,10 @@
 
 ## Branch strategy
 - `main`: stable base branch.
-- `feature/folder_structure`: active branch for nested folder organization and browse/dashboard folder UX.
+- `feature/deck_segregation`: active branch for role-based browse tabs and deck access control.
+- `feature/folder_structure`: completed — nested folder organization and browse/dashboard folder UX.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
-- Current live deploy is running from `/opt/edu_viz` on `feature/folder_structure`.
+- Current live deploy is running from `/opt/edu_viz` on `feature/deck_segregation`.
 - Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from the branch currently used by production.
 
 ## Stack / architecture

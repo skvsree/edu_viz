@@ -1,8 +1,10 @@
-{% macro browse_item(deck, favorite_deck_ids, can_write=False) %}
+{% macro browse_item(deck, favorite_deck_ids, writable_deck_ids) %}
+{% set can_write = deck.id|string in writable_deck_ids %}
 <article class="browse-item browse-item--deck"
   data-item-type="deck"
   data-item-id="{{ deck.id }}"
   data-deck-id="{{ deck.id }}"
+  data-can-write="{{ 'true' if can_write else 'false' }}"
 >
   {% if can_write %}
     <div class="item-cb-wrap">

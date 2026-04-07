@@ -80,7 +80,7 @@
       {% if decks %}
         <div class="browse-grid">
           {% for deck in decks %}
-            {{ browse_item_macro(deck, favorite_deck_ids, show_action_bar) }}
+            {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids) }}
           {% endfor %}
         </div>
         {% if total_pages > 1 %}
@@ -99,7 +99,7 @@
       <div class="browse-grid">
         {% for f in subfolders %}
           <div class="browse-item browse-item--folder"
-            data-item-type="folder" data-item-id="{{ f.id }}">
+            data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="true">
             <div class="item-cb-wrap">
               <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
             </div>
@@ -117,7 +117,7 @@
           </div>
         {% endfor %}
         {% for deck in decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, show_action_bar) }}
+          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids) }}
         {% endfor %}
       </div>
       {% if not subfolders and not decks %}
@@ -146,7 +146,7 @@
           </div>
         {% endfor %}
         {% for deck in root_decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, show_action_bar) }}
+          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids) }}
         {% endfor %}
       </div>
       {% if not root_folders and not root_decks %}
@@ -850,8 +850,9 @@
   }
 
   function syncSelected() {
+    // Only include items the user can actually write
     selected = getAllCheckboxes()
-      .filter(cb => cb.checked)
+      .filter(cb => cb.checked && cb.closest("[data-can-write='true']"))
       .map(cb => ({ type: cb.dataset.type, id: cb.dataset.id }));
     const n = selected.length;
     if (moveBtn) moveBtn.disabled = n === 0;
