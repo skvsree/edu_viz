@@ -233,10 +233,18 @@
 .browse-item:hover { box-shadow:0 2px 8px rgba(0,0,0,0.07); }
 .browse-item.is-selected { border-color:var(--accent); background:var(--active-bg); }
 
-/* Folder cards — colored */
-.browse-item--folder { background:#eff6ff; border-color:#bfdbfe; }
-.browse-item--folder:hover { background:#dbeafe; }
-.browse-item--folder.is-selected { border-color:var(--accent); background:#dbeafe; }
+/* Folder cards — theme aware */
+.browse-item--folder {
+  background: color-mix(in srgb, var(--surface, var(--card-bg)) 88%, var(--accent) 12%);
+  border-color: color-mix(in srgb, var(--border, var(--border-color)) 72%, var(--accent) 28%);
+}
+.browse-item--folder:hover {
+  background: color-mix(in srgb, var(--surface, var(--card-bg)) 82%, var(--accent) 18%);
+}
+.browse-item--folder.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface, var(--card-bg)) 76%, var(--accent) 24%);
+}
 
 /* Deck cards */
 .browse-item--deck { background:var(--card-bg); }
@@ -256,7 +264,7 @@
   align-items:center;
   justify-content:center;
   line-height:1;
-  color:#2563eb;
+  color: color-mix(in srgb, var(--text) 55%, var(--accent) 45%);
 }
 .browse-item__icon svg,
 .deck-item-icon svg {
@@ -277,7 +285,7 @@
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  color:var(--text-dim, #64748b);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted) 28%);
 }
 .deck-item-card__link:hover .deck-item-icon { opacity:0.7; }
 
