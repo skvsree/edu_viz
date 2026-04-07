@@ -668,11 +668,13 @@ def create_folder(
     folder = Folder(name=name, parent_id=parent_uuid, user_id=user.id)
     db.add(folder)
     db.commit()
+    db.refresh(folder)
 
     return RedirectResponse(
-        "/dashboard" + (f"?folder={parent_id}" if parent_id else "") + "?success=Folder+created",
+        f"/decks/browse?folder={folder.id}&success=Folder+created",
         status_code=303,
     )
+
 
 
 @router.post("/folders/{folder_id}/rename")
@@ -722,7 +724,7 @@ def rename_folder(
     db.commit()
 
     return RedirectResponse(
-        "/dashboard" + (f"?folder={folder.parent_id}" if folder.parent_id else "") + "?success=Folder+renamed",
+        f"/decks/browse?folder={folder_id}&success=Folder+renamed",
         status_code=303,
     )
 
@@ -799,7 +801,6 @@ def browse_decks(
     for f in db.execute(
         select(Folder).where(
             Folder.parent_id == folder_id,
-            Folder.user_id == user.id,
         ).order_by(Folder.name.asc())
     ).scalars().all():
         subfolders.append({
@@ -813,7 +814,6 @@ def browse_decks(
     for f in db.execute(
         select(Folder).where(
             Folder.parent_id == None,
-            Folder.user_id == user.id,
         ).order_by(Folder.name.asc())
     ).scalars().all():
         root_folders.append({

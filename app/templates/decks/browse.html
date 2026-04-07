@@ -48,16 +48,14 @@
         <span class="browse-action-bar__count" id="selection-count">
           <span id="sel-count-num">0</span> selected
         </span>
-        <button type="button" class="browse-btn browse-btn--sm" id="new-folder-btn">+ Folder</button>
       </div>
-      <div id="inline-folder-create" style="display:none; margin-bottom:0.5rem;">
-        <form method="post" action="/folders" style="display:flex; gap:0.375rem; align-items:center;">
+      <div id="inline-folder-create" style="display:block; margin-bottom:0.5rem;">
+        <form method="post" action="/folders" style="display:flex; gap:0.375rem; align-items:center; flex-wrap:wrap;">
           <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
           <input type="text" name="name" id="new-folder-name"
-            placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
-            style="padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.8rem; width:160px;" />
-          <button type="submit" class="browse-btn browse-btn--sm">Create</button>
-          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="cancel-folder-create">✕</button>
+            placeholder="New folder" pattern="[a-zA-Z0-9_]+" maxlength="255" required
+            style="padding:0.375rem 0.5rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.8rem; width:180px;" />
+          <button type="submit" class="browse-btn browse-btn--sm">+ Folder</button>
         </form>
       </div>
       <div class="browse-action-bar__actions">
@@ -103,11 +101,11 @@
             </a>
           </div>
         {% endfor %}
-        {% for deck in root_decks %}
+        {% for deck in decks %}
           {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
         {% endfor %}
       </div>
-      {% if not subfolders and not root_decks %}
+      {% if not subfolders and not decks %}
         <div class="browse-empty"><h3>This folder is empty</h3></div>
       {% endif %}
 
@@ -147,15 +145,9 @@
     <div class="modal__surface modal__surface--wide">
       <header class="modal__header">
         <h2 class="modal__title">Move to folder</h2>
-        <button type="button" class="modal__close" data-modal-close="folder-picker-modal">✕</button>
       </header>
       <div class="modal__body" style="min-height:250px; max-height:450px; overflow-y:auto;">
         <div style="display:flex;flex-direction:column;gap:0.25rem;">
-          <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.875rem;padding:0.3rem 0.5rem;border-radius:6px;" id="root-option-label">
-            <input type="radio" name="target_folder" value="" id="root-radio" checked />
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <span>Root (no folder)</span>
-          </label>
           <div id="folder-picker-tree"></div>
         </div>
         <p id="folder-picker-error" class="error-text" style="display:none;"></p>
@@ -207,12 +199,12 @@
 
 /* ── Action bar ─────────────────────────────────────────────────────── */
 .browse-action-bar {
-  display:none; align-items:center; justify-content:space-between;
+  display:flex; align-items:center; justify-content:space-between;
   padding:0.5rem 0.75rem; margin-bottom:0.75rem;
   background:var(--card-bg); border:1px solid var(--border-color);
   border-radius:10px; flex-wrap:wrap; gap:0.5rem;
 }
-.browse-action-bar.has-selection { display:flex; }
+.browse-action-bar.has-selection { box-shadow: 0 0 0 1px rgba(59,130,246,0.25) inset; }
 .browse-action-bar__left { display:flex; align-items:center; gap:0.5rem; }
 .browse-action-bar__count { font-size:0.8rem; color:var(--muted-color); min-width:60px; }
 #sel-count-num { font-weight:700; color:var(--accent); }
@@ -327,17 +319,113 @@
   .browse-item__actions { bottom:0.375rem; }
   .deck-item-card__actions { bottom:0.375rem; }
 }
+
+#folder-picker-tree .picker-node-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  outline: none;
+}
+#folder-picker-tree .picker-node-btn:hover {
+  background: var(--surface-hover, rgba(255,255,255,0.04));
+  border-color: rgba(255,255,255,0.08);
+}
+#folder-picker-tree .picker-node-btn.picker-node-selected {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(96, 165, 250, 0.9);
+  color: #000000;
+}
+#folder-picker-tree .picker-node-btn.picker-node-selected .picker-node-icon,
+#folder-picker-tree .picker-node-btn.picker-node-selected .picker-node-text {
+  color: #000000;
+  font-weight: 600;
+  opacity: 1;
+}
+#folder-picker-tree .picker-node-btn.picker-node-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+#folder-picker-tree .picker-node-btn.picker-node-disabled:hover {
+  background: transparent;
+  border-color: rgba(255,255,255,0.08);
+}
+#folder-picker-tree .picker-node {
+  margin-bottom: 0.2rem;
+}
+#folder-picker-tree .picker-children {
+  margin-top: 0.1rem;
+}
 </style>
 
 {# ── JS ──────────────────────────────────────────────────────────────── #}
 <script>
 (() => {
-  const folderTreeData = JSON.parse(document.getElementById("folder-tree-data")?.textContent || "[]");
+  const rawFolderTreeData = JSON.parse(document.getElementById("folder-tree-data")?.textContent || "[]");
+  const normalizeTreeData = (nodes) => (nodes || []).map((node) => ({
+    ...node,
+    text: node.text || node.name || "",
+    children: normalizeTreeData(node.children || []),
+  }));
+  const folderTreeData = normalizeTreeData(rawFolderTreeData);
   const moveBtn = document.getElementById("move-btn");
   const deleteBtn = document.getElementById("delete-btn");
   const countNum = document.getElementById("sel-count-num");
   const actionBar = document.getElementById("browse-action-bar");
   let selected = [];
+  let pickerTree = null;
+  let pickerSelectedFolderId = null;
+  let pickerBlockedFolderIds = new Set();
+
+  function collectBlockedFolderIds() {
+    const selectedFolderIds = selected.filter(i => i.type === "folder").map(i => String(i.id));
+    const blocked = new Set(selectedFolderIds);
+
+    const walk = (node, ancestorBlocked = false) => {
+      const nodeId = String(node.id);
+      const nextBlocked = ancestorBlocked || blocked.has(nodeId);
+      if (ancestorBlocked) blocked.add(nodeId);
+      (node.children || []).forEach(child => walk(child, nextBlocked));
+    };
+
+    (folderTreeData || []).forEach(node => walk(node, false));
+    return blocked;
+  }
+
+  function setPickerSelection(folderId) {
+    const normalizedFolderId = folderId || null;
+    if (normalizedFolderId && pickerBlockedFolderIds.has(String(normalizedFolderId))) {
+      const err = document.getElementById("folder-picker-error");
+      if (err) {
+        err.textContent = "You cannot move a folder into itself or its child folder.";
+        err.style.display = "block";
+      }
+      return;
+    }
+
+    pickerSelectedFolderId = normalizedFolderId;
+
+    const buttons = document.querySelectorAll("#folder-picker-tree .picker-node-btn");
+    buttons.forEach((btn) => {
+      const active = String(btn.dataset.folderId) === String(pickerSelectedFolderId);
+      const disabled = pickerBlockedFolderIds.has(String(btn.dataset.folderId));
+      btn.classList.toggle("picker-node-selected", !!active);
+      btn.classList.toggle("picker-node-disabled", !!disabled);
+      btn.setAttribute("aria-disabled", disabled ? "true" : "false");
+      btn.title = disabled ? "Cannot move into itself or descendant" : "";
+    });
+  }
 
   function getAllCheckboxes() {
     return [...document.querySelectorAll(".item-cb")];
@@ -377,56 +465,92 @@
     });
   });
 
+  function renderPickerNodes(nodes, depth = 0) {
+    return (nodes || []).map((node) => {
+      const children = node.children && node.children.length
+        ? `<div class="picker-children">${renderPickerNodes(node.children, depth + 1)}</div>`
+        : "";
+      return `
+        <div class="picker-node" data-folder-id="${node.id}" style="margin-left:${depth * 16}px;">
+          <button type="button" class="picker-node-btn" data-folder-id="${node.id}">
+            <span class="picker-node-icon">📁</span>
+            <span class="picker-node-text">${node.text || node.name || ""}</span>
+          </button>
+          ${children}
+        </div>
+      `;
+    }).join("");
+  }
+
   function populatePicker() {
     const container = document.getElementById("folder-picker-tree");
+    const err = document.getElementById("folder-picker-error");
     if (!container) return;
     container.innerHTML = "";
+    pickerTree = null;
+    pickerSelectedFolderId = null;
+    pickerBlockedFolderIds = collectBlockedFolderIds();
+    if (err) {
+      err.style.display = "none";
+      err.textContent = "";
+    }
 
     if (!folderTreeData || folderTreeData.length === 0) {
       container.innerHTML = '<p style="color:var(--text-dim);font-size:0.875rem;padding:0.5rem 0;">No folders yet. Create one first.</p>';
+      setPickerSelection(null);
       return;
     }
 
-    const rootLabel = document.getElementById("root-option-label");
-    const rootRadio = document.getElementById("root-radio");
-
-    let pickerTree = null;
-
-    // Use treejs in radio mode (single select)
-    pickerTree = new Tree("#folder-picker-tree", {
-      data: folderTreeData,
-      closeDepth: 1,
-      selectMode: "radio",
-      values: [],
-      onChange: function () {
-        if (pickerTree && pickerTree.values.length > 0) {
-          rootRadio.checked = false;
+    container.innerHTML = renderPickerNodes(folderTreeData);
+    container.querySelectorAll('.picker-node-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (pickerBlockedFolderIds.has(String(btn.dataset.folderId))) {
+          if (err) {
+            err.textContent = "You cannot move a folder into itself or its child folder.";
+            err.style.display = "block";
+          }
+          return;
         }
-      },
+        if (err) {
+          err.style.display = "none";
+          err.textContent = "";
+        }
+        setPickerSelection(btn.dataset.folderId);
+      });
     });
-
-    // When root radio is clicked, clear tree selection
-    rootRadio.addEventListener("change", () => {
-      if (rootRadio.checked && pickerTree) {
-        pickerTree.values = [];
-      }
-    });
+    setPickerSelection(null);
   }
 
   document.getElementById("picker-confirm")?.addEventListener("click", async () => {
-    // Get selected folder from treejs, or root if root radio is checked
-    const rootRadio = document.getElementById("root-radio");
-    const folderId = rootRadio.checked ? null : (pickerTree ? pickerTree.values[0] || null : null);
+    const folderId = pickerSelectedFolderId;
     const folders = selected.filter(i => i.type === "folder").map(i => i.id);
     const decks = selected.filter(i => i.type === "deck").map(i => i.id);
     let ok = true;
+    let errorMessage = "";
+
+    if (folderId && folders.includes(folderId)) {
+      const err = document.getElementById("folder-picker-error");
+      if (err) {
+        err.textContent = "You cannot move a folder into itself.";
+        err.style.display = "block";
+      }
+      return;
+    }
     if (decks.length) {
       const r = await fetch("/api/v1/decks/move", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({ deck_ids: decks, folder_id: folderId }),
       });
-      if (!r.ok) ok = false;
+      if (!r.ok) {
+        ok = false;
+        try {
+          const data = await r.json();
+          errorMessage = data.detail || JSON.stringify(data);
+        } catch {
+          errorMessage = `Move decks failed (${r.status})`;
+        }
+      }
     }
     if (folders.length && ok) {
       for (const fid of folders) {
@@ -435,7 +559,16 @@
           headers: {"Content-Type":"application/json"},
           body: JSON.stringify({ parent_id: folderId }),
         });
-        if (!r.ok) ok = false;
+        if (!r.ok) {
+          ok = false;
+          try {
+            const data = await r.json();
+            errorMessage = data.detail || JSON.stringify(data);
+          } catch {
+            errorMessage = `Move folder failed (${r.status})`;
+          }
+          break;
+        }
       }
     }
     if (ok) {
@@ -445,7 +578,7 @@
       window.location.reload();
     } else {
       const err = document.getElementById("folder-picker-error");
-      if (err) { err.textContent = "Move failed. Try again."; err.style.display = "block"; }
+      if (err) { err.textContent = errorMessage || "Move failed. Try again."; err.style.display = "block"; }
     }
   });
 
@@ -474,15 +607,6 @@
       }
     });
   }
-
-  // Folder create
-  document.getElementById("add-folder-btn")?.addEventListener("click", () => {
-    const el = document.getElementById("inline-folder-create");
-    if (el) { el.style.display = "block"; document.getElementById("new-folder-name")?.focus(); }
-  });
-  document.getElementById("cancel-folder-create")?.addEventListener("click", () => {
-    document.getElementById("inline-folder-create").style.display = "none";
-  });
 
   // Rename button in action bar
   document.getElementById("rename-btn")?.addEventListener("click", () => {

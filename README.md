@@ -248,6 +248,30 @@ Notes:
 
 ---
 
+## Folder organization
+
+EduViz supports nested folders for deck organization.
+
+- Root browse view shows root folders and unfiled decks.
+- Folder browse view shows that folder's direct subfolders and decks.
+- Search stays flat and does not drill into folder navigation.
+- Breadcrumbs are shown while browsing inside folders.
+- Folder names allow only letters, numbers, and underscore (`[a-zA-Z0-9_]+`).
+- Moving a folder into itself or one of its descendants is blocked server-side and prevented in the browse picker UI.
+
+Relevant APIs:
+
+- `GET /api/v1/folders`
+- `GET /api/v1/folders/{folder_id}`
+- `POST /api/v1/folders`
+- `PUT /api/v1/folders/{folder_id}`
+- `DELETE /api/v1/folders/{folder_id}`
+- `PUT /api/v1/folders/{folder_id}/move`
+- `GET /api/v1/folders/tree`
+- `POST /api/v1/decks/move`
+
+---
+
 ## Database migrations
 
 Migrations run automatically on container start (`entrypoint.sh`).

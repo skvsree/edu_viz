@@ -405,34 +405,25 @@ def get_folder_tree(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Get folder tree structure for folder picker (own + org-shared)."""
-    def build_tree(parent_id: UUID | None) -> list[dict]:
-        if user.organization_id:
-            folders = db.execute(
-                select(Folder)
-                .where(
-                    Folder.parent_id == parent_id,
-                    or_(
-                        Folder.organization_id == user.organization_id,
-                        Folder.organization_id.is_(None),
-                    ),
-                )
-                .order_by(Folder.name.asc())
-            ).scalars().all()
-        else:
-            folders = db.execute(
-                select(Folder)
-                .where(Folder.parent_id == parent_id, Folder.user_id == user.id)
-                .order_by(Folder.name.asc())
-            ).scalars().all()
+    """Get full folder tree structure for folder picker."""
 
-        result = []
-        for folder in folders:
-            result.append({
-                "id": str(folder.id),
-                "name": folder.name,
-                "children": build_tree(folder.id),
-            })
-        return result
+    def build_node(folder: Folder) -> dict:
+        children = db.execute(
+            select(Folder)
+            .where(Folder.parent_id == folder.id)
+            .order_by(Folder.name.asc())
+        ).scalars().all()
+        return {
+            "id": str(folder.id),
+            "text": folder.name,
+            "name": folder.name,
+            "children": [build_node(child) for child in children],
+        }
 
-    return build_tree(None)
+    root_folders = db.execute(
+        select(Folder)
+        .where(Folder.parent_id.is_(None))
+        .order_by(Folder.name.asc())
+    ).scalars().all()
+
+    return [build_node(folder) for folder in root_folders]

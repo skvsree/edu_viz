@@ -163,6 +163,15 @@
 - Search normalizes query using `normalize_deck_name()` before comparing
 - Matches both deck `normalized_name` and associated tag `normalized_name`
 - Uses `OR` condition with grouping to avoid duplicate results
+- Search results stay flat even when a folder is selected; folder drill-down is only for non-search browse mode
+
+### Folder organization
+- Decks can be organized into nested folders and browsed with breadcrumbs at `/decks/browse?folder=<uuid>`.
+- Dashboard and browse both support folder context; root view shows root folders and unfiled decks.
+- Folder names are limited to `a-z`, `A-Z`, `0-9`, and `_`.
+- Folder move API is `PUT /api/v1/folders/{folder_id}/move` and blocks moving a folder into itself or any descendant.
+- Browse move picker now disables invalid self/descendant targets client-side to match backend validation.
+- Important regression to avoid: in folder view, render `decks` (filtered for the current folder), not `root_decks`.
 
 ### Deck Overview
 - New hub page at `/decks/{id}` — entry point when user clicks a deck from dashboard
