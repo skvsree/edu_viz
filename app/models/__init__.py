@@ -1,6 +1,7 @@
 from app.models.organization import Organization
 from app.models.user import User
 from app.models.deck import Deck
+from app.models.folder import Folder
 from app.models.user_deck_favorite import UserDeckFavorite
 from app.models.card import Card
 from app.models.card_state import CardState
@@ -26,6 +27,7 @@ __all__ = [
     "Organization",
     "User",
     "Deck",
+    "Folder",
     "UserDeckFavorite",
     "Card",
     "CardState",

@@ -31,7 +31,8 @@ def is_system_admin(user: Any) -> bool:
 
 
 def can_manage_decks(user: Any) -> bool:
-    return user.role in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}
+    # Admins can manage all org decks; regular users can manage their own
+    return user.role in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN, ROLE_USER}
 
 
 def can_manage_deck(user: Any, deck: Any) -> bool:

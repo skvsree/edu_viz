@@ -11,6 +11,7 @@ from app.api.routers import auth, pages, analytics
 from app.api.routers.favorites import router as favorites_router
 from app.api.routers.bulk_import import router as bulk_import_router
 from app.api.routers.content import router as content_router
+from app.api.routers.folders import router as folders_router
 from app.components.multiselect.routes import router as multiselect_router
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -131,6 +132,7 @@ app.include_router(content_router)
 app.include_router(analytics.router)
 app.include_router(bulk_import_router)
 app.include_router(favorites_router)
+app.include_router(folders_router)
 app.include_router(multiselect_router)
 
 

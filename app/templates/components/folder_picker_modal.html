@@ -1,0 +1,65 @@
+{# folder_picker_modal.html — Folder tree picker for move-to-folder dialog #}
+{# Usage: include with context {folder_tree: [{id, name, children}], current_folder_id: str|None} #}
+<dialog id="folder-picker-modal" class="modal">
+  <div class="modal__surface modal__surface--wide" role="document">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Move decks to folder</p>
+        <h2 class="section-subtitle">Choose destination</h2>
+      </div>
+      <button type="button" class="button button-secondary button-small" data-modal-close="folder-picker-modal">Cancel</button>
+    </div>
+
+    <div class="folder-picker" id="folder-picker-tree">
+      {# Root option — move to root (no folder) #}
+      <label class="folder-picker__item folder-picker__item--root" id="picker-root-item">
+        <input
+          type="radio"
+          name="target_folder"
+          value=""
+          id="picker-root"
+          class="folder-picker__radio"
+        />
+        <svg class="folder-picker__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span class="folder-picker__name">Root (no folder)</span>
+      </label>
+
+      {% if folder_tree %}
+        {# Render folder tree recursively #}
+        {% macro render_folder_tree_node(nodes, depth=0) %}
+          {% for node in nodes %}
+            <div class="folder-picker__node" style="padding-left: {{ (depth * 20) + 4 }}px">
+              <label class="folder-picker__item" data-folder-id="{{ node.id }}">
+                <input
+                  type="radio"
+                  name="target_folder"
+                  value="{{ node.id }}"
+                  class="folder-picker__radio"
+                />
+                <svg class="folder-picker__icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span class="folder-picker__name">{{ node.name }}</span>
+              </label>
+              {% if node.children %}
+                {{ render_folder_tree_node(node.children, depth + 1) }}
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% endmacro %}
+        {{ render_folder_tree_node(folder_tree) }}
+      {% endif %}
+    </div>
+
+    {# Validation error #}
+    <p class="form-error" id="folder-picker-error" style="display:none" aria-live="polite"></p>
+
+    <div class="folder-picker__footer">
+      <button type="button" class="button" id="folder-picker-confirm" disabled>
+        Move here
+      </button>
+    </div>
+  </div>
+</dialog>

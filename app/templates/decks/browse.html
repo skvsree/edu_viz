@@ -1,155 +1,1067 @@
 {% extends "base.html" %}
+{% from "components/browse_item.html" import browse_item as browse_item_macro %}
+
+{% block title %}{{ title }}{% endblock %}
+
 {% block content %}
-<section class="stack-lg">
-  <section class="card">
-    <div class="section-heading">
-      <div>
-        <p class="panel-label">Deck library</p>
-        <h1 class="section-title">Browse Decks</h1>
-        <p class="muted section-copy">
-          Search and filter through all decks available to you, then star the ones you want on your dashboard.
-        </p>
+<div class="browse-layout">
+
+  {# ── Main ──────────────────────────────────────────────────────────── #}
+  <main class="browse-main">
+
+    <div class="browse-top-sticky">
+      {# Header #}
+      <div class="browse-header">
+        <div>
+          <h1 class="browse-title">
+            {% if current_folder %}{{ current_folder.name }}{% else %}All{% endif %}
+          </h1>
+        </div>
+        <div class="browse-header-right">
+          <form method="get" action="/decks/browse" class="browse-search">
+            <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
+            <input type="text" name="q" value="{{ q }}" placeholder="Search..." autocomplete="off" class="browse-search-input" />
+            <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost browse-search-submit" aria-label="Search" title="Search">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-3.5-3.5"></path>
+              </svg>
+            </button>
+            {% if q %}<a href="/decks/browse{% if current_folder %}?folder={{ current_folder.id }}{% endif %}" class="browse-btn browse-btn--sm browse-btn--ghost browse-search-clear" aria-label="Clear search" title="Clear search"><span aria-hidden="true">✕</span></a>{% endif %}
+          </form>
+        </div>
       </div>
-      <div class="metric-pill">
-        <strong>{{ total }}</strong>
-        <span>Total</span>
+
+      {# Breadcrumb #}
+      {% if breadcrumb or current_folder %}
+        <nav class="breadcrumb browse-breadcrumb" aria-label="Folder navigation">
+          <a href="/decks/browse" class="breadcrumb__item">All</a>
+          {% for crumb_id, crumb_name in breadcrumb %}
+            <span class="breadcrumb__sep">›</span>
+            {% if loop.last %}
+              <span class="breadcrumb__item breadcrumb__item--current">{{ crumb_name }}</span>
+            {% else %}
+              <a href="/decks/browse?folder={{ crumb_id }}" class="breadcrumb__item">{{ crumb_name }}</a>
+            {% endif %}
+          {% endfor %}
+        </nav>
+      {% endif %}
+
+      {# ── Action bar ──────────────────────────────────────────────────── #}
+      {% if can_manage_decks %}
+      <div class="browse-action-bar" id="browse-action-bar">
+        <div class="browse-action-bar__actions">
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-new" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-rename" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-move" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
+          <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-delete" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
+        </div>
       </div>
+      {% endif %}
     </div>
 
-    <form method="get" action="/decks/browse" class="deck-search" style="margin-bottom: 1.5rem;">
-      <input
-        type="text"
-        name="q"
-        id="browse-search"
-        value="{{ q }}"
-        placeholder="Search by deck name..."
-        autocomplete="off"
-      />
-      <button type="submit" class="button">Search</button>
-      {% if q %}
-        <a href="/decks/browse" class="button button-secondary">Clear</a>
+    {# ── Content grid ────────────────────────────────────────────────── #}
+    <div class="browse-content-scroll">
+    {% if q %}
+      {# Search results — flat list #}
+      {% if decks %}
+        <div class="browse-grid">
+          {% for deck in decks %}
+            {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
+          {% endfor %}
+        </div>
+        {% if total_pages > 1 %}
+          <div class="browse-pagination">
+            {% if page > 1 %}<a href="?q={{ q }}&page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>{% endif %}
+            <span style="font-size:0.8rem; color:var(--muted-color);">{{ total }} results</span>
+            {% if page < total_pages %}<a href="?q={{ q }}&page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>{% endif %}
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="browse-empty"><h3>No decks match "{{ q }}"</h3></div>
       {% endif %}
-    </form>
 
-    {% if decks %}
-      <div class="deck-grid deck-grid--dashboard" id="browse-grid">
+    {% elif current_folder %}
+      {# Folder view: subfolders + decks #}
+      <div class="browse-grid">
+        {% for f in subfolders %}
+          <div class="browse-item browse-item--folder"
+            data-item-type="folder" data-item-id="{{ f.id }}">
+            <div class="item-cb-wrap">
+              <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+            </div>
+            <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
+              <span class="browse-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
+                </svg>
+              </span>
+              <span class="browse-item__text">
+                <span class="browse-item__name">{{ f.name }}</span>
+                <span class="browse-item__desc">Folder</span>
+              </span>
+            </a>
+          </div>
+        {% endfor %}
         {% for deck in decks %}
-          <article class="deck-card deck-card--simple" data-name="{{ deck.name | lower }}" data-deck-id="{{ deck.id }}">
-            <div class="deck-card__header">
-              <a href="/decks/{{ deck.id }}" class="deck-card__title-link">
-                <h3 class="deck-card__title">{{ deck.name }}</h3>
-              </a>
-              <button type="button" class="deck-favorite-btn {% if deck.id|string in favorite_deck_ids %}deck-favorite-btn--active{% endif %}" data-deck-id="{{ deck.id }}" title="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}" aria-label="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="{% if deck.id|string in favorite_deck_ids %}currentColor{% else %}none{% endif %}" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-              </button>
-            </div>
-            {% if deck.description %}
-              <p class="deck-card__desc muted">{{ deck.description }}</p>
-            {% endif %}
-            <div class="deck-card__actions">
-              <a href="/review?deck_id={{ deck.id }}" class="button button-secondary button-small">Review</a>
-              <a href="/decks/{{ deck.id }}/tests" class="button button-secondary button-small">Test</a>
-            </div>
-          </article>
+          {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
         {% endfor %}
       </div>
-
-      {# Pagination #}
-      {% if total_pages > 1 %}
-        <nav class="pagination pagination--prominent" aria-label="Browse pagination">
-          <div class="pagination__controls">
-            {% if page > 1 %}
-              <a href="?q={{ q }}&page={{ page - 1 }}" class="button button-secondary" aria-label="Previous page">&larr; Previous</a>
-            {% endif %}
-
-            {# Page number buttons #}
-            {% if start_page > 1 %}
-              <a href="?q={{ q }}&page=1" class="button button-ghost page-num">1</a>
-              {% if start_page > 2 %}<span class="pagination__ellipsis">…</span>{% endif %}
-            {% endif %}
-            {% for p in range(start_page, end_page + 1) %}
-              {% if p == page %}
-                <span class="button page-num page-num--active" aria-current="page">{{ p }}</span>
-              {% else %}
-                <a href="?q={{ q }}&page={{ p }}" class="button button-ghost page-num">{{ p }}</a>
-              {% endif %}
-            {% endfor %}
-            {% if end_page < total_pages %}
-              {% if end_page < total_pages - 1 %}<span class="pagination__ellipsis">…</span>{% endif %}
-              <a href="?q={{ q }}&page={{ total_pages }}" class="button button-ghost page-num">{{ total_pages }}</a>
-            {% endif %}
-
-            {% if page < total_pages %}
-              <a href="?q={{ q }}&page={{ page + 1 }}" class="button button-secondary" aria-label="Next page">Next &rarr;</a>
-            {% endif %}
-          </div>
-          <span class="pagination__info">{{ total }} decks &middot; Page {{ page }} of {{ total_pages }}</span>
-        </nav>
-      {% elif total > 0 %}
-        <p class="pagination__info pagination__info--single">Showing all {{ total }} decks</p>
+      {% if not subfolders and not decks %}
+        <div class="browse-empty"><h3>This folder is empty</h3></div>
       {% endif %}
+
     {% else %}
-      <div class="empty-state">
-        {% if q %}
-          <h3>No decks match "{{ q }}"</h3>
-          <p class="muted">Try a different search term or <a href="/decks/browse">browse all decks</a>.</p>
-        {% else %}
-          <h3>No decks available</h3>
-          <p class="muted">Ask an admin to add organization or global decks.</p>
-        {% endif %}
+      {# Root view: root folders + root decks #}
+      <div class="browse-grid">
+        {% for f in root_folders %}
+          <div class="browse-item browse-item--folder">
+            <div class="item-cb-wrap">
+              <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+            </div>
+            <a href="/decks/browse?folder={{ f.id }}" class="browse-item__folder-link">
+              <span class="browse-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
+                </svg>
+              </span>
+              <span class="browse-item__text">
+                <span class="browse-item__name">{{ f.name }}</span>
+                <span class="browse-item__desc">Folder</span>
+              </span>
+            </a>
+          </div>
+        {% endfor %}
+        {% for deck in root_decks %}
+          {{ browse_item_macro(deck, favorite_deck_ids, can_manage_decks) }}
+        {% endfor %}
       </div>
+      {% if not root_folders and not root_decks %}
+        <div class="browse-empty">
+          <h3>No decks yet</h3>
+          <p class="muted">Create folders or add decks.</p>
+        </div>
+      {% endif %}
     {% endif %}
-  </section>
-</section>
+    </div>
 
+  </main>
+</div>
+
+{# ── Modals ────────────────────────────────────────────────────────── #}
+{% if can_manage_decks %}
+  {# Folder picker #}
+  <dialog id="folder-picker-modal" class="modal">
+    <div class="modal__surface modal__surface--wide">
+      <header class="modal__header">
+        <h2 class="modal__title">Move to folder</h2>
+      </header>
+      <div class="modal__body" style="min-height:250px; max-height:450px; overflow-y:auto;">
+        <div style="display:flex;flex-direction:column;gap:0.25rem;">
+          <div id="folder-picker-tree"></div>
+        </div>
+        <p id="folder-picker-error" class="error-text" style="display:none;"></p>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="browse-btn browse-btn--sm" id="picker-confirm">Move</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="folder-picker-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
+
+  {# Create folder #}
+  <dialog id="create-folder-modal" class="modal">
+    <div class="modal__surface">
+      <header class="modal__header">
+        <h2 class="modal__title">New folder</h2>
+        <button type="button" class="modal__close" data-modal-close="create-folder-modal">✕</button>
+      </header>
+      <form method="post" action="/folders" id="create-folder-form" class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <input type="hidden" name="parent_id" value="{% if current_folder %}{{ current_folder.id }}{% endif %}" />
+        <input type="text" name="name" id="create-folder-name"
+          placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
+          title="Use only letters, numbers, and underscore"
+          style="padding:0.5rem; border:1px solid var(--border-color); border-radius:8px; background:var(--input-bg); color:var(--text); font-size:0.9rem;" />
+        <p class="muted" style="margin:0; font-size:0.8rem;">Use only letters, numbers, and underscore.</p>
+      </form>
+      <footer class="modal__footer">
+        <button type="submit" form="create-folder-form" class="browse-btn browse-btn--sm">Create</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="create-folder-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
+
+  {# Rename folder #}
+  <dialog id="rename-modal" class="modal">
+    <div class="modal__surface">
+      <header class="modal__header">
+        <h2 class="modal__title">Rename folder</h2>
+        <button type="button" class="modal__close" data-modal-close="rename-modal">✕</button>
+      </header>
+      <form method="post" id="rename-form" class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <input type="hidden" name="folder_id" id="rename-folder-id" />
+        <input type="text" name="name" id="rename-folder-name"
+          placeholder="folder_name" pattern="[a-zA-Z0-9_]+" maxlength="255" required autofocus
+          title="Use only letters, numbers, and underscore"
+          style="padding:0.5rem; border:1px solid var(--border-color); border-radius:8px; background:var(--input-bg); color:var(--text); font-size:0.9rem;" />
+      </form>
+      <footer class="modal__footer">
+        <button type="submit" form="rename-form" class="browse-btn browse-btn--sm">Save</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="rename-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
+{% endif %}
+
+<script type="application/json" id="folder-tree-data">{{ folder_tree | tojson }}</script>
+
+<style>
+/* ── Layout ────────────────────────────────────────────────────────── */
+.browse-layout { display:flex; gap:1rem; align-items:flex-start; flex-direction:column; }
+
+/* ── Main ───────────────────────────────────────────────────────────── */
+.browse-main {
+  flex:1;
+  min-width:0;
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  max-height:calc(100vh - 8rem);
+  padding-left:0;
+}
+.browse-top-sticky {
+  position:sticky;
+  top:0;
+  z-index:6;
+  background:var(--bg, var(--background-color));
+  padding:0 0 0.5rem;
+}
+.browse-header { display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap; }
+.browse-content-scroll {
+  flex:1 1 auto;
+  min-height:0;
+  width:100%;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:0.15rem;
+  padding-bottom:0.5rem;
+}
+.browse-title { font-size:1.25rem; font-weight:700; margin:0; }
+.browse-header-right { display:flex; gap:0.5rem; align-items:center; }
+.browse-breadcrumb { margin:0 0 0.75rem; }
+.browse-search {
+  display:flex;
+  gap:0.35rem;
+  align-items:stretch;
+}
+.browse-search-input {
+  height:2.75rem;
+  padding:0 0.85rem;
+  border:1px solid var(--border-color);
+  border-radius:12px;
+  background:var(--input-bg);
+  color:var(--text);
+  font-size:0.8rem;
+  width:240px;
+  box-sizing:border-box;
+}
+.browse-search-submit,
+.browse-search-clear {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 2.75rem;
+  width:2.75rem;
+  min-width:2.75rem;
+  height:2.75rem;
+  padding:0;
+  font-size:1.15rem;
+  line-height:1;
+  border-radius:12px;
+  box-sizing:border-box;
+}
+.browse-search-submit svg {
+  width:1.35rem;
+  height:1.35rem;
+  display:block;
+  flex:0 0 auto;
+}
+.browse-search-clear {
+  font-size:1.35rem;
+  font-weight:600;
+}
+.browse-search-clear span {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  height:100%;
+  line-height:1;
+}
+
+/* ── Action bar ─────────────────────────────────────────────────────── */
+.browse-action-bar {
+  display:flex; align-items:center; justify-content:flex-start;
+  padding:0.5rem 0.75rem; margin-bottom:0.75rem;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  border-radius:10px; overflow-x:auto;
+}
+.browse-action-bar.has-selection { box-shadow: 0 0 0 1px rgba(59,130,246,0.25) inset; }
+.browse-action-bar__actions { display:flex; gap:0.375rem; flex-wrap:nowrap; white-space:nowrap; }
+.browse-action-bar__actions .browse-btn { flex:0 0 auto; }
+
+/* ── Grid ────────────────────────────────────────────────────────────── */
+.browse-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:0.75rem; }
+.browse-item {
+  background:var(--card-bg); border:1px solid var(--border-color);
+  border-radius:10px; padding:0.75rem;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; gap:0.4rem;
+  position:relative;
+  transition:box-shadow 0.15s, border-color 0.15s;
+  cursor:default;
+  min-height:100px;
+}
+@media (max-width: 720px) {
+  .browse-main {
+    max-height:calc(100vh - 7rem);
+    padding-left:0;
+  }
+  .browse-top-sticky {
+    top:0;
+    padding-bottom:0.35rem;
+  }
+  .browse-header {
+    align-items:flex-start;
+  }
+  .browse-header-right,
+  .browse-search {
+    width:100%;
+  }
+  .browse-search-input {
+    flex:1 1 auto;
+    width:auto;
+    min-width:0;
+  }
+  .browse-action-bar {
+    padding:0.4rem 0.5rem;
+    margin-bottom:0.5rem;
+  }
+  .browse-content-scroll {
+    padding-right:0;
+    padding-bottom:0.35rem;
+  }
+  .browse-grid {
+    grid-template-columns:1fr;
+    gap:0.65rem;
+  }
+  .browse-item {
+    min-height:88px;
+    padding-left:0.4rem;
+  }
+}
+.browse-item {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+.browse-item:hover { box-shadow:0 4px 14px rgba(15,23,42,0.10); }
+.browse-item.is-selected { border-color:var(--accent); background:var(--active-bg); }
+
+/* Folder cards — theme aware */
+.browse-item--folder {
+  background: color-mix(in srgb, var(--surface, var(--card-bg)) 88%, var(--accent) 12%);
+  border-color: color-mix(in srgb, var(--border, var(--border-color)) 72%, var(--accent) 28%);
+}
+.browse-item--folder:hover {
+  background: color-mix(in srgb, var(--surface, var(--card-bg)) 82%, var(--accent) 18%);
+}
+.browse-item--folder.is-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface, var(--card-bg)) 76%, var(--accent) 24%);
+}
+
+/* Deck cards */
+.browse-item--deck { background:var(--card-bg); }
+
+/* Top-right controls */
+.browse-item > .item-cb-wrap {
+  position:absolute; top:0.5rem; right:3rem;
+}
+.deck-favorite-btn {
+  position:absolute;
+  top:0.5rem;
+  right:0.5rem;
+  width:2rem;
+  height:2rem;
+  padding:0;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--border-color);
+  border-radius:999px;
+  background:var(--card-bg);
+  color:var(--muted-color, var(--muted));
+  cursor:pointer;
+  transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+  z-index:1;
+}
+.deck-favorite-btn:hover {
+  background:var(--hover-bg);
+  border-color:#f59e0b;
+  color:#f59e0b;
+}
+.deck-favorite-btn--active {
+  color:#f59e0b;
+  border-color:rgba(245,158,11,0.4);
+  background:rgba(245,158,11,0.12);
+}
+.deck-favorite-btn svg {
+  display:block;
+  width:1rem;
+  height:1rem;
+}
+.item-cb {
+  width:20px;
+  height:20px;
+  margin:0;
+  padding:0;
+  display:block;
+  accent-color:var(--accent);
+  cursor:pointer;
+  vertical-align:middle;
+}
+.item-cb-wrap {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:20px;
+  height:20px;
+}
+
+/* Cards */
+.browse-item__icon {
+  width:2.5rem;
+  height:2.5rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  line-height:1;
+  color: color-mix(in srgb, #a855f7 72%, var(--text) 28%);
+}
+.browse-item__icon svg,
+.deck-item-icon svg {
+  width:100%;
+  height:100%;
+  display:block;
+}
+.browse-item__text,
+.deck-item__text {
+  display:flex;
+  flex-direction:column;
+  gap:0.18rem;
+  min-width:0;
+  width:100%;
+}
+.browse-item__name,
+.deck-item-name {
+  font-weight:600;
+  font-size:0.85rem;
+  color:var(--text);
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  padding:0 0.25rem;
+}
+.browse-item__desc,
+.deck-item-desc {
+  font-size:0.74rem;
+  line-height:1.25;
+  color:var(--muted-color, var(--muted));
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  padding:0 0.25rem;
+}
+
+/* Link wrappers */
+.browse-item__folder-link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.4rem; width:100%; justify-content:center; }
+.browse-item__folder-link:hover .browse-item__icon { opacity:0.7; }
+
+.deck-item-card__link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.35rem; width:100%; justify-content:center; padding-right:2.5rem; }
+.deck-item-icon {
+  width:2.5rem;
+  height:2.5rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color: color-mix(in srgb, #8b5cf6 44%, var(--text) 56%);
+}
+:root[data-theme="dark"] .deck-item-icon,
+[data-theme="dark"] .deck-item-icon {
+  color: color-mix(in srgb, #8b5cf6 28%, var(--text) 72%);
+}
+.deck-item-card__link:hover .deck-item-icon { opacity:0.7; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.browse-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  gap:4px; cursor:pointer; border-radius:8px;
+  font-size:0.8rem; font-weight:500; text-decoration:none;
+  transition:background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space:nowrap;
+}
+.browse-btn--sm {
+  padding:0.35rem 0.75rem; min-height:unset; border:none;
+  background:var(--card-bg); border:1px solid var(--border-color);
+  color:var(--text);
+}
+.browse-btn--sm:hover { background:var(--hover-bg); }
+.browse-btn--icon {
+  width:2.75rem; height:2.75rem; min-width:2.75rem;
+  padding:0; border:1px solid var(--border-color);
+  background:var(--card-bg); color:var(--text);
+  border-radius:12px; font-size:1.05rem; line-height:1;
+  touch-action:manipulation;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.browse-btn--icon:hover { background:var(--hover-bg); }
+.browse-btn--icon:disabled {
+  color:var(--muted-color);
+  background:var(--card-bg);
+  border-color:var(--border-color);
+  opacity:0.65;
+}
+.browse-btn--icon-new:not(:disabled) {
+  color:#15803d;
+  background:rgba(34,197,94,0.12);
+  border-color:rgba(34,197,94,0.35);
+}
+.browse-btn--icon-new:not(:disabled):hover { background:rgba(34,197,94,0.18); }
+.browse-btn--icon-rename:not(:disabled) {
+  color:#7c3aed;
+  background:rgba(124,58,237,0.12);
+  border-color:rgba(124,58,237,0.35);
+}
+.browse-btn--icon-rename:not(:disabled):hover { background:rgba(124,58,237,0.18); }
+.browse-btn--icon-move:not(:disabled) {
+  color:#2563eb;
+  background:rgba(37,99,235,0.12);
+  border-color:rgba(37,99,235,0.35);
+}
+.browse-btn--icon-move:not(:disabled):hover { background:rgba(37,99,235,0.18); }
+.browse-btn--icon-delete:not(:disabled) {
+  color:#dc2626;
+  background:rgba(220,38,38,0.12);
+  border-color:rgba(220,38,38,0.35);
+}
+.browse-btn--icon-delete:not(:disabled):hover { background:rgba(220,38,38,0.18); }
+.browse-btn--icon:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+}
+.browse-btn--xs {
+  padding:0.2rem 0.5rem; min-height:unset; border:none;
+  background:transparent; border:1px solid transparent;
+  color:var(--muted-color); font-size:0.75rem;
+}
+.browse-btn--xs:hover { border-color:var(--border-color); background:var(--hover-bg); }
+.browse-btn--ghost {
+  background:transparent; border-color:var(--border-color); color:var(--text);
+}
+.browse-btn--ghost:hover { border-color:var(--accent); color:var(--accent); }
+.browse-btn--danger { color:inherit; }
+.browse-btn--danger:hover { border-color:#d32f2f; color:#d32f2f; }
+.browse-btn[disabled] { opacity:0.4; cursor:not-allowed; pointer-events:none; }
+
+/* ── Deck items ─────────────────────────────────────────────────────── */
+.deck-item-icon { font-size:2.5rem; line-height:1; }
+.deck-item-name { font-weight:600; font-size:0.85rem; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 0.25rem; }
+.deck-item-card__actions { display:flex; gap:0.25rem; margin-top:0.25rem; position:absolute; bottom:0.5rem; left:50%; transform:translateX(-50%); }
+
+/* ── Pagination / Empty ─────────────────────────────────────────────── */
+.browse-pagination { display:flex; align-items:center; gap:0.5rem; margin-top:1rem; }
+.browse-empty { text-align:center; padding:2.5rem; color:var(--muted-color); }
+.browse-empty h3 { margin:0 0 0.25rem; font-size:1rem; }
+
+/* ── Folder picker ───────────────────────────────────────────────────── */
+.fp-tree { margin-top: 0.25rem; }
+.fp-row { display: flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0; flex-wrap: wrap; }
+.fp-chevron { background: none; border: none; padding: 0 0.15rem; cursor: pointer; color: var(--text-dim); font-size: 0.7rem; line-height: 1; display: inline-flex; align-items: center; }
+.fp-chevron:hover { color: var(--accent); }
+.fp-row label { display: flex; align-items: center; gap: 0.3rem; cursor: pointer; font-size: 0.875rem; color: var(--text); padding: 0.1rem 0.25rem; border-radius: 4px; flex: 1; }
+.fp-row label:hover { background: var(--hover-bg); }
+.fp-row label input { accent-color: var(--accent); cursor: pointer; }
+.fp-name { color: var(--text); }
+.fp-children { margin-left: 0.75rem; border-left: 1px solid var(--border); padding-left: 0.5rem; display: block; }
+.fp-toggle { font-size: 0.6rem; color: var(--text-dim); width: 1rem; display: inline-block; text-align: center; flex-shrink: 0; }
+.fp-label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; flex: 1; }
+.fp-label input { cursor: pointer; }
+.error-text { color:#d32f2f; font-size:0.8rem; }
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .browse-main {
+    max-height:calc(100vh - 6.5rem);
+  }
+  .browse-top-sticky {
+    padding-bottom:0.4rem;
+  }
+  .browse-search-input {
+    width:min(100%, 220px);
+    height:3rem;
+  }
+  .browse-search-submit,
+  .browse-search-clear {
+    width:3rem;
+    min-width:3rem;
+    height:3rem;
+  }
+  .browse-grid {
+    grid-template-columns: 1fr;
+    gap: 0.625rem;
+  }
+  .browse-item {
+    min-height: unset;
+    padding: 0.85rem 0.95rem;
+    border-radius: 16px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 0.8rem;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.06);
+  }
+  .browse-item > .item-cb-wrap {
+    position: static;
+    order: 0;
+    flex: 0 0 auto;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .deck-favorite-btn {
+    position: static;
+    order: 2;
+    flex: 0 0 auto;
+    margin-left: auto;
+    align-self: center;
+  }
+  .item-cb {
+    width: 22px;
+    height: 22px;
+  }
+  .browse-item__folder-link,
+  .deck-item-card__link {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+    gap: 0.2rem;
+    min-width: 0;
+    flex: 1 1 auto;
+    align-self: stretch;
+    padding-right: 0;
+  }
+  .browse-item__icon,
+  .deck-item-icon {
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+  }
+  .browse-item__text,
+  .deck-item__text {
+    align-items: flex-start;
+  }
+  .browse-item__name,
+  .deck-item-name {
+    padding: 0;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .browse-item__desc,
+  .deck-item-desc {
+    padding: 0;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .browse-action-bar { padding:0.5rem; }
+  .browse-action-bar__actions { margin-left:0; flex-wrap:nowrap; }
+  .browse-btn--icon {
+    width:3rem; height:3rem; min-width:3rem;
+    border-radius:14px;
+    font-size:1.1rem;
+  }
+  .browse-title { font-size:1rem; }
+  .browse-item__actions { bottom:0.375rem; }
+  .deck-item-card__actions { bottom:0.375rem; }
+}
+
+#folder-picker-tree .picker-node-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  outline: none;
+}
+#folder-picker-tree .picker-node-btn:hover {
+  background: var(--surface-hover, rgba(255,255,255,0.04));
+  border-color: rgba(255,255,255,0.08);
+}
+#folder-picker-tree .picker-node-btn.picker-node-selected {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(96, 165, 250, 0.9);
+  color: #000000;
+}
+#folder-picker-tree .picker-node-btn.picker-node-selected .picker-node-icon,
+#folder-picker-tree .picker-node-btn.picker-node-selected .picker-node-text {
+  color: #000000;
+  font-weight: 600;
+  opacity: 1;
+}
+#folder-picker-tree .picker-node-btn.picker-node-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-style: dashed;
+}
+#folder-picker-tree .picker-node-btn.picker-node-disabled:hover {
+  background: transparent;
+  border-color: rgba(255,255,255,0.08);
+}
+#folder-picker-tree .picker-node {
+  margin-bottom: 0.2rem;
+}
+#folder-picker-tree .picker-children {
+  margin-top: 0.1rem;
+}
+</style>
+
+{# ── JS ──────────────────────────────────────────────────────────────── #}
 <script>
-  (() => {
-    const grid = document.getElementById("browse-grid");
-    if (grid) {
-      grid.querySelectorAll(".deck-card--simple").forEach((card) => {
-        card.style.cursor = "pointer";
-        card.addEventListener("click", () => {
-          window.location.href = card.dataset.href;
-        });
-      });
+(() => {
+  const rawFolderTreeData = JSON.parse(document.getElementById("folder-tree-data")?.textContent || "[]");
+  const normalizeTreeData = (nodes) => (nodes || []).map((node) => ({
+    ...node,
+    text: node.text || node.name || "",
+    children: normalizeTreeData(node.children || []),
+  }));
+  const folderTreeData = normalizeTreeData(rawFolderTreeData);
+  const moveBtn = document.getElementById("move-btn");
+  const deleteBtn = document.getElementById("delete-btn");
+  const actionBar = document.getElementById("browse-action-bar");
+  let selected = [];
+  let pickerTree = null;
+  let pickerSelectedFolderId = null;
+  let pickerBlockedFolderIds = new Set();
+
+  function collectBlockedFolderIds() {
+    const selectedFolderIds = selected.filter(i => i.type === "folder").map(i => String(i.id));
+    const blocked = new Set(selectedFolderIds);
+
+    const walk = (node, ancestorBlocked = false) => {
+      const nodeId = String(node.id);
+      const nextBlocked = ancestorBlocked || blocked.has(nodeId);
+      if (ancestorBlocked) blocked.add(nodeId);
+      (node.children || []).forEach(child => walk(child, nextBlocked));
+    };
+
+    (folderTreeData || []).forEach(node => walk(node, false));
+    return blocked;
+  }
+
+  function setPickerSelection(folderId) {
+    const normalizedFolderId = folderId || null;
+    if (normalizedFolderId && pickerBlockedFolderIds.has(String(normalizedFolderId))) {
+      const err = document.getElementById("folder-picker-error");
+      if (err) {
+        err.textContent = "You cannot move a folder into itself or its child folder.";
+        err.style.display = "block";
+      }
+      return;
     }
-  })();
-</script>
 
-<script>
-  (() => {
-    const FAVORITES_API = "/api/v1/favorites/decks/";
+    pickerSelectedFolderId = normalizedFolderId;
 
-    function getSvgStar(filled) {
-      const fillAttr = filled ? 'fill="currentColor"' : 'fill="none"';
-      return `<svg width="20" height="20" viewBox="0 0 24 24" ${fillAttr} stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+    const buttons = document.querySelectorAll("#folder-picker-tree .picker-node-btn");
+    buttons.forEach((btn) => {
+      const active = String(btn.dataset.folderId) === String(pickerSelectedFolderId);
+      const disabled = pickerBlockedFolderIds.has(String(btn.dataset.folderId));
+      btn.classList.toggle("picker-node-selected", !!active);
+      btn.classList.toggle("picker-node-disabled", !!disabled);
+      btn.setAttribute("aria-disabled", disabled ? "true" : "false");
+      btn.title = disabled ? "Cannot move into itself or descendant" : "";
+    });
+  }
+
+  function getAllCheckboxes() {
+    return [...document.querySelectorAll(".item-cb")];
+  }
+
+  function syncSelected() {
+    selected = getAllCheckboxes()
+      .filter(cb => cb.checked)
+      .map(cb => ({ type: cb.dataset.type, id: cb.dataset.id }));
+    const n = selected.length;
+    if (moveBtn) moveBtn.disabled = n === 0;
+    if (deleteBtn) deleteBtn.disabled = n === 0;
+    const renameBtn = document.getElementById("rename-btn");
+    if (renameBtn) renameBtn.disabled = n !== 1;
+    if (actionBar) actionBar.classList.toggle("has-selection", n > 0);
+    getAllCheckboxes().forEach(cb => {
+      const card = cb.closest(".browse-item");
+      if (card) card.classList.toggle("is-selected", cb.checked);
+    });
+  }
+
+  getAllCheckboxes().forEach(cb => cb.addEventListener("change", syncSelected));
+
+  // Move
+  if (moveBtn) {
+    moveBtn.addEventListener("click", () => {
+      const modal = document.getElementById("folder-picker-modal");
+      if (modal) { populatePicker(); modal.showModal(); }
+    });
+  }
+
+  // Close modal buttons
+  document.querySelectorAll('[data-modal-close]').forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const modalId = btn.getAttribute("data-modal-close");
+      document.getElementById(modalId)?.close();
+    });
+  });
+
+  function renderPickerNodes(nodes, depth = 0) {
+    return (nodes || []).map((node) => {
+      const children = node.children && node.children.length
+        ? `<div class="picker-children">${renderPickerNodes(node.children, depth + 1)}</div>`
+        : "";
+      return `
+        <div class="picker-node" data-folder-id="${node.id}" style="margin-left:${depth * 16}px;">
+          <button type="button" class="picker-node-btn" data-folder-id="${node.id}">
+            <span class="picker-node-icon">📁</span>
+            <span class="picker-node-text">${node.text || node.name || ""}</span>
+          </button>
+          ${children}
+        </div>
+      `;
+    }).join("");
+  }
+
+  function populatePicker() {
+    const container = document.getElementById("folder-picker-tree");
+    const err = document.getElementById("folder-picker-error");
+    if (!container) return;
+    container.innerHTML = "";
+    pickerTree = null;
+    pickerSelectedFolderId = null;
+    pickerBlockedFolderIds = collectBlockedFolderIds();
+    if (err) {
+      err.style.display = "none";
+      err.textContent = "";
     }
 
-    function updateFavoriteBtn(btn, isFavorited) {
-      btn.innerHTML = getSvgStar(isFavorited);
-      btn.classList.toggle("deck-favorite-btn--active", isFavorited);
-      btn.title = isFavorited ? "Remove from favorites" : "Add to favorites";
-      btn.setAttribute("aria-label", isFavorited ? "Remove from favorites" : "Add to favorites");
+    if (!folderTreeData || folderTreeData.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);font-size:0.875rem;padding:0.5rem 0;">No folders yet. Create one first.</p>';
+      setPickerSelection(null);
+      return;
     }
 
-    document.querySelectorAll(".deck-favorite-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const deckId = btn.dataset.deckId;
-        if (!deckId) return;
-        btn.disabled = true;
-        try {
-          const res = await fetch(FAVORITES_API + deckId + "/toggle", { method: "POST" });
-          if (res.ok) {
-            const data = await res.json();
-            updateFavoriteBtn(btn, data.favorite);
+    container.innerHTML = renderPickerNodes(folderTreeData);
+    container.querySelectorAll('.picker-node-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (pickerBlockedFolderIds.has(String(btn.dataset.folderId))) {
+          if (err) {
+            err.textContent = "You cannot move a folder into itself or its child folder.";
+            err.style.display = "block";
           }
-        } finally {
-          btn.disabled = false;
+          return;
         }
+        if (err) {
+          err.style.display = "none";
+          err.textContent = "";
+        }
+        setPickerSelection(btn.dataset.folderId);
       });
     });
-  })();
+    setPickerSelection(null);
+  }
+
+  document.getElementById("picker-confirm")?.addEventListener("click", async () => {
+    const folderId = pickerSelectedFolderId;
+    const folders = selected.filter(i => i.type === "folder").map(i => i.id);
+    const decks = selected.filter(i => i.type === "deck").map(i => i.id);
+    let ok = true;
+    let errorMessage = "";
+
+    if (folderId && folders.includes(folderId)) {
+      const err = document.getElementById("folder-picker-error");
+      if (err) {
+        err.textContent = "You cannot move a folder into itself.";
+        err.style.display = "block";
+      }
+      return;
+    }
+    if (decks.length) {
+      const r = await fetch("/api/v1/decks/move", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ deck_ids: decks, folder_id: folderId }),
+      });
+      if (!r.ok) {
+        ok = false;
+        try {
+          const data = await r.json();
+          errorMessage = data.detail || JSON.stringify(data);
+        } catch {
+          errorMessage = `Move decks failed (${r.status})`;
+        }
+      }
+    }
+    if (folders.length && ok) {
+      for (const fid of folders) {
+        const r = await fetch("/api/v1/folders/" + fid + "/move", {
+          method: "PUT",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ parent_id: folderId }),
+        });
+        if (!r.ok) {
+          ok = false;
+          try {
+            const data = await r.json();
+            errorMessage = data.detail || JSON.stringify(data);
+          } catch {
+            errorMessage = `Move folder failed (${r.status})`;
+          }
+          break;
+        }
+      }
+    }
+    if (ok) {
+      document.getElementById("folder-picker-modal")?.close();
+      getAllCheckboxes().forEach(cb => { cb.checked = false; });
+      syncSelected();
+      window.location.reload();
+    } else {
+      const err = document.getElementById("folder-picker-error");
+      if (err) { err.textContent = errorMessage || "Move failed. Try again."; err.style.display = "block"; }
+    }
+  });
+
+  // Delete
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      const folders = selected.filter(i => i.type === "folder");
+      const decks = selected.filter(i => i.type === "deck");
+      const parts = [];
+      if (folders.length) parts.push(folders.length + " folder" + (folders.length>1?"s":""));
+      if (decks.length) parts.push(decks.length + " deck" + (decks.length>1?"s":""));
+      if (!confirm("Delete " + parts.join(" and ") + "?")) return;
+      let ok = true;
+      for (const f of folders) {
+        const r = await fetch("/folders/" + f.id + "/delete", {method:"POST"});
+        if (!r.ok) ok = false;
+      }
+      for (const d of decks) {
+        const r = await fetch("/api/v1/decks/" + d.id, {method:"DELETE"});
+        if (!r.ok) ok = false;
+      }
+      if (ok) {
+        getAllCheckboxes().forEach(cb => { cb.checked = false; });
+        syncSelected();
+        window.location.reload();
+      }
+    });
+  }
+
+  // Create folder button
+  document.getElementById("new-folder-btn")?.addEventListener("click", () => {
+    const modal = document.getElementById("create-folder-modal");
+    const input = document.getElementById("create-folder-name");
+    if (input) {
+      input.value = "";
+      setTimeout(() => { input.focus(); }, 0);
+    }
+    if (modal) modal.showModal();
+  });
+
+  // Rename button in action bar
+  document.getElementById("rename-btn")?.addEventListener("click", () => {
+    const modal = document.getElementById("rename-modal");
+    const form = document.getElementById("rename-form");
+    const idInput = document.getElementById("rename-folder-id");
+    const nameInput = document.getElementById("rename-folder-name");
+    if (selected.length !== 1) return;
+    const item = selected[0];
+    const el = document.querySelector(`[data-item-id="${item.id}"]`);
+    if (form) form.action = "/" + item.type + "s/" + item.id + "/rename";
+    if (idInput) idInput.value = item.id;
+    if (nameInput) { nameInput.value = el?.dataset.name || el?.querySelector(".browse-item__name, .deck-item-name")?.textContent || ""; nameInput.focus(); nameInput.select(); }
+    if (modal) modal.showModal();
+  });
+
+  // Folder name validation for modal inputs - show errors, do not mutate typed text
+  ["create-folder-name", "rename-folder-name"].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const validateFolderName = () => {
+      const value = el.value;
+      if (!value.trim()) {
+        el.setCustomValidity("Folder name is required");
+      } else if (!/^[a-zA-Z0-9_]+$/.test(value)) {
+        el.setCustomValidity("Use only letters, numbers, and underscore");
+      } else {
+        el.setCustomValidity("");
+      }
+    };
+    el.addEventListener("input", validateFolderName);
+    el.addEventListener("invalid", validateFolderName);
+  });
+
+  // Modal backdrop close
+  document.querySelectorAll("dialog.modal").forEach(d => {
+    d.addEventListener("click", e => {
+      if (e.target === d) d.close();
+    });
+  });
+
+  // Favorites
+  document.querySelectorAll(".deck-favorite-btn").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.preventDefault(); e.stopPropagation();
+      const id = btn.dataset.deckId;
+      if (!id) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/v1/favorites/decks/" + id + "/toggle", {method:"POST"});
+        if (res.ok) {
+          const d = await res.json();
+          btn.innerHTML = d.favorite
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>`;
+          btn.classList.toggle("deck-favorite-btn--active", d.favorite);
+        }
+      } finally { btn.disabled = false; }
+    });
+  });
+})();
 </script>
 {% endblock %}

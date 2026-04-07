@@ -1,0 +1,31 @@
+{# folder_nav.html — Breadcrumb trail for folder navigation #}
+{# Usage: include with context {breadcrumb: [(id, name), ...], current_folder_name: str} #}
+{% if breadcrumb %}
+<nav class="folder-nav" aria-label="Folder navigation">
+  <ol class="folder-nav__list">
+    <li class="folder-nav__crumb">
+      <a href="/dashboard" class="folder-nav__link" title="Home">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+          <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <span>Home</span>
+      </a>
+    </li>
+    {% for crumb_id, crumb_name in breadcrumb %}
+      <li class="folder-nav__crumb" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </li>
+      {% if loop.last %}
+        <li class="folder-nav__crumb folder-nav__crumb--current">
+          <span>{{ crumb_name }}</span>
+        </li>
+      {% else %}
+        <li class="folder-nav__crumb">
+          <a href="/dashboard?folder={{ crumb_id }}" class="folder-nav__link">{{ crumb_name }}</a>
+        </li>
+      {% endif %}
+    {% endfor %}
+  </ol>
+</nav>
+{% endif %}

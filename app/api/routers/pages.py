@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -433,7 +434,13 @@ def _dashboard_response(
     modal_deck: Deck | None = None,
     create_form: dict[str, str | bool] | None = None,
     edit_form: dict[str, str | bool] | None = None,
+    folder_id: UUID | None = None,
+    folder_tree: list[dict] | None = None,
+    folder_error: str | None = None,
+    folder_success: str | None = None,
 ):
+    from app.models import Folder
+
     deck_stats = list_accessible_deck_stats(db, user=user)
 
     # Compute user's favorite deck IDs
@@ -443,8 +450,91 @@ def _dashboard_response(
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
 
+    def _folder_path_label(folder_id: UUID | None) -> str:
+        if not folder_id:
+            return "Root"
+        parts: list[str] = []
+        current_id: UUID | None = folder_id
+        while current_id:
+            node = db.get(Folder, current_id)
+            if not node:
+                break
+            parts.insert(0, node.name)
+            current_id = node.parent_id
+        return " / ".join(parts) if parts else "Root"
+
     # Filter deck_stats to only favorites (for display on dashboard)
-    favorite_deck_stats = [item for item in deck_stats if str(item.deck.id) in favorite_deck_ids]
+    favorite_deck_stats = [
+        {
+            "deck": item.deck,
+            "folder_path": _folder_path_label(getattr(item.deck, "folder_id", None)),
+        }
+        for item in deck_stats
+        if str(item.deck.id) in favorite_deck_ids
+    ]
+
+    # Folder context
+    folders = []
+    breadcrumb = []
+    current_folder = None
+    folder_decks = []
+
+    if folder_id:
+        # Load current folder and its subfolders
+        current_folder = db.get(Folder, folder_id)
+        if current_folder and current_folder.user_id == user.id:
+            # Breadcrumb path
+            path_ids = []
+            node_id: UUID | None = folder_id
+            while node_id:
+                node = db.get(Folder, node_id)
+                if not node:
+                    break
+                path_ids.insert(0, node)
+                node_id = node.parent_id
+
+            breadcrumb = [(str(f.id), f.name) for f in path_ids]
+
+            # Subfolders of current folder
+            folder_rows = db.execute(
+                select(Folder)
+                .where(Folder.parent_id == folder_id)
+                .order_by(Folder.name.asc())
+            ).scalars().all()
+
+            from app.api.routers.folders import _count_decks_in_folder, _count_subfolders
+
+            for f in folder_rows:
+                folders.append({
+                    "id": str(f.id),
+                    "name": f.name,
+                    "deck_count": _count_decks_in_folder(db, f.id),
+                    "subfolder_count": _count_subfolders(db, f.id),
+                })
+
+            # Decks in this folder
+            folder_decks = db.execute(
+                select(Deck)
+                .where(Deck.folder_id == folder_id, Deck.is_deleted.is_(False))
+                .order_by(Deck.name.asc())
+            ).scalars().all()
+    else:
+        # Root level — load root folders
+        folder_rows = db.execute(
+            select(Folder)
+            .where(Folder.parent_id.is_(None), Folder.user_id == user.id)
+            .order_by(Folder.name.asc())
+        ).scalars().all()
+
+        from app.api.routers.folders import _count_decks_in_folder, _count_subfolders
+
+        for f in folder_rows:
+            folders.append({
+                "id": str(f.id),
+                "name": f.name,
+                "deck_count": _count_decks_in_folder(db, f.id),
+                "subfolder_count": _count_subfolders(db, f.id),
+            })
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -468,6 +558,14 @@ def _dashboard_response(
             },
             "tag_form": _tag_form_context(modal_deck) if modal_deck else {"tag_names": ""},
             "title": "Workspace | edu selviz",
+            # Folder context
+            "folders": folders,
+            "breadcrumb": breadcrumb,
+            "current_folder": current_folder,
+            "folder_decks": folder_decks,
+            "folder_tree": folder_tree or [],
+            "folder_error": folder_error,
+            "folder_success": folder_success,
         },
         status_code=status_code,
     )
@@ -511,7 +609,173 @@ def dashboard(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    return _dashboard_response(request, user=user, db=db)
+    from app.api.routers.folders import get_folder_tree
+
+    folder_id = request.query_params.get("folder")
+    parsed_folder_id: UUID | None = None
+    if folder_id:
+        try:
+            parsed_folder_id = UUID(folder_id)
+        except ValueError:
+            pass
+
+    folder_tree = get_folder_tree(user=user, db=db)
+
+    return _dashboard_response(
+        request, user=user, db=db,
+        folder_id=parsed_folder_id,
+        folder_tree=folder_tree,
+    )
+
+
+# ── Folder CRUD handlers ──────────────────────────────────────────────────────
+
+_FOLDER_NAME_RE = re.compile(r"^[a-zA-Z0-9_]+$")
+
+
+@router.post("/folders")
+def create_folder(
+    request: Request,
+    name: str = Form(...),
+    parent_id: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models import Folder
+    from app.api.routers.folders import get_folder_tree
+
+    name = name.strip()
+    parent_uuid: UUID | None = None
+    if parent_id:
+        try:
+            parent_uuid = UUID(parent_id)
+        except ValueError:
+            pass
+
+    if not name or len(name) > 255:
+        return RedirectResponse(
+            "/dashboard" + (f"?folder={parent_id}" if parent_id else ""),
+            status_code=303,
+        )
+    if not _FOLDER_NAME_RE.match(name):
+        folder_tree = get_folder_tree(user=user, db=db)
+        return _dashboard_response(
+            request, user=user, db=db,
+            folder_id=parent_uuid,
+            folder_tree=folder_tree,
+            folder_error="Folder name can only contain letters, numbers, and underscores.",
+        )
+
+    # Verify parent ownership
+    if parent_uuid:
+        parent = db.get(Folder, parent_uuid)
+        if not parent or parent.user_id != user.id:
+            return RedirectResponse("/dashboard", status_code=303)
+
+    # Check duplicate sibling name
+    existing = db.execute(
+        select(Folder).where(Folder.parent_id == parent_uuid, Folder.user_id == user.id, Folder.name == name)
+    ).scalars().first()
+    if existing:
+        folder_tree = get_folder_tree(user=user, db=db)
+        return _dashboard_response(
+            request, user=user, db=db,
+            folder_id=parent_uuid,
+            folder_tree=folder_tree,
+            folder_error="A folder with this name already exists here.",
+        )
+
+    folder = Folder(name=name, parent_id=parent_uuid, user_id=user.id)
+    db.add(folder)
+    db.commit()
+    db.refresh(folder)
+
+    return RedirectResponse(
+        f"/decks/browse?folder={folder.id}&success=Folder+created",
+        status_code=303,
+    )
+
+
+
+@router.post("/folders/{folder_id}/rename")
+def rename_folder(
+    request: Request,
+    folder_id: UUID,
+    name: str = Form(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models import Folder
+    from app.api.routers.folders import get_folder_tree
+
+    folder = db.get(Folder, folder_id)
+    if not folder or folder.user_id != user.id:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    name = name.strip()
+    if not name or len(name) > 255 or not _FOLDER_NAME_RE.match(name):
+        folder_tree = get_folder_tree(user=user, db=db)
+        return _dashboard_response(
+            request, user=user, db=db,
+            folder_id=folder.parent_id,
+            folder_tree=folder_tree,
+            folder_error="Folder name can only contain letters, numbers, and underscores.",
+        )
+
+    # Check duplicate sibling name
+    existing = db.execute(
+        select(Folder).where(
+            Folder.parent_id == folder.parent_id,
+            Folder.user_id == user.id,
+            Folder.name == name,
+            Folder.id != folder_id,
+        )
+    ).scalars().first()
+    if existing:
+        folder_tree = get_folder_tree(user=user, db=db)
+        return _dashboard_response(
+            request, user=user, db=db,
+            folder_id=folder.parent_id,
+            folder_tree=folder_tree,
+            folder_error="A folder with this name already exists here.",
+        )
+
+    folder.name = name
+    db.commit()
+
+    return RedirectResponse(
+        f"/decks/browse?folder={folder_id}&success=Folder+renamed",
+        status_code=303,
+    )
+
+
+@router.post("/folders/{folder_id}/delete")
+def delete_folder(
+    request: Request,
+    folder_id: UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    from app.models import Folder
+    from app.api.routers.folders import get_folder_tree
+
+    folder = db.get(Folder, folder_id)
+    if not folder or folder.user_id != user.id:
+        return RedirectResponse("/dashboard", status_code=303)
+
+    parent_id = folder.parent_id
+
+    # Move child decks to parent
+    for deck in db.execute(select(Deck).where(Deck.folder_id == folder_id)).scalars().all():
+        deck.folder_id = parent_id
+
+    db.delete(folder)
+    db.commit()
+
+    return RedirectResponse(
+        "/decks/browse" + (f"?folder={parent_id}" if parent_id else "") + "?success=Folder+deleted",
+        status_code=303,
+    )
 
 
 BROWSE_PAGE_SIZE = 10
@@ -523,23 +787,73 @@ def browse_decks(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    from app.models import Folder
     from app.services.access import accessible_deck_clause
+    from app.api.routers.folders import get_folder_tree, _count_decks_in_folder, _count_subfolders
 
     q = request.query_params.get("q", "").strip()
-    page = request.query_params.get("page", "1")
+    folder_param = request.query_params.get("folder", "")
     try:
-        page = max(1, int(page))
+        folder_id = UUID(folder_param) if folder_param else None
     except ValueError:
-        page = 1
+        folder_id = None
 
-    # Base query — accessible decks
+    folder_tree = get_folder_tree(user=user, db=db)
+
+    # Breadcrumb
+    breadcrumb: list[tuple[str, str]] = []
+    current_folder = None
+    if folder_id:
+        current_folder = db.get(Folder, folder_id)
+        if current_folder and current_folder.user_id == user.id:
+            node_id: UUID | None = folder_id
+            path_ids = []
+            while node_id:
+                node = db.get(Folder, node_id)
+                if not node:
+                    break
+                path_ids.insert(0, node)
+                node_id = node.parent_id
+            breadcrumb = [(str(f.id), f.name) for f in path_ids]
+
+    # Subfolders in current folder
+    subfolders = []
+    for f in db.execute(
+        select(Folder).where(
+            Folder.parent_id == folder_id,
+        ).order_by(Folder.name.asc())
+    ).scalars().all():
+        subfolders.append({
+            "id": str(f.id), "name": f.name,
+            "deck_count": _count_decks_in_folder(db, f.id),
+            "subfolder_count": _count_subfolders(db, f.id),
+        })
+
+    # Root folders (for sidebar or root-level display)
+    root_folders = []
+    for f in db.execute(
+        select(Folder).where(
+            Folder.parent_id == None,
+        ).order_by(Folder.name.asc())
+    ).scalars().all():
+        root_folders.append({
+            "id": str(f.id), "name": f.name,
+            "deck_count": _count_decks_in_folder(db, f.id),
+            "subfolder_count": _count_subfolders(db, f.id),
+        })
+
+    # Base query for decks
     base_q = (
         select(Deck)
         .options(selectinload(Deck.organization), selectinload(Deck.tags))
         .where(accessible_deck_clause(user), Deck.is_deleted.is_(False))
     )
 
-    # Search filter - normalize the query to match normalized deck names or tags
+    # Folder filter
+    if folder_id and not q:
+        base_q = base_q.where(Deck.folder_id == folder_id)
+
+    # Search
     if q:
         from app.services.access import normalize_deck_name
         from sqlalchemy import or_
@@ -552,33 +866,48 @@ def browse_decks(
                 )
             ).group_by(Deck.id)
 
-    # Count total
+    # Pagination only for search results
+    page = request.query_params.get("page", "1")
+    try:
+        page = max(1, int(page))
+    except ValueError:
+        page = 1
+
     count_q = select(func.count()).select_from(base_q.subquery())
     total = db.execute(count_q).scalar_one()
+    total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
+    start_page = max(1, page - 2)
+    end_page = min(total_pages, page + 2)
 
-    # Paginated
     offset = (page - 1) * BROWSE_PAGE_SIZE
     decks = (
         db.execute(
             base_q.order_by(Deck.is_global.desc(), Deck.created_at.desc())
-            .limit(BROWSE_PAGE_SIZE)
-            .offset(offset)
-        )
-        .scalars()
-        .all()
+            .limit(BROWSE_PAGE_SIZE).offset(offset)
+        ).scalars().all()
     )
 
-    # Favorite IDs for current user
+    # Root-level decks only (no folder, for root view)
+    root_decks = []
+    if not q:
+        root_decks = (
+            db.execute(
+                select(Deck)
+                .options(selectinload(Deck.organization), selectinload(Deck.tags))
+                .where(
+                    accessible_deck_clause(user),
+                    Deck.is_deleted.is_(False),
+                    Deck.folder_id == None,
+                )
+                .order_by(Deck.is_global.desc(), Deck.created_at.desc())
+            ).scalars().all()
+        )
+
+    # Favorite IDs
     fav_rows = db.execute(
         select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
     ).scalars().all()
     favorite_deck_ids = {str(f) for f in fav_rows}
-
-    total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
-
-    # Pagination window around current page
-    start_page = max(1, page - 2)
-    end_page = min(total_pages, page + 2)
 
     return templates.TemplateResponse(
         "decks/browse.html",
@@ -591,10 +920,17 @@ def browse_decks(
             "page": page,
             "total_pages": total_pages,
             "total": total,
-            "page_size": BROWSE_PAGE_SIZE,
             "start_page": start_page,
             "end_page": end_page,
-            "title": "Browse Decks | edu selviz",
+            "title": "Browse | edu selviz",
+            # Folder context
+            "subfolders": subfolders,
+            "root_folders": root_folders,
+            "root_decks": root_decks,
+            "breadcrumb": breadcrumb,
+            "current_folder": current_folder,
+            "folder_tree": folder_tree,
+            "can_manage_decks": can_manage_decks(user),
         },
     )
 
