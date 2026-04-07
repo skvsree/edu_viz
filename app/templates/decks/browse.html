@@ -54,6 +54,7 @@
     {% endif %}
 
     {# ── Content grid ────────────────────────────────────────────────── #}
+    <div class="browse-content-scroll">
     {% if q %}
       {# Search results — flat list #}
       {% if decks %}
@@ -135,6 +136,7 @@
         </div>
       {% endif %}
     {% endif %}
+    </div>
 
   </main>
 </div>
@@ -211,8 +213,20 @@
 .browse-layout { display:flex; gap:1.5rem; align-items:flex-start; flex-direction:column; }
 
 /* ── Main ───────────────────────────────────────────────────────────── */
-.browse-main { flex:1; min-width:0; width:100%; }
+.browse-main {
+  flex:1; min-width:0; width:100%;
+  display:flex; flex-direction:column;
+  max-height:calc(100vh - 8rem);
+  min-height:0;
+}
 .browse-header { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem; flex-wrap:wrap; }
+.browse-content-scroll {
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:0.25rem;
+}
 .browse-title { font-size:1.25rem; font-weight:700; margin:0; }
 .browse-header-right { display:flex; gap:0.5rem; align-items:center; }
 .browse-search { display:flex; gap:0.25rem; align-items:center; }
@@ -227,6 +241,7 @@
   padding:0.5rem 0.75rem; margin-bottom:0.75rem;
   background:var(--card-bg); border:1px solid var(--border-color);
   border-radius:10px; overflow-x:auto;
+  position:sticky; top:0; z-index:5;
 }
 .browse-action-bar.has-selection { box-shadow: 0 0 0 1px rgba(59,130,246,0.25) inset; }
 .browse-action-bar__actions { display:flex; gap:0.375rem; flex-wrap:nowrap; white-space:nowrap; }
@@ -406,6 +421,9 @@
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
+  .browse-main {
+    max-height:calc(100vh - 6.5rem);
+  }
   .browse-grid {
     grid-template-columns: 1fr;
     gap: 0.625rem;
