@@ -21,6 +21,7 @@ from app.models.analytics import (
     AnalyticsEvent,
     AnalyticsEventType,
 )
+from app.models.deck_access import DeckAccess, DeckAccessLevel
 from app.models.ai_credentials import AICredentialScope
 
 __all__ = [
@@ -44,6 +45,8 @@ __all__ = [
     "AnalyticsEvent",
     "AnalyticsEventType",
     "AICredentialScope",
+    "DeckAccess",
+    "DeckAccessLevel",
     "MCQGeneration",
     "MCQGenerationStatus",
     "DeckMcqGenerationItem",

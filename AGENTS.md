@@ -7,9 +7,8 @@
 
 ## Branch strategy
 - `main`: stable base branch.
-- `feature/folder_structure`: active branch for nested folder organization and browse/dashboard folder UX.
+- `feature/deck_segregation`: current active deploy branch in `/opt/edu_viz` for role-based browse tabs, folder UX, and deck access work.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
-- Current live deploy is running from `/opt/edu_viz` on `feature/folder_structure`.
 - Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from the branch currently used by production.
 
 ## Stack / architecture
@@ -21,377 +20,69 @@
 - DB: PostgreSQL via SQLAlchemy
 - Connection pooling: PgBouncer (transaction mode) in Docker Compose
 - Migrations: Alembic
-- Review interactions: HTMX (`/review` page loads `/review/next`, rating posts to `/review/rate`)
 - Docker runtime: `docker-compose.yml`, `Dockerfile`, `entrypoint.sh`
 
-## Auth setup
-- Auth is now treated as generic OIDC with **Microsoft Entra External ID** as the preferred provider.
-- Preferred env vars are `MICROSOFT_ENTRA_EXTERNAL_ID_*`.
-- Legacy `AZURE_B2C_*` vars are still accepted as compatibility fallback while migrating old setups.
-- Redirect URI in production should be `https://edu.selviz.in/auth/callback`.
-- Relevant code:
-  - config/env loading: `app/core/config.py`
-  - OIDC config + discovery: `app/services/microsoft_identity.py`
-  - auth routes: `app/api/routers/auth.py`
-  - legacy compatibility shim: `app/services/azure_b2c.py`
-- Do not hardcode tenant/app values in code or docs. Keep secrets only in env files / deploy config.
-
-## Folder feature notes
-- Nested folders are implemented with `Folder` model + `Deck.folder_id`.
-- Main files for folder UX: `app/api/routers/folders.py`, `app/api/routers/pages.py`, `app/templates/dashboard.html`, `app/templates/decks/browse.html`.
-- `DashboardDeckStats` is a slotted dataclass. Do not attach ad-hoc attributes to it in page handlers.
-- Real `DashboardDeckStats` fields are `deck`, `cards_reviewed`, `cards_due`, `accuracy`, `last_reviewed`.
-- Dashboard favorites folder labels should be passed as template-safe dict data instead of mutating stats objects.
-- Browse page should keep the top controls sticky while only the deck/folder list scrolls inside `.browse-content-scroll`.
-- Avoid reintroducing old left padding on browse mobile layout; it creates obvious dead space.
-- When dashboard/browse breaks, reproduce once and inspect `docker logs edu_viz-app-1` immediately for the real traceback.
-
-## Roles / organizations model
-- Roles: `user`, `admin`, `system_admin`.
-- Users belong to at most one organization (`users.organization_id`).
-- Deck visibility is organization-aware plus legacy personal/global access rules.
-- `admin` and `system_admin` can manage decks; regular `user` can review but not create/edit decks.
-- `system_admin` can manage all orgs and user assignments.
-- Phase-2 status:
-  - organizations exist and can be created/renamed
-  - users can be assigned orgs / roles from settings
-  - dashboard shows accessible decks with progress metrics
-  - review flow is working inside the phase-2 UI refresh
-  - bootstrap email can be promoted to `system_admin` on startup/login
-  - older personal data is backfilled to keep pre-phase-2 usage working
-
-## UI / UX preferences gathered so far
-- Keep pages minimal, clean, and focused.
-- Prefer calm, professional copy; avoid clutter and loud visual treatment.
-- Brand text should use the standard treatment:
-  - `edu selviz`
-  - subtitle: `Professional study workflow`
-- Review page should stay distraction-light even when branded.
-- Review, Test, and Test Report pages use a fixed warm cream theme (no light mode toggle).
-- Dashboard/settings modals should feel native and not break navigation state.
-- Use the existing logo asset instead of introducing alternate brand artwork.
-
-## Theme system
-- Browser-level dark/light toggle using `data-theme="light"` on `<html>` and CSS variables.
-- Theme stored in `localStorage` (no DB), persists across sessions.
-- Toggle button (🌙/☀️) in `base.html` topbar + keyboard shortcut `T` toggles on main app pages.
-- All `[data-theme="light"]` element overrides are scoped under `.page-content` class — review/test pages do not use this class so their warm cream theme is unaffected.
-- Review, Test, and Test Report pages have their own standalone HTML templates (not extending base.html) with a fixed warm cream gradient theme.
-- Rendering pitfall: review/test/test-report templates do not inherit base.html’s general KaTeX setup or content rendering conventions. If card HTML/formula support changes, patch these standalone templates explicitly so prompts/options/explanations use `| sanitize | safe` and initialize KaTeX locally.
+## Working rules
+- Read this file before making changes.
+- Update this file during commits with notes useful to future agents.
+- Prefer small targeted template/CSS fixes over broad layout rewrites.
+- For UI changes in deployed app code, rebuild and restart the `app` service with Docker Compose.
+- Code is baked into the image, not bind-mounted. Template/CSS changes require rebuild.
 
 ## Deployment notes
-- Live deployment path: `/opt/edu_viz`.
-- Runtime uses Docker Compose.
-- Production code is baked into the image, not bind-mounted.
-- Current production branch is `feature/folder_structure`.
-- Common deploy flow:
-  1. Confirm branch/status in `/opt/edu_viz`
-  2. Commit and push the active branch
-  3. Deploy with `docker compose up --build -d app`
-  4. Reproduce and inspect `docker logs edu_viz-app-1` if anything fails
-- `entrypoint.sh` waits for Postgres, runs `alembic upgrade head`, then starts Uvicorn.
-- Static assets are cache-busted through `static_asset_url()` in `app/api/routers/pages.py`, which hashes file contents and serves `/assets/<version>/...` URLs.
-- Because of hashed asset URLs, CSS/image changes normally do not need manual cache purges after deploy.
+- Active deploy path: `/opt/edu_viz`
+- Rebuild command:
+  - `docker compose build app && docker compose up -d app`
+- Quick verification:
+  - `docker compose logs app --tail=20`
 
-### PgBouncer
-- Running as `edu_viz-pgbouncer-1` container in Docker Compose
-- App connects via `pgbouncer:5432` (configured in `.env` DATABASE_URL)
-- Uses SCRAM-SHA-256 auth (matches PostgreSQL 16 default)
-- Transaction pooling mode (optimal for request-response web apps)
-- Key settings: `pool_mode=transaction`, `default_pool_size=20`, `max_client_conn=500`
+## Mobile browse layout notes
+- Main browse page styles live in `app/templates/decks/browse.html`.
+- Deck card markup lives in `app/templates/components/browse_item.html`.
+- Mobile browse deck cards are sensitive to DOM order and flex behavior.
+- Keep the main mobile deck row simple: checkbox, deck link/content, favorite star.
+- Do not switch mobile deck cards to CSS grid unless the DOM structure is redesigned too.
+- The favorite star should remain the last control in the row.
+- Global/Org badge belongs under title/description inside `.deck-item__text`.
+- Access controls should live inside `.deck-item__text` on mobile so they render below description instead of taking a separate side column.
+- Badge and access controls may sit side by side under the description if space allows.
+- Narrower-feeling mobile cards are achieved by adjusting scroll-area padding and card padding, not by breaking the row structure.
 
-## Known pitfalls / regressions already seen
-- Auth naming drift: codebase moved from Azure AD B2C wording to Microsoft Entra External ID. Compatibility shim remains; do not remove old env support casually or you may break current deployments.
-- **Starlette query_params caching**: `request.query_params` is cached. Modifying `request.scope["query_string"]` after the fact has no effect. If you need to pass modified params between internal function calls, pass them as explicit arguments instead.
-- Review page styling is intentionally separate from the dark shell used elsewhere. Reusing generic topbar styles blindly can make review mode feel heavy.
-- Modal flows in dashboard/settings depend on query params + client-side dialog wiring. It is easy to break edit/create reopen behavior if IDs/data attributes drift.
-- Static asset changes may appear stale only if you bypass `static_asset_url()`; always use the helper in templates for CSS/images/icons.
-- Organization/admin logic is sensitive: visibility and management permissions are not the same thing. Check `app/services/access.py` before changing deck/user behavior.
-- **Jinja2 UUID serialization**: `tojson` filter cannot serialize UUID objects. Use `| map('string') | list | tojson` when passing UUIDs to JavaScript.
-- **Auth callback user lookup**: Users are matched first by `identity_sub`, then by `email` as fallback. If a user exists with a different `identity_sub` (e.g., from a previous auth provider), the email fallback updates their `identity_sub`.
+## Current UI intent for browse page
+- Mobile deck card order: checkbox -> content -> star
+- Badge/access row under description
+- Global/Org badge and access icon may sit side by side
+- Star on the right, not overlapping checkbox
+- Avoid extra right-edge clipping by keeping some right padding in `.browse-content-scroll`
 
-## Be careful when editing
-### Auth
-- Touch `app/services/microsoft_identity.py`, `app/api/routers/auth.py`, or `app/core/config.py` carefully.
-- Preserve fallback behavior for legacy env names unless the migration is explicitly completed.
-- Avoid changing callback/session behavior without checking both login and logout flows.
+## Deck access model
+- Deck visibility scope lives on `Deck.access_level` with values:
+  - `global`: anyone can read
+  - `org`: users in the same organization can read
+  - `user`: only the owner can read unless explicitly shared
+- Per-user deck grants live in `deck_accesses` / `DeckAccess`.
+- Per-user grant levels are:
+  - `none`
+  - `read`
+  - `write`
+  - `delete`
+- Access grants are per deck, per user, unique by `(deck_id, user_id)`.
+- Owner always has read/write/delete on their own deck.
+- System admin always has full access.
+- Org admin can write/delete org-scope decks in their own organization.
+- Explicit per-user grants can expand access beyond the deck scope.
+- A `read` grant allows viewing a user-scope deck even if the user is not the owner.
+- A `write` grant allows modifying the deck.
+- A `delete` grant allows deleting the deck.
 
-### Modals
-- Dashboard/settings dialogs rely on matching IDs, `data-modal-open`, `data-modal-close`, and query-param-driven server rendering.
-- Test both direct page loads with query params and click-open interactions.
-
-### Review UI
-- Main files: `app/templates/review/page.html`, `app/templates/review/card.html`, `app/templates/review/empty.html`, `app/static/styles.css`.
-- Keep the review page centered, lightweight, and readable.
-- Do not accidentally pull in the full app topbar/navigation unless explicitly requested.
-- Review page has its own branded logo — do not replace with the main app logo without checking.
-
-### Bulk delete
-- Flashcard bulk delete: `POST /decks/{id}/flashcards/bulk-delete`
-- MCQ bulk delete: `POST /decks/{id}/mcqs/bulk-delete`
-- Both clean up card state dependencies before deleting; keep tests aligned if changing logic.
-- Deleting AI-generated MCQs intentionally resets deck MCQ generation item state deck-wide because generated MCQs are not reliably mapped back to source cards one-by-one.
-
-### MCQ generation status / streaming
-- Start endpoint: `POST /decks/{id}/generate-mcqs/start`
-- Stream endpoint: `GET /decks/{id}/generate-mcqs/stream`
-- Architecture: start request launches a long-running worker/thread; SSE route streams DB-backed status only.
-- Per-source-card progress lives in `deck_mcq_generation_items` via `DeckMcqGenerationItem` / `DeckMcqGenerationItemStatus`.
-- Reruns should skip completed source cards and retry only pending/failed ones.
-- Do not move long-running provider calls back into the SSE handler; browser/EventSource stability is better with the current start + background worker + stream-status pattern.
-- EventSource only listens to GET and named SSE events require `addEventListener(eventName, ...)`.
-- Avoid custom SSE event name `error`; use app-specific names like `generation_error`.
-- Mobile bulk-select controls on flashcard/MCQ management pages are styled as toggle switches; if they look broken, inspect both template markup and mobile CSS rules in `app/static/styles.css`.
-
-### Tests
-- Test center lives at `/decks/{id}/tests` and is accessible to managers (admin/system_admin).
-- Test creation, taking, submission, and attempt reports are in `app/api/routers/content.py`.
-- Templates: `app/templates/tests/list.html`, `take.html`, `report.html`.
-- `take.html` and `report.html` are standalone pages (not extending base.html), matching review page style.
-- Question payload parsing was recently fixed — be careful with card type discrimination when changing test submission logic.
-- When submitting answers via form POST, `question_ids` must be individual hidden fields per question, not comma-separated.
-- Favorite star buttons (`deck-star-btn`) have a glow hover effect via `filter: drop-shadow(...)`. No transform scale on hover to avoid cursor jump.
-- Do NOT use `request.scope["query_string"]` hack to pass params between functions — Starlette caches `query_params`.
-
-### Static assets
-- Current logo asset: `app/static/brand/logo.jpg`.
-- Reference assets through `static_asset_url(...)` so cache-busting keeps working.
-
-## Feature summary (current state)
-
-### Bulk import
-- Bulk import endpoint is `POST /api/v1/import/deck` and `POST /api/v1/import/decks` with `X-Api-Key` auth via `require_bulk_import_api_key`.
-- Added optional `subject` to bulk import payloads so subject-level full decks can be named like `grade_11_biology_full`, `grade_11_chemistry_full`, etc.
-- QA verified the new subject naming path by importing `grade_11_biology_full`, `grade_11_chemistry_full`, `grade_11_physics_full`, `grade_12_biology_full`, `grade_12_chemistry_full`, and `grade_12_physics_full`.
-- The old `grade_{grade}_science_full` naming still exists for legacy full-science imports.
-- Runtime env key for QA/prod bulk import was confirmed to be `BULK_IMPORT_API_KEY` in `/opt/edu_viz/.env`.
-
-## Feature summary (current state)
-
-### Dashboard
-- Home page shows simplified deck cards with deck name + Review (green outline) and Test (purple outline) buttons
-- Clicking the deck card opens the deck overview page
-- Real-time deck search with case-insensitive filtering by deck name and tags
-
-### Browse Decks Search
-- Available at `/decks/browse`
-- Search normalizes query using `normalize_deck_name()` before comparing
-- Matches both deck `normalized_name` and associated tag `normalized_name`
-- Uses `OR` condition with grouping to avoid duplicate results
-- Search results stay flat even when a folder is selected; folder drill-down is only for non-search browse mode
-
-### Folder organization
-- Decks can be organized into nested folders and browsed with breadcrumbs at `/decks/browse?folder=<uuid>`.
-- Dashboard and browse both support folder context; root view shows root folders and unfiled decks.
-- Folder names are limited to `a-z`, `A-Z`, `0-9`, and `_`.
-- Folder move API is `PUT /api/v1/folders/{folder_id}/move` and blocks moving a folder into itself or any descendant.
-- Browse move picker now disables invalid self/descendant targets client-side to match backend validation.
-- Important regression to avoid: in folder view, render `decks` (filtered for the current folder), not `root_decks`.
-
-### Deck Overview
-- New hub page at `/decks/{id}` — entry point when user clicks a deck from dashboard
-- Nav card with icons + text: Home, MCQs (count), Flash Cards (count), Tests (count)
-- Action card with color-coded buttons: Review (green), Test (purple)
-- Edit deck form at bottom (for editors/admins)
-- Sub-pages (MCQs, Flash Cards, Tests) have only a "Back to Overview" button — no other nav clutter
-
-### Content management
-- Decks: create, edit, delete (soft delete), global/org scope toggle in edit flow
-- Flashcards: CRUD per deck, bulk delete
-- MCQs: CRUD per deck, bulk delete, JSON import
-- AI upload: dedicated per-deck page (`/decks/{id}/ai-upload`) for PDF/DOCX ingestion via OpenAI
-- Anki CSV export per deck (`/decks/{id}/anki-export.csv`)
-
-### Review
-- FSRS-style review flow at `/review`
-- HTMX-powered: loads `/review/next`, posts ratings to `/review/rate`
-- Review page is intentionally branded (`edu selviz` logo) and styled separately from the main app shell — keep it distraction-light
-- Review starts immediately — no count selection required (count can optionally be passed as URL param `remaining=N`)
-- Review deck isolation: `review_rate` calls `_review_next_inner()` directly (passing deck_id and remaining as explicit params) instead of hacking `request.scope["query_string"]` which is cached by Starlette
-
-### Tests
-- Tests are for user self-evaluation — no manual test creation or metadata (title/description) required.
-- Test titles are auto-generated as `Test taken @ {datetime}` (e.g., "Test taken @ 2026-03-17 18:30").
-- Each test attempt is a standalone test — there's no separate "test attempt" concept.
-- Flow: User clicks "Take Test" → question count modal (10/25/50/All) → test auto-created → questions appear immediately.
-- Deck-level test center (`/decks/{id}/tests`) lists all past tests with scores and links to reports.
-- Test take page blocks navigation until question is answered (Next/Submit disabled until answer selected).
-- Test report has "All" / "Incorrect only" filter toggle.
-- Templates: `app/templates/tests/list.html`, `take.html`, `report.html`.
-- `take.html` and `report.html` are standalone pages (not extending base.html), matching review page style.
-- One question at a time with Previous/Next navigation, answers stored in JS until submit.
-- Question IDs are sent as individual hidden fields (name=`question_ids`), NOT comma-separated.
-- UUID values in templates must be converted to string before `tojson` filter.
-
-### Test Throttling
-- Configurable via env vars in `app/core/config.py`:
-  - `TEST_DAILY_LIMIT`: Max tests per user per day (default: 0 = unlimited)
-  - `TEST_COOLDOWN_SECONDS`: Minimum time between test attempts (default: 0 = no cooldown)
-- Org-level override: Organizations can set `test_daily_limit` (0-10, capped by env max)
-  - Set via `/settings/organizations` edit modal
-  - Displayed in org card: "Tests Enabled (5/day)" or "Tests Enabled" (using global)
-- Logic in `check_test_throttle()` (`app/services/access.py`):
-  1. System admins bypass all limits
-  2. Check cooldown (per deck)
-  3. Check daily limit (org-specific, capped by env)
-- Migration: `0012_org_test_daily_limit.py` adds `test_daily_limit` column to organizations
-
-### Analytics
-- Analytics page at `/analytics` for admin/system_admin roles
-- Shows personal, organization, and system-wide analytics
-- Deck filter uses multiselect component with `deck_ids` control
-- User filter uses native select dropdown
-- Backend expects `selected_deck_ids` as a list for multiselect
-- Multiselect component: `app/components/multiselect/templates/multiselect.html`
-- Multiselect stores selected keys in hidden input as comma-separated string
-- For Deck objects, use `opt.id|string` for key extraction (not `opt.key|default(opt.id)` which returns 'undefined')
-
-### AI Generation
-- Three providers: OpenAI, Minimax, Claude
-- Config via two env vars: `AI_PROVIDER` (openai|minimax|claude) and `AI_API_KEY`
-- Resolution hierarchy: user > org > global env
-- AI buttons only visible when org has `is_ai_enabled=true` and user is admin
-- Checked via `can_use_ai_generation(user)` in `app/services/access.py`
-- AI upload page (`/decks/{id}/ai-upload`) validates `can_use_ai_generation` + `can_manage_deck`
-- Both generate-mcqs and ai-import use dynamic provider resolution
-
-### Settings (admin)
-- Organizations management (`/settings/organizations`) — create, edit via modals, delete (future)
-- Users management (`/settings/users`) — update role, assign organization, AI and test settings
-- Global deck toggle in deck edit flow (marks deck as globally accessible)
-
-#### Settings page UI patterns
-- **Organizations page**: deck-grid of org cards with stats (users, AI, tests). Create/edit via modals.
-  - Modal flow: `Enable AI generation` checkbox → conditional `Override global AI setting` → Provider + API key inputs
-  - Same pattern for `Enable tests` → `Daily test limit` input
-  - Modal pre-fills from data attributes on the Edit button
-- **Users page**: stacked form-cards per user matching the `form-card` pattern (section-heading outside form, form class="stack-md", each field in a `<div>` wrapper)
-  - AI settings section: `Enable AI generation` → `Override org AI` → Provider + API key (same flow as orgs)
-  - AI section only shown when org AI is enabled for that user
-  - AI status shown in grid: "Org AI off" or "Org AI on (user key)"
-  - "View users" from org page filters to that org via `?org=<org_id>` query param
-  - Filtered view shows "Showing users in [Org] — Show all" link
-
-### Routes reference
-
-**Pages router** (`app/api/routers/pages.py`):
-- `GET /` — home
-- `GET /dashboard` — dashboard with accessible decks and progress metrics
-- `GET /settings`, `/settings/organizations`, `/settings/users` — admin settings
-- `POST /decks`, `POST /decks/{id}/update`, `POST /decks/{id}/delete` — deck CRUD
-- `GET /decks/{id}` — deck overview (nav + action cards)
-- `GET /decks/{id}/flashcards`, `GET /decks/{id}/mcqs`, `GET /decks/{id}/ai-upload` — content pages (Back to Overview link)
-- `POST /decks/{id}/cards`, `POST /decks/{id}/cards/import` — card creation/import
-- `GET /review`, `GET /review/next`, `POST /review/rate` — review flow
-
-**Content router** (`app/api/routers/content.py`):
-- `POST /decks/{id}/ai-import` — AI PDF/DOCX ingestion
-- `POST /decks/{id}/mcqs/import-json` — MCQ JSON import
-- `GET /decks/{id}/flashcards/{card_id}/edit`, `POST ...` — flashcard edit
-- `GET /decks/{id}/mcqs/{card_id}/edit`, `POST ...` — MCQ edit
-- `POST /decks/{id}/flashcards/bulk-delete`, `POST /decks/{id}/mcqs/bulk-delete` — bulk delete
-- `GET /decks/{id}/tests`, `POST /decks/{id}/tests` — test center
-- `GET /tests/{id}`, `POST /tests/{id}/submit` — take test
-- `GET /attempts/{id}` — attempt report
-- `GET /decks/{id}/anki-export.csv` — Anki export
-
-### Templates structure
-```
-app/templates/
-├── base.html
-├── home.html
-├── dashboard.html
-├── decks/
-│   └── overview.html       # deck hub page with nav + action cards
-├── cards/
-│   ├── list.html          # flashcard + MCQ listing per deck
-│   ├── ai_upload.html     # AI PDF/DOCX upload
-│   ├── edit_flashcard.html
-│   ├── edit_mcq.html
-│   ├── flashcards.html
-│   └── mcqs.html
-├── review/
-│   ├── page.html
-│   ├── card.html
-│   └── empty.html
-├── settings/
-│   ├── index.html
-│   ├── organizations.html
-│   └── users.html
-└── tests/
-    ├── list.html
-    ├── take.html
-    └── report.html
-```
-
-## Useful files to inspect first
-- `README.md`
-- `app/api/routers/pages.py`
-- `app/api/routers/content.py`
-- `app/services/access.py`
-- `app/services/microsoft_identity.py`
-- `app/templates/base.html`
-- `app/templates/dashboard.html`
-- `app/templates/review/page.html`
-- `app/templates/decks/overview.html`
-- `app/templates/tests/list.html`
-- `app/static/styles.css`
-
-## Working rule for future agents
-- Keep changes practical and small.
-- Don't leak secrets into docs, code, commits, or screenshots.
-- If you deploy UI changes, verify the live page after the container restarts.
-- Review page styling is separate from the main shell — do not pull in the full topbar/nav into review mode.
-- Modal flows in dashboard/settings depend on query params + client-side dialog wiring; test both direct page loads and click-open interactions.
-- Static assets use `static_asset_url()` for cache-busting; always reference CSS/images/icons through this helper.
-
-## Anki Import System (feature/anki-import)
-
-### Overview
-Extended EduViz to import Anki .apkg decks with rich content support.
-
-### Files Created
-- `alembic/versions/0013_add_anki_card_fields.py` - Migration for new card fields
-- `app/services/anki_import.py` - AnkiImportService for parsing .apkg files
-- `app/services/cloze_renderer.py` - Cloze text rendering ({{c1::text}} syntax)
-- `app/services/media_urls.py` - Media URL resolution for images
-- `docs/ANKI_IMPORT_PLAN.md` - Full implementation plan
-
-### Files Modified
-- `app/models/card.py` - Added content_html, media_files, cloze_number fields
-- `app/api/routers/bulk_import.py` - Added POST /api/v1/import/decks/{id}/anki-import
-- `requirements.txt` - Added genanki>=0.14.0
-
-### New Card Fields
-- `content_html`: Full HTML with cloze/image markup
-- `media_files`: JSON array of media filenames
-- `cloze_number`: Cloze index (1, 2, 3...) or NULL
-
-### API Endpoint
-```
-POST /api/v1/import/decks/{deck_id}/anki-import
-Content-Type: multipart/form-data
-file: <.apkg binary>
-
-Response: {
-  "success": true,
-  "cards_imported": 8917,
-  "media_files": 302,
-  "duplicates_skipped": 0,
-  "errors": []
-}
-```
-
-### Phase 2 (Pending)
-- Review template update (cloze rendering)
-- Import UI page
-- Media cleanup on deck delete
-
-### Current Branch: feature/anki-import
-- Recent commits: c7b7613 (Minimax/Claude providers), ce168a9 (dynamic provider + button visibility), 2ea17e4 (simplified AI_PROVIDER/AI_API_KEY env vars)
-
-### OpenCode Provider
-- `OpencodeStudyPackProvider` in `app/services/ai_generation.py` uses MiniMax API directly
-- API: `https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=RqdqdwGe0gBWoGFh`
-- Model: `MiniMax-M2` with system prompt "Answer briefly. Do not explain reasoning. Give only final answer in JSON."
-- Requires `minimax` credential with `api_key` auth type
+## Changing access
+- Changing the deck scope (`global` / `org` / `user`) is separate from granting per-user deck access.
+- Only the owner can change a deck's scope by default.
+- System admin can change any deck scope.
+- Regular users cannot promote a deck to `global`.
+- `org` scope requires org-admin capability.
+- Granting/revoking per-user deck access is allowed for:
+  - deck owner
+  - system admin
+  - org admin for org-scope decks in their own organization
+- In the UI, the scope selector controls deck scope, while the security/manage-access action is for per-user grants.

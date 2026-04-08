@@ -166,6 +166,15 @@ Requires PostgreSQL 15+ running locally.
 
 ---
 
+## Recent UI notes
+
+- Browse page supports role-based tabs: All, Global, Org, Mine (visibility depends on role).
+- Browse deck cards on mobile use a compact single-row layout with the favorite star kept as the last control.
+- Global/Org badge and deck access controls are intended to render below the deck title/description on mobile, not as a separate side column.
+- Template/CSS changes require rebuilding the Docker image because the app code is baked into the container.
+
+---
+
 ## AI Content Generation (Alpha)
 
 > **Alpha feature** — API and behavior may change in future releases.
@@ -226,9 +235,62 @@ Notes:
 
 | Role | Permissions |
 |------|-------------|
-| `system_admin` | Full access — manage all orgs, users, decks |
-| `admin` | Manage decks in their organization, manage card content |
-| `user` | Review and take tests on assigned/organization decks |
+| `system_admin` | Full platform access — manage all organizations, users, decks, deck scope, and sharing |
+| `admin` | Organization admin — manage users/org settings in their org, create/manage decks they own, and write/delete org-scope decks in their organization |
+| `user` | Standard user — create and manage their own decks, review accessible decks, and take tests when enabled |
+
+## Deck access and sharing
+
+Deck visibility uses a two-layer model:
+
+1. **Deck scope** (`Deck.access_level`) controls the default audience.
+2. **Per-user grants** (`DeckAccess`) can give specific users additional access to a deck.
+
+### Deck scope
+
+- `global` — anyone can read the deck
+- `org` — users in the same organization can read the deck
+- `user` — only the owner can read the deck unless it is explicitly shared
+
+### Per-user grants
+
+Per-user grants are stored per deck and per user, with one unique grant row per `(deck_id, user_id)`.
+
+Supported grant levels:
+
+- `none`
+- `read`
+- `write`
+- `delete`
+
+These grants extend access beyond the base deck scope:
+
+- `read` allows viewing a deck
+- `write` allows modifying a deck
+- `delete` allows deleting a deck
+
+### Effective permissions
+
+- Deck owner always has full access to their own deck.
+- `system_admin` always has full access.
+- `admin` users can write/delete org-scope decks in their own organization.
+- Explicit per-user grants can expand access even for `user`-scope decks.
+
+### Who can change what
+
+- **Change deck scope** (`global` / `org` / `user`):
+  - owner
+  - system admin
+- **Grant or revoke per-user deck access**:
+  - owner
+  - system admin
+  - org admin for org-scope decks in their own organization
+
+Notes:
+
+- Regular users cannot promote a deck to `global`.
+- Setting a deck to `org` scope requires org-admin capability.
+- In the UI, the deck scope selector is separate from the user access/sharing control.
 
 ---
 
