@@ -7,6 +7,8 @@ Rewrites relative image URLs to use EduViz static asset URLs.
 import re
 from urllib.parse import quote
 
+from app.services.storage import media_object_key
+
 # Pattern to match <img> tags with relative or absolute paths
 IMG_PATTERN = re.compile(r'<img\s+([^>]*?)/?>', re.IGNORECASE)
 SRC_PATTERN = re.compile(r'src=["\']([^"\']+)["\']')
@@ -14,9 +16,9 @@ SRC_PATTERN = re.compile(r'src=["\']([^"\']+)["\']')
 
 def resolve_media_urls(html: str, deck_id: str) -> str:
     """
-    Rewrite image URLs in HTML to use EduViz static asset paths.
+    Rewrite image URLs in HTML to use EduViz media object paths.
 
-    Anki media files are stored in app/static/media/{deck_id}/
+    Anki media files are stored under a storage backend keyed by deck.
 
     Args:
         html: HTML content with potential image references
@@ -37,9 +39,7 @@ def resolve_media_urls(html: str, deck_id: str) -> str:
         if src.startswith(('http://', 'https://', 'data:', '/')):
             return img_tag
 
-        # Encode filename for safe URL
-        filename = quote(src, safe='')
-        new_src = f'/assets/v1/media/{deck_id}/{filename}'
+        new_src = f'/media/{quote(media_object_key(deck_id, src), safe="/")}'
 
         # Replace src attribute
         new_img = SRC_PATTERN.sub(f'src="{new_src}"', img_tag)
@@ -71,7 +71,7 @@ def extract_media_filenames(html: str) -> list[str]:
 
 def get_media_base_path(deck_id: str) -> str:
     """
-    Get the filesystem path for deck media storage.
+    Get the legacy local filesystem path for deck media storage.
 
     Args:
         deck_id: UUID of the deck
@@ -92,4 +92,4 @@ def get_media_url_prefix(deck_id: str) -> str:
     Returns:
         URL prefix (e.g., '/assets/media/{deck_id}')
     """
-    return f"/assets/media/{deck_id}"
+    return f"/media/{deck_id}"

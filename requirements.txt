@@ -17,3 +17,5 @@ python-docx==1.1.2
 genanki==0.13.1
 requests
 bleach
+boto3==1.38.0
+botocore==1.38.0
