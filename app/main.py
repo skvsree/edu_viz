@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -18,6 +18,7 @@ from app.components.multiselect.routes import router as multiselect_router
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.services.admin_bootstrap import bootstrap_system_admin_by_email
+from app.services.storage import StorageError, get_storage
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -78,29 +79,28 @@ def serve_temp_media_file(filename: str, ext: str):
 
 
 @app.get("/assets/media/{filename:path}")
-def serve_media_file(filename: str):
-    """Serve media files by filename (e.g., /assets/media/temp_file_hash.jpg)"""
-    from fastapi import HTTPException
+def serve_legacy_media_file(filename: str):
+    return serve_media_file(filename)
 
-    # Reject path traversal attempts
-    if ".." in filename or chr(92) in filename:
+
+@app.get("/media/{object_key:path}")
+def serve_media_file(object_key: str):
+    """Serve media files from the configured storage backend."""
+    if ".." in object_key or chr(92) in object_key:
         raise HTTPException(status_code=400)
 
-    media_root = STATIC_DIR / "media"
-    if not media_root.exists():
+    try:
+        payload, content_type = get_storage().open_bytes(key=object_key)
+    except FileNotFoundError:
         raise HTTPException(status_code=404)
+    except StorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
 
-    for deck_dir in media_root.iterdir():
-        if deck_dir.is_dir():
-            candidate = (deck_dir / filename).resolve()
-            # Ensure path stays within media_root
-            try:
-                candidate.relative_to(media_root.resolve())
-            except ValueError:
-                raise HTTPException(status_code=400)
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate, headers={"Cache-Control": "public, max-age=31536000, immutable"})
-    raise HTTPException(status_code=404)
+    return Response(
+        content=payload,
+        media_type=content_type or "application/octet-stream",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.get("/assets/{version}/{asset_path:path}")
@@ -124,6 +124,10 @@ def versioned_static_asset(version: str, asset_path: str):
 
 @app.on_event("startup")
 def promote_bootstrap_system_admin() -> None:
+    try:
+        get_storage().ensure_ready()
+    except Exception as exc:
+        print(f"Storage not ready at startup: {exc}")
     with SessionLocal() as db:
         bootstrap_system_admin_by_email(db)
 

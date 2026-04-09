@@ -7,11 +7,9 @@ Parses Anki deck files, extracts media, and imports cards.
 import json
 import logging
 import re
-import shutil
 import sqlite3
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import BinaryIO, Optional
 
 from sqlalchemy import select
@@ -20,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.models import Card, CardState, Deck
 from app.services.cloze_renderer import extract_cloze_numbers, is_cloze_content, render_cloze_front, render_cloze_back
 from app.services.media_urls import extract_media_filenames, resolve_media_urls
+from app.services.storage import get_storage, guess_content_type, media_object_key
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +63,7 @@ class AnkiImportService:
     def __init__(self, db: Session, deck: Deck):
         self.db = db
         self.deck = deck
-        self.media_dir = Path(__file__).resolve().parent.parent / "static" / "media" / str(deck.id)
+        self.storage = get_storage()
         self._existing_front_backs: set[tuple[str, str]] = set()
         self._existing_html: set[str] = set()
 
@@ -253,7 +252,7 @@ class AnkiImportService:
 
     def _extract_media(self, file_obj: BinaryIO, media_map: dict) -> int:
         """
-        Extract media files from .apkg to filesystem.
+        Extract media files from .apkg to the configured storage backend.
 
         Args:
             file_obj: File-like object
@@ -265,9 +264,6 @@ class AnkiImportService:
         file_obj.seek(0)
         extracted = 0
 
-        # Create media directory
-        self.media_dir.mkdir(parents=True, exist_ok=True)
-
         with zipfile.ZipFile(file_obj, 'r') as zf:
             for name in zf.namelist():
                 # Media files are stored as integers (e.g., "1", "2", "123")
@@ -277,11 +273,15 @@ class AnkiImportService:
 
                     # Sanitize filename
                     safe_filename = re.sub(r'[^\w\s.-]', '_', filename)
-                    out_path = self.media_dir / safe_filename
 
                     try:
-                        with zf.open(name) as src, open(out_path, 'wb') as dst:
-                            shutil.copyfileobj(src, dst)
+                        with zf.open(name) as src:
+                            data = src.read()
+                        self.storage.save_bytes(
+                            key=media_object_key(str(self.deck.id), safe_filename),
+                            data=data,
+                            content_type=guess_content_type(safe_filename),
+                        )
                         extracted += 1
                     except Exception as e:
                         logger.warning(f"Failed to extract media {name}: {e}")

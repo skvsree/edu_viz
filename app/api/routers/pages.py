@@ -53,6 +53,7 @@ from app.services.ai_auth import (
 from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
 from app.services.review_service import ReviewService
+from app.services.storage import deck_media_prefix, get_storage
 
 
 def _normalize_review_html(text: str | None) -> str:
@@ -1327,10 +1328,15 @@ def update_user_settings(
 @router.post("/decks")
 def create_deck(
     request: Request,
+    name: str = Form(...),
+    description: str = Form(default=""),
     access_level: str = Form(default="user"),
+    folder_id: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
+    from app.models import Folder  # noqa: F401
+
     if not can_manage_decks(user):
         raise HTTPException(status_code=403, detail="You do not have permission to create decks.")
 
@@ -1374,6 +1380,20 @@ def create_deck(
 
     organization_id = user.organization_id if access_level == "org" else None
 
+    # Validate folder_id
+    deck_folder_id = None
+    if folder_id:
+        try:
+            folder_uuid = UUID(folder_id)
+            # Verify folder exists and user has access
+            folder = db.get(Folder, folder_uuid)
+            if folder:
+                # Check user can write to this folder
+                if folder.user_id == user.id or (folder.organization_id == user.organization_id and user.organization_id):
+                    deck_folder_id = folder_uuid
+        except ValueError:
+            pass  # Invalid UUID, create in root
+
     deck = Deck(
         user_id=user.id,
         organization_id=organization_id,
@@ -1382,6 +1402,7 @@ def create_deck(
         description=cleaned_description or None,
         access_level=access_level,
         is_global=(access_level == "global"),
+        folder_id=deck_folder_id,
     )
     db.add(deck)
     try:
@@ -1632,19 +1653,11 @@ def delete_deck(
 
 
 def _cleanup_deck_media(deck_id: str) -> None:
-    """
-    Remove media directory for a deck after deletion.
-    Uses shutil for safe directory removal (MIT licensed).
-    """
-    import shutil
-    from pathlib import Path
-
-    media_path = Path(__file__).resolve().parents[2] / "static" / "media" / deck_id
-    if media_path.exists() and media_path.is_dir():
-        try:
-            shutil.rmtree(media_path)
-        except OSError:
-            pass  # Best effort cleanup
+    """Remove all media objects for a deck after deletion."""
+    try:
+        get_storage().delete_prefix(prefix=deck_media_prefix(deck_id))
+    except Exception:
+        pass  # Best effort cleanup
 
 
 @router.get("/decks/{deck_id}", response_class=HTMLResponse)

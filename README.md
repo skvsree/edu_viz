@@ -310,6 +310,54 @@ Notes:
 
 ---
 
+## File Storage (SeaweedFS)
+
+Media files (images, PDFs, etc.) are stored via SeaweedFS, a distributed object store.
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEAWEEDFS_URL` | `http://seaweedfs:9333` | SeaweedFS master server |
+| `SEAWEEDFS_COLLECTION` | `eduviz-media` | Collection name for media storage |
+| `SEAWEEDFS_ENABLED` | `false` | Enable SeaweedFS storage |
+| `BACKUP_S3_ENABLED` | `false` | Also sync to S3-compatible backup |
+| `BACKUP_S3_URL` | empty | S3 endpoint URL |
+| `BACKUP_S3_KEY` | empty | S3 access key |
+| `BACKUP_S3_SECRET` | empty | S3 secret key |
+| `BACKUP_S3_BUCKET` | empty | S3 bucket name |
+
+### Docker service
+
+SeaweedFS runs as a Docker Compose service with master, volume, filer, and S3 gateway:
+
+```yaml
+seaweedfs:
+  image: chrislusf/seaweedfs:latest
+  ports:
+    - "9333:9333"  # master
+    - "8888:8888"  # filer
+    - "8333:8333"  # S3 gateway
+    - "8080:8080"  # volume
+  command: "server -dir=/data -ip=seaweedfs -master.port=9333 -volume.port=8080 -filer=true -filer.port=8888 -s3 -s3.port=8333"
+  volumes:
+    - seaweedfs_data:/data
+```
+
+### Accessing stored files
+
+Files are served via `/media/{file_id}` endpoint, which routes through the storage service. URLs are generated automatically when cards with media are created/imported.
+
+### Backfill existing media
+
+To migrate existing local media files to SeaweedFS:
+
+```bash
+python scripts/backfill_media_to_s3.py
+```
+
+---
+
 ## Folder organization
 
 EduViz supports nested folders for deck organization.

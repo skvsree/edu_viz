@@ -86,3 +86,14 @@
   - system admin
   - org admin for org-scope decks in their own organization
 - In the UI, the scope selector controls deck scope, while the security/manage-access action is for per-user grants.
+
+## File Storage (SeaweedFS)
+
+- Media files are stored via SeaweedFS (container: `edu_viz-seaweedfs-1` in Docker Compose)
+- Storage service in `app/services/storage.py`
+- Key env vars: `SEAWEEDFS_URL`, `SEAWEEDFS_COLLECTION`, `SEAWEEDFS_ENABLED`
+- Backfill script: `scripts/backfill_media_to_s3.py`
+- Media URLs served via `/media/{file_id}` endpoint
+- Collection `eduviz-media` stores uploaded images, PDFs, etc.
+- Filer port 8888, S3 gateway port 8333, master port 9333, volume port 8080
+- Fix: `-volumeSizeLimitMB` flag was wrong → correct is `-master.volumeSizeLimitMB`

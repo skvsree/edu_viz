@@ -236,6 +236,17 @@
               placeholder="Short note about what this deck covers"
             >{{ create_form.description }}</textarea>
           </div>
+          {# Folder selection — popup picker #}
+          <div>
+            <label>Folder</label>
+            <input type="hidden" id="create-deck-folder-id" name="folder_id" value="" />
+            <button type="button" class="button button-secondary" id="open-folder-picker-btn" style="width:100%; justify-content:flex-start; gap:0.5rem;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span id="create-deck-folder-label">Root (no folder)</span>
+            </button>
+          </div>
           {% if user.role == "system_admin" %}
             <div>
               <label for="modal-access-level">Access level</label>
@@ -256,6 +267,48 @@
           {% endif %}
           <button type="submit" class="button">Create deck</button>
         </form>
+      </div>
+    </dialog>
+
+    {# Folder picker for create deck #}
+    <dialog id="create-folder-picker-modal" class="modal">
+      <div class="modal__surface modal__surface--wide" role="document">
+        <div class="section-heading">
+          <div>
+            <p class="panel-label">Select folder</p>
+            <h2 class="section-subtitle">Where to save this deck?</h2>
+          </div>
+          <button type="button" class="button button-secondary button-small" data-modal-close="create-folder-picker-modal">Cancel</button>
+        </div>
+        <div style="max-height:350px; overflow-y:auto; padding:0.5rem 0;">
+          <div class="create-folder-picker" id="create-folder-picker-tree">
+            <button type="button" class="create-folder-picker__btn create-folder-picker__btn--root" data-folder-id="" id="create-picker-root">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+              <span>Root (no folder)</span>
+            </button>
+            {% if folder_tree %}
+              {% macro render_create_picker_node(nodes, depth=0) %}
+                {% for node in nodes %}
+                  <button type="button" class="create-folder-picker__btn" data-folder-id="{{ node.id }}" style="padding-left: {{ (depth * 20) + 12 }}px">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span>{{ node.name }}</span>
+                  </button>
+                  {% if node.children %}
+                    {{ render_create_picker_node(node.children, depth + 1) }}
+                  {% endif %}
+                {% endfor %}
+              {% endmacro %}
+              {{ render_create_picker_node(folder_tree) }}
+            {% endif %}
+          </div>
+        </div>
+        <div class="folder-picker__footer" style="padding:0.75rem 0 0; border-top:1px solid var(--border-color);">
+          <button type="button" class="button" id="create-folder-picker-confirm">Select this folder</button>
+        </div>
       </div>
     </dialog>
 
@@ -563,5 +616,93 @@
       });
     });
   })();
+
+  // ── Create deck folder picker ──────────────────────────────────────────
+  (function() {
+    const openBtn = document.getElementById("open-folder-picker-btn");
+    const modal = document.getElementById("create-folder-picker-modal");
+    const confirmBtn = document.getElementById("create-folder-picker-confirm");
+    const hiddenInput = document.getElementById("create-deck-folder-id");
+    const labelSpan = document.getElementById("create-deck-folder-label");
+    const treeContainer = document.getElementById("create-folder-picker-tree");
+    const rootBtn = document.getElementById("create-picker-root");
+
+    let selectedId = hiddenInput?.value || "";
+
+    function renderCreatePickerBtn(btn) {
+      const id = btn.dataset.folderId;
+      if (id === selectedId) {
+        btn.classList.add("create-folder-picker__btn--selected");
+      } else {
+        btn.classList.remove("create-folder-picker__btn--selected");
+      }
+    }
+
+    function initPicker() {
+      selectedId = hiddenInput?.value || "";
+      // Update label
+      if (labelSpan) {
+        const selectedBtn = treeContainer?.querySelector(`[data-folder-id="${selectedId}"]`);
+        labelSpan.textContent = selectedBtn ? selectedBtn.querySelector("span")?.textContent || "Root (no folder)" : "Root (no folder)";
+      }
+      // Highlight selected
+      treeContainer?.querySelectorAll(".create-folder-picker__btn").forEach(renderCreatePickerBtn);
+    }
+
+    if (openBtn && modal) {
+      openBtn.addEventListener("click", () => {
+        initPicker();
+        modal.showModal();
+      });
+
+      treeContainer?.querySelectorAll(".create-folder-picker__btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          selectedId = btn.dataset.folderId || "";
+          treeContainer.querySelectorAll(".create-folder-picker__btn").forEach(renderCreatePickerBtn);
+        });
+      });
+
+      confirmBtn?.addEventListener("click", () => {
+        if (hiddenInput) hiddenInput.value = selectedId;
+        if (labelSpan) {
+          const selectedBtn = treeContainer?.querySelector(`[data-folder-id="${selectedId}"]`);
+          labelSpan.textContent = selectedBtn ? selectedBtn.querySelector("span")?.textContent || "Root (no folder)" : "Root (no folder)";
+        }
+        modal.close();
+      });
+    }
+  })();
 </script>
+
+<style>
+  .create-folder-picker__btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .create-folder-picker__btn:hover {
+    background: var(--surface-hover, rgba(255,255,255,0.04));
+  }
+  .create-folder-picker__btn--selected {
+    background: rgba(59, 130, 246, 0.22);
+    border-color: rgba(96, 165, 250, 0.9);
+    font-weight: 600;
+  }
+  .create-folder-picker__btn svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+  .create-folder-picker__btn--selected svg {
+    opacity: 1;
+  }
+</style>
 {% endblock %}

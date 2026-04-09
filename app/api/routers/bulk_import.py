@@ -286,7 +286,7 @@ def import_anki_deck(
     Supports:
     - Basic cards
     - Cloze deletion cards ({{c1::text}})
-    - Images (extracted to app/static/media/{deck_id}/)
+    - Images (extracted to the configured media storage backend)
     """
     # Get deck
     deck = db.get(Deck, deck_id)

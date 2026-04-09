@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -73,6 +75,19 @@ class Settings(BaseSettings):
         return self.force_secure_cookies
 
     allowed_origins: str = "*"
+
+    storage_backend: str = "local"
+    storage_public_base_url: str | None = None
+    storage_s3_endpoint_url: str | None = None
+    storage_s3_access_key: str | None = None
+    storage_s3_secret_key: str | None = None
+    storage_s3_bucket: str | None = None
+    storage_s3_region: str | None = None
+    local_media_root: str = "app/static/media"
+
+    @property
+    def local_media_root_path(self) -> Path:
+        return Path(self.local_media_root).resolve()
 
     @property
     def allowed_origins_list(self) -> list[str]:
