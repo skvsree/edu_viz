@@ -2638,6 +2638,15 @@ ul {
   color: #64748b;
 }
 
+[data-theme="light"] .deck-highlight,
+[data-theme="light"] .csv-highlight {
+  color: #4f46e5;
+}
+
+[data-theme="light"] .light-strong-copy {
+  color: #475569;
+}
+
 [data-theme="light"] .provider-card {
   background: #fff;
   border-color: rgba(148, 163, 184, 0.4);
