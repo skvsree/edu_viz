@@ -1426,6 +1426,8 @@ def create_deck(
 def update_deck(
     request: Request,
     deck_id: str,
+    name: str = Form(...),
+    description: str = Form(default=""),
     access_level: str = Form(default="user"),
     next_url: str = Form(default=""),
     user: User = Depends(current_user),

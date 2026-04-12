@@ -273,7 +273,31 @@ def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
     mcqs: list[GeneratedMcq] = []
     for item in data.get("mcqs", []):
         options = [str(opt).strip() for opt in item.get("options", []) if str(opt).strip()]
-        answer_index = int(item.get("answer_index", -1))
+        explanation = str(item.get("explanation", "")).strip()
+        # Try to parse answer_index, handle cases where AI confuses fields
+        answer_index = -1
+        raw_answer = item.get("answer_index")
+        if raw_answer is not None:
+            # Direct number
+            if isinstance(raw_answer, int):
+                answer_index = raw_answer
+            else:
+                # Try parsing as number
+                try:
+                    answer_index = int(raw_answer)
+                except (ValueError, TypeError):
+                    # AI might have put answer text in answer_index - try to match against options
+                    raw_str = str(raw_answer).strip().lower()
+                    for idx, opt in enumerate(options):
+                        if raw_str == opt.strip().lower() or raw_str in opt.strip().lower():
+                            answer_index = idx
+                            break
+                    # Also check if explanation field contains a valid index
+                    if answer_index == -1 and explanation:
+                        try:
+                            answer_index = int(explanation)
+                        except (ValueError, TypeError):
+                            pass
         if item.get("question") and len(options) == 4 and answer_index in {0, 1, 2, 3}:
             mcqs.append(
                 GeneratedMcq(
