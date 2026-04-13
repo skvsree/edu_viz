@@ -35,6 +35,13 @@
   - `docker compose build app && docker compose up -d app`
 - Quick verification:
   - `docker compose logs app --tail=20`
+- For deck overview/favorites live metadata changes, verify both rendered HTML and CSS/JS behavior in the running container, not just source files.
+
+## Processing badge notes
+- Deck overview processing badge is server-rendered from `show_processing_badge` in `app/api/routers/pages.py`.
+- Deck overview live SSE in `app/templates/decks/overview.html` updates only flashcard/MCQ counts; it must not infer processing from count deltas.
+- Hidden processing pills should be force-hidden with CSS (`[hidden] { display: none !important; }` scoped to the pill) because theme/reset styles may otherwise leak them visible.
+- Dashboard favorites still have separate client-side live-meta logic in `app/templates/dashboard.html`; if badge logic changes there, use the same status source instead of count-only inference.
 
 ## Mobile browse layout notes
 - Main browse page styles live in `app/templates/decks/browse.html`.

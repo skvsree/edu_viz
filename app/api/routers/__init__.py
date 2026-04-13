@@ -1,3 +1,3 @@
-from app.api.routers import auth, pages
+from app.api.routers import auth, bulk_ai_upload, deck_live, favorites, pages
 
-__all__ = ["auth", "pages"]
+__all__ = ["auth", "bulk_ai_upload", "deck_live", "favorites", "pages"]

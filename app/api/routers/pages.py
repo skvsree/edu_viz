@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
-from app.models import Card, Deck, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, UserDeckFavorite, deck_tags
+from app.models import BulkAIUpload, BulkAIUploadFile, BulkAIUploadFileStatus, BulkAIUploadStatus, Card, Deck, Job, JobStatus, Organization, Review, Tag, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, UserDeckFavorite, deck_tags
 from app.models.analytics import AnalyticsEvent
 from app.models.card_state import CardState
 from app.services.access import (
@@ -143,6 +143,13 @@ templates.env.globals["static_asset_url"] = static_asset_url
 templates.env.globals["footer_copyright_text"] = settings.footer_copyright_text
 
 
+def _html_no_store(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 def _can_manage_tags(user: User, deck: Deck) -> bool:
     if user.role == ROLE_SYSTEM_ADMIN:
         return True
@@ -227,6 +234,7 @@ def _settings_home_response(
 
     organization_count = db.execute(select(Organization)).scalars().all() if user.role == ROLE_SYSTEM_ADMIN else []
     visible_users = db.execute(_visible_users_stmt(user)).scalars().all()
+    job_count = db.execute(select(func.count(Job.id))).scalar_one() if user.role == ROLE_SYSTEM_ADMIN else 0
 
     return templates.TemplateResponse(
         "settings/index.html",
@@ -235,6 +243,7 @@ def _settings_home_response(
             "user": user,
             "organization_count": len(organization_count) if user.role == ROLE_SYSTEM_ADMIN else (1 if user.organization_id else 0),
             "visible_user_count": len(visible_users),
+            "job_count": job_count,
             "settings_error": settings_error if settings_error is not None else request.query_params.get("error"),
             "settings_success": settings_success if settings_success is not None else request.query_params.get("success"),
             "title": "Settings | edu selviz",
@@ -368,6 +377,84 @@ def _users_response(
         },
         status_code=status_code,
     )
+
+
+def _jobs_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    status_code: int = 200,
+):
+    _require_system_admin(user)
+
+    # Get recent jobs with bulk uploads
+    jobs = db.execute(
+        select(Job)
+        .order_by(Job.created_at.desc())
+        .limit(50)
+    ).scalars().all()
+
+    # Get associated bulk uploads
+    bulk_ids = {j.reference_id for j in jobs if j.reference_id}
+    bulks = {}
+    if bulk_ids:
+        bulk_results = db.execute(
+            select(BulkAIUpload).where(BulkAIUpload.id.in_(bulk_ids))
+        ).scalars().all()
+        bulks = {b.id: b for b in bulk_results}
+
+    deck_ids = {b.deck_id for b in bulks.values() if getattr(b, "deck_id", None)}
+    bulk_output_decks: dict = {}
+    if bulk_ids:
+        output_rows = db.execute(
+            select(BulkAIUploadFile.bulk_upload_id, Deck)
+            .join(Deck, Deck.id == BulkAIUploadFile.created_deck_id)
+            .where(BulkAIUploadFile.bulk_upload_id.in_(bulk_ids))
+            .where(BulkAIUploadFile.created_deck_id.is_not(None))
+            .where(Deck.is_deleted.is_(False))
+            .order_by(BulkAIUploadFile.created_at.asc())
+        ).all()
+        seen_bulk_decks: dict = {}
+        for bulk_upload_id, deck in output_rows:
+            if not deck or not getattr(deck, "id", None):
+                continue
+            seen = seen_bulk_decks.setdefault(bulk_upload_id, set())
+            if deck.id in seen:
+                continue
+            seen.add(deck.id)
+            bulk_output_decks.setdefault(bulk_upload_id, []).append(deck)
+            deck_ids.add(deck.id)
+
+    decks = {}
+    if deck_ids:
+        deck_results = db.execute(
+            select(Deck).where(Deck.id.in_(deck_ids))
+        ).scalars().all()
+        decks = {d.id: d for d in deck_results}
+
+    return templates.TemplateResponse(
+        "settings/jobs.html",
+        {
+            "request": request,
+            "user": user,
+            "jobs": jobs,
+            "bulks": bulks,
+            "decks": decks,
+            "bulk_output_decks": bulk_output_decks,
+            "title": "Jobs | edu selviz",
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/settings/jobs", response_class=HTMLResponse)
+def jobs_page(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return _jobs_response(request, user=user, db=db)
 
 
 
@@ -1003,6 +1090,8 @@ def browse_decks(
             "active_tab": tab_param,
             "show_tabs": show_tabs,
             "show_action_bar": show_action_bar,
+            # Bulk AI upload: decks user can write to
+            "writeable_decks_list": [d for d in visible_decks.values() if _cwd(user, d)],
         },
     )
 
@@ -1688,7 +1777,52 @@ def deck_overview(
         .where(UserDeckFavorite.user_id == user.id, UserDeckFavorite.deck_id == deck.id)
     ).scalars().first() is not None
 
-    return templates.TemplateResponse(
+    active_file_statuses = {
+        BulkAIUploadFileStatus.PENDING.value,
+        BulkAIUploadFileStatus.PROCESSING.value,
+    }
+    active_upload_statuses = {
+        BulkAIUploadStatus.PENDING.value,
+        BulkAIUploadStatus.PROCESSING.value,
+    }
+    active_job_statuses = {
+        JobStatus.PENDING.value,
+        JobStatus.RUNNING.value,
+    }
+
+    related_upload_ids = db.execute(
+        select(BulkAIUploadFile.bulk_upload_id)
+        .where(
+            BulkAIUploadFile.created_deck_id == deck.id,
+            BulkAIUploadFile.status.in_(active_file_statuses),
+        )
+        .distinct()
+    ).scalars().all()
+
+    active_upload_exists = False
+    active_job_exists = False
+    if related_upload_ids:
+        active_upload_exists = db.execute(
+            select(BulkAIUpload.id)
+            .where(
+                BulkAIUpload.id.in_(related_upload_ids),
+                BulkAIUpload.status.in_(active_upload_statuses),
+            )
+            .limit(1)
+        ).scalars().first() is not None
+        active_job_exists = db.execute(
+            select(Job.id)
+            .where(
+                Job.reference_id.in_(related_upload_ids),
+                Job.status.in_(active_job_statuses),
+            )
+            .limit(1)
+        ).scalars().first() is not None
+
+    show_processing_badge = active_upload_exists or active_job_exists
+ 
+    return _html_no_store(templates.TemplateResponse(
+
         "decks/overview.html",
         {
             "request": request,
@@ -1697,6 +1831,7 @@ def deck_overview(
             "is_favorited": is_favorited,
             "flashcard_count": len(flashcards),
             "mcq_count": len(mcqs),
+            "show_processing_badge": show_processing_badge,
             "can_edit": can_edit,
             "can_manage_tags": can_manage_tags,
             "can_use_ai_generation": can_use_ai_generation(user) and can_edit,
@@ -1710,7 +1845,7 @@ def deck_overview(
             "tag_form": _tag_form_context(deck),
             "title": f"{deck.name} | edu selviz",
         },
-    )
+    ))
 
 
 @router.get("/decks/{deck_id}/flashcards", response_class=HTMLResponse)

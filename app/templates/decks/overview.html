@@ -20,6 +20,11 @@
         </button>
       </h1>
       {% if deck.description %}<p class="muted section-copy">{{ deck.description }}</p>{% endif %}
+      <div class="deck-overview-live-meta" data-deck-id="{{ deck.id }}">
+        <span class="deck-overview-pill"><strong data-flashcard-count>{{ flashcard_count }}</strong> Flashcards</span>
+        <span class="deck-overview-pill"><strong data-mcq-count>{{ mcq_count }}</strong> MCQs</span>
+        <span class="deck-overview-pill deck-overview-pill--processing" data-processing-badge {% if not show_processing_badge %}hidden{% endif %}>Processing…</span>
+      </div>
     </div>
   </section>
 
@@ -34,12 +39,12 @@
         <a href="/decks/{{ deck.id }}/mcqs" class="overview-nav__item">
           <span class="overview-nav__icon" aria-hidden="true">&#9776;</span>
           <span class="overview-nav__text">MCQs</span>
-          <span class="overview-nav__count">{{ mcq_count }}</span>
+          <span class="overview-nav__count" data-mcq-count>{{ mcq_count }}</span>
         </a>
         <a href="/decks/{{ deck.id }}/flashcards" class="overview-nav__item">
           <span class="overview-nav__icon" aria-hidden="true">&#128220;</span>
           <span class="overview-nav__text">Flash Cards</span>
-          <span class="overview-nav__count">{{ flashcard_count }}</span>
+          <span class="overview-nav__count" data-flashcard-count>{{ flashcard_count }}</span>
         </a>
         {% if tests_available %}
         <a href="/decks/{{ deck.id }}/tests" class="overview-nav__item">
@@ -191,7 +196,57 @@
   </div>
 </div>
 
+<style>
+  .deck-overview-live-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+  .deck-overview-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    color: var(--muted-color, #6b7280);
+  }
+  .deck-overview-pill--processing {
+    color: #2563eb;
+  }
+
+  .deck-overview-pill[hidden] {
+    display: none !important;
+  }
+</style>
+
 <script>
+  (() => {
+    const deckId = "{{ deck.id }}";
+
+    const applyCounts = (data) => {
+      const flash = data?.flashcard_count ?? 0;
+      const mcq = data?.mcq_count ?? 0;
+      document.querySelectorAll("[data-flashcard-count]").forEach((el) => { el.textContent = String(flash); });
+      document.querySelectorAll("[data-mcq-count]").forEach((el) => { el.textContent = String(mcq); });
+    };
+
+    fetch(`/api/v1/live/decks/${deckId}/counts`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (data) applyCounts(data); })
+      .catch(() => {});
+
+    const stream = new EventSource(`/api/v1/live/decks/counts/stream?deck_ids=${encodeURIComponent(deckId)}`);
+    stream.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        applyCounts(payload?.counts?.[deckId] || {});
+      } catch (_) {}
+    };
+  })();
+
   (() => {
     const btn = document.getElementById("overview-star-btn");
     

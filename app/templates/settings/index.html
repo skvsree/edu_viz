@@ -28,6 +28,16 @@
           <div class="deck-card__stats"><span class="deck-card__meta">Organizations {{ organization_count }}</span></div>
           <div class="deck-card__actions"><a href="/settings/organizations" class="button button-small">Manage organizations</a></div>
         </article>
+
+        <article class="deck-card deck-card--dashboard">
+          <div class="deck-card__content">
+            <p class="deck-card__eyebrow">Global</p>
+            <h3 class="deck-card__title">Jobs</h3>
+            <p class="muted">Monitor background jobs and bulk AI uploads.</p>
+          </div>
+          <div class="deck-card__stats"><span class="deck-card__meta">Total {{ job_count }}</span></div>
+          <div class="deck-card__actions"><a href="/settings/jobs" class="button button-small">View jobs</a></div>
+        </article>
       {% endif %}
 
       <article class="deck-card deck-card--dashboard">

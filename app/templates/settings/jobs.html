@@ -1,0 +1,481 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  <section class="card jobs-page">
+    <div class="section-heading dashboard-decks__heading jobs-page__heading">
+      <div>
+        <p class="panel-label">System</p>
+        <h1 class="section-title">Jobs</h1>
+        <p class="muted section-copy">
+          Monitor background jobs and bulk AI uploads. Jobs run asynchronously using a worker pool.
+        </p>
+      </div>
+      <div class="dashboard-actions">
+        <a href="/settings" class="button button-secondary button-small">Back to settings</a>
+      </div>
+    </div>
+
+    <div class="stack-md">
+      <div id="job-submitted-notice" class="card jobs-page__notice" style="display:none;">
+        Bulk upload submitted. Check this Jobs page for progress.
+      </div>
+      <div id="job-live-card" class="card jobs-live-card" style="display:none;">
+        <div class="jobs-live-card__header">
+          <div>
+            <p class="panel-label">Live job</p>
+            <h2 class="section-subtitle" style="margin:0;">Bulk upload progress</h2>
+          </div>
+          <code id="job-live-id" class="jobs-code"></code>
+        </div>
+        <div class="jobs-live-grid">
+          <div><span class="jobs-mobile-label">Status</span><div id="job-live-status"></div></div>
+          <div><span class="jobs-mobile-label">Progress</span><div id="job-live-progress"></div></div>
+          <div><span class="jobs-mobile-label">Files</span><div id="job-live-files"></div></div>
+          <div><span class="jobs-mobile-label">Cards</span><div id="job-live-cards"></div></div>
+        </div>
+        <div id="job-live-error" class="jobs-failed-inline" style="display:none;"></div>
+        <div>
+          <p class="jobs-mobile-label">Created decks</p>
+          <div id="job-live-decks" class="jobs-bulk-links jobs-bulk-links--mobile"></div>
+        </div>
+      </div>
+      {% if not jobs %}
+        <p class="muted">No jobs yet. Upload a ZIP file from the browse page to create a bulk AI upload job.</p>
+      {% else %}
+        <div class="jobs-table-wrap">
+          <table class="jobs-table">
+            <thead>
+              <tr>
+                <th>Job ID</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Created</th>
+                <th>Completed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for job in jobs %}
+                <tr>
+                  <td><code class="jobs-code">{{ job.id }}</code></td>
+                  <td>{{ job.job_type }}</td>
+                  <td>
+                    {% if job.status == "pending" %}
+                      <span class="jobs-status jobs-status--pending">Pending</span>
+                    {% elif job.status == "running" %}
+                      <span class="jobs-status jobs-status--running">Running</span>
+                    {% elif job.status == "completed" %}
+                      <span class="jobs-status jobs-status--completed">Completed</span>
+                    {% elif job.status == "failed" %}
+                      <span class="jobs-status jobs-status--failed">Failed</span>
+                    {% else %}
+                      {{ job.status }}
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ job.processed_items }} / {{ job.total_items }} items
+                    {% if job.failed_items > 0 %}
+                      <span class="jobs-failed-inline">({{ job.failed_items }} failed)</span>
+                    {% endif %}
+                  </td>
+                  <td class="jobs-time">{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '-' }}</td>
+                  <td class="jobs-time">{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
+                </tr>
+                {% if bulks.get(job.reference_id) %}
+                  <tr class="jobs-table-bulk-row">
+                    <td colspan="6">
+                      <div class="jobs-bulk-row">
+                        <div>
+                          <div>Bulk: {{ bulks[job.reference_id].filename }} ({{ bulks[job.reference_id].total_files }} files)</div>
+                          <div class="jobs-bulk-links">
+                            {% for deck in bulk_output_decks.get(job.reference_id, []) %}
+                              <a href="/decks/{{ deck.id }}">{{ deck.name }}</a>
+                            {% endfor %}
+                          </div>
+                        </div>
+                        <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
+                      </div>
+                    </td>
+                  </tr>
+                {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="jobs-mobile-list">
+          {% for job in jobs %}
+            <article class="jobs-mobile-card">
+              <div class="jobs-mobile-card__top">
+                <div>
+                  <p class="jobs-mobile-label">Job</p>
+                  <code class="jobs-code jobs-code--mobile">{{ job.id }}</code>
+                </div>
+                <div>
+                  {% if job.status == "pending" %}
+                    <span class="jobs-status jobs-status--pending">Pending</span>
+                  {% elif job.status == "running" %}
+                    <span class="jobs-status jobs-status--running">Running</span>
+                  {% elif job.status == "completed" %}
+                    <span class="jobs-status jobs-status--completed">Completed</span>
+                  {% elif job.status == "failed" %}
+                    <span class="jobs-status jobs-status--failed">Failed</span>
+                  {% else %}
+                    <span class="jobs-status">{{ job.status }}</span>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div class="jobs-mobile-grid">
+                <div>
+                  <p class="jobs-mobile-label">Type</p>
+                  <p>{{ job.job_type }}</p>
+                </div>
+                <div>
+                  <p class="jobs-mobile-label">Progress</p>
+                  <p>
+                    {{ job.processed_items }} / {{ job.total_items }} items
+                    {% if job.failed_items > 0 %}
+                      <span class="jobs-failed-inline">({{ job.failed_items }} failed)</span>
+                    {% endif %}
+                  </p>
+                </div>
+                <div>
+                  <p class="jobs-mobile-label">Created</p>
+                  <p>{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '-' }}</p>
+                </div>
+                <div>
+                  <p class="jobs-mobile-label">Completed</p>
+                  <p>{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</p>
+                </div>
+              </div>
+
+              {% if bulks.get(job.reference_id) %}
+                <div class="jobs-mobile-bulk">
+                  <p class="jobs-mobile-label">Bulk upload</p>
+                  <p>{{ bulks[job.reference_id].filename }}</p>
+                  <div class="jobs-bulk-links jobs-bulk-links--mobile">
+                    {% for deck in bulk_output_decks.get(job.reference_id, []) %}
+                      <a href="/decks/{{ deck.id }}">{{ deck.name }}</a>
+                    {% endfor %}
+                  </div>
+                  <div class="jobs-mobile-bulk__meta">
+                    <span>{{ bulks[job.reference_id].total_files }} files</span>
+                    <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
+                  </div>
+                </div>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="stack-sm jobs-page__footer">
+      <p class="muted jobs-page__footnote">
+        <strong>Job types:</strong> bulk_ai_upload - Process ZIP/PDF for flashcards and MCQs
+      </p>
+      <p class="muted jobs-page__footnote">
+        <strong>Status:</strong> Pending (queued), Running (in progress), Completed (success), Failed (error)
+      </p>
+    </div>
+  </section>
+</section>
+
+<style>
+  .jobs-page__notice {
+    padding: 0.75rem;
+    border: 1px solid #93c5fd;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  .jobs-live-card {
+    border: 1px solid color-mix(in srgb, #60a5fa 38%, var(--border-color));
+  }
+
+  .jobs-live-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .jobs-live-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.9rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .jobs-live-deck-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .jobs-live-deck-meta {
+    font-size: 0.8rem;
+    color: var(--muted-color, #6b7280);
+  }
+
+  .jobs-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+  }
+
+  .jobs-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 760px;
+  }
+
+  .jobs-table th,
+  .jobs-table td {
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+  }
+
+  .jobs-table th {
+    font-weight: 700;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+
+  .jobs-code {
+    font-size: 0.75rem;
+    word-break: break-all;
+  }
+
+  .jobs-code--mobile {
+    display: block;
+    margin-top: 0.2rem;
+  }
+
+  .jobs-time {
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .jobs-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.28rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+  }
+
+  .jobs-status--pending {
+    color: #6b7280;
+  }
+
+  .jobs-status--running {
+    color: #2563eb;
+  }
+
+  .jobs-status--completed {
+    color: #16a34a;
+  }
+
+  .jobs-status--failed,
+  .jobs-failed-inline {
+    color: #dc2626;
+  }
+
+  .jobs-table-bulk-row td {
+    background: var(--bg-secondary);
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+
+  .jobs-bulk-row {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+
+  .jobs-bulk-row a,
+  .jobs-mobile-bulk a {
+    white-space: nowrap;
+  }
+
+  .jobs-bulk-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.7rem;
+    margin-top: 0.45rem;
+    font-size: 0.82rem;
+  }
+
+  .jobs-bulk-links--mobile {
+    margin-top: 0.6rem;
+  }
+
+  .jobs-mobile-list {
+    display: none;
+    gap: 0.9rem;
+  }
+
+  .jobs-mobile-card {
+    border: 1px solid var(--border-color);
+    border-radius: 18px;
+    padding: 0.95rem;
+    background: var(--surface);
+  }
+
+  .jobs-mobile-card__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+  }
+
+  .jobs-mobile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem 1rem;
+  }
+
+  .jobs-mobile-grid p,
+  .jobs-mobile-bulk p {
+    margin: 0;
+  }
+
+  .jobs-mobile-label {
+    margin: 0 0 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .jobs-mobile-bulk {
+    margin-top: 0.9rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .jobs-mobile-bulk__meta {
+    margin-top: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .jobs-page__footer {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .jobs-page__footnote {
+    font-size: 0.8rem;
+  }
+
+  @media (max-width: 720px) {
+    .jobs-page__heading {
+      align-items: flex-start;
+      gap: 0.9rem;
+    }
+
+    .jobs-live-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+ 
+    .jobs-table-wrap {
+      display: none;
+    }
+ 
+    .jobs-mobile-list {
+      display: grid;
+    }
+ 
+    .jobs-mobile-grid {
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+  }
+</style>
+ 
+<script>
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const submitted = params.get("submitted");
+  const noticeText = params.get("notice");
+  const jobId = params.get("job") || params.get("job_id");
+  const notice = document.getElementById("job-submitted-notice");
+  const liveCard = document.getElementById("job-live-card");
+  const liveId = document.getElementById("job-live-id");
+  const liveStatus = document.getElementById("job-live-status");
+  const liveProgress = document.getElementById("job-live-progress");
+  const liveFiles = document.getElementById("job-live-files");
+  const liveCards = document.getElementById("job-live-cards");
+  const liveError = document.getElementById("job-live-error");
+  const liveDecks = document.getElementById("job-live-decks");
+
+  if (notice && (submitted === "bulk-ai-upload" || noticeText)) {
+    notice.textContent = decodeURIComponent(noticeText || "Bulk upload submitted. Check this Jobs page for progress.") + (jobId ? ` Job: ${jobId}` : "");
+    notice.style.display = "block";
+  }
+
+  if (!jobId || !liveCard) return;
+  liveCard.style.display = "block";
+  if (liveId) liveId.textContent = jobId;
+
+  const statusHtml = (status) => {
+    if (status === "pending") return '<span class="jobs-status jobs-status--pending">Pending</span>';
+    if (status === "running") return '<span class="jobs-status jobs-status--running">Running</span>';
+    if (status === "completed") return '<span class="jobs-status jobs-status--completed">Completed</span>';
+    if (status === "failed") return '<span class="jobs-status jobs-status--failed">Failed</span>';
+    return status || "-";
+  };
+
+  const render = (payload) => {
+    const job = payload?.job || {};
+    const bulk = payload?.bulk || {};
+    if (liveStatus) liveStatus.innerHTML = statusHtml(job.status);
+    if (liveProgress) liveProgress.textContent = `${job.processed_items || 0} / ${job.total_items || 0}${job.failed_items ? ` (${job.failed_items} failed)` : ""}`;
+    if (liveFiles) liveFiles.textContent = `${bulk.processed_files || 0} / ${bulk.total_files || 0}`;
+    if (liveCards) liveCards.textContent = `${bulk.flashcards_generated || 0} flashcards, ${bulk.mcqs_generated || 0} MCQs`;
+    if (liveError) {
+      if (job.error_message) {
+        liveError.textContent = job.error_message;
+        liveError.style.display = "block";
+      } else {
+        liveError.style.display = "none";
+      }
+    }
+    if (liveDecks) {
+      const decks = bulk.created_decks || [];
+      liveDecks.innerHTML = decks.length
+        ? decks.map((deck) => `<a class="jobs-live-deck-link" href="/decks/${deck.id}">${deck.name}<span class="jobs-live-deck-meta">${deck.flashcard_count}F / ${deck.mcq_count}M</span></a>`).join("")
+        : '<span class="muted">No decks created yet.</span>';
+    }
+  };
+
+  fetch(`/api/v1/live/jobs/${encodeURIComponent(jobId)}/stream`, { headers: { Accept: "text/event-stream" } }).catch(() => {});
+  const source = new EventSource(`/api/v1/live/jobs/${encodeURIComponent(jobId)}/stream`);
+  source.onmessage = (event) => {
+    try {
+      render(JSON.parse(event.data));
+    } catch (_) {}
+  };
+  source.onerror = () => {};
+})();
+</script>
+{% endblock %}
+

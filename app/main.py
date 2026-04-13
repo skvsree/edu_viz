@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -14,10 +15,13 @@ from app.api.routers.content import router as content_router
 from app.api.routers.folders import router as folders_router
 from app.api.routers.deck_accesses import router as deck_access_router
 from app.api.routers.users import router as users_router
+from app.api.routers.bulk_ai_upload import router as bulk_ai_upload_router
+from app.api.routers.deck_live import router as deck_live_router
 from app.components.multiselect.routes import router as multiselect_router
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.services.admin_bootstrap import bootstrap_system_admin_by_email
+from app.services.job_worker import run_worker_loop
 from app.services.storage import StorageError, get_storage
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -141,6 +145,8 @@ app.include_router(favorites_router)
 app.include_router(folders_router)
 app.include_router(deck_access_router)
 app.include_router(users_router)
+app.include_router(bulk_ai_upload_router)
+app.include_router(deck_live_router)
 app.include_router(multiselect_router)
 
 
@@ -148,3 +154,13 @@ app.include_router(multiselect_router)
 def init_multiselect_options() -> None:
     """Initialize multiselect component options storage."""
     app.state.multiselect_options = {}
+
+
+@app.on_event("startup")
+def start_background_job_worker() -> None:
+    if getattr(app.state, "job_worker_started", False):
+        return
+    worker = threading.Thread(target=run_worker_loop, name="edu-viz-job-worker", daemon=True)
+    worker.start()
+    app.state.job_worker_started = True
+    app.state.job_worker_thread = worker
