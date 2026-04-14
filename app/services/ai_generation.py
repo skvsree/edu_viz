@@ -48,6 +48,7 @@ class StudyPackProvider(Protocol):
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack: ...
     def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack: ...
+    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str: ...
 
 
 class OpenAIStudyPackProvider:
@@ -56,7 +57,7 @@ class OpenAIStudyPackProvider:
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
 
-    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
         if not credential or credential.provider != "openai":
             raise AIGenerationError("OpenAI credential is required.")
         if credential.auth_type not in {"api_key", "oauth"}:
@@ -69,7 +70,10 @@ class OpenAIStudyPackProvider:
             model="gpt-4.1-mini",
             input=prompt,
         )
-        return _parse_study_pack_json(response.output_text)
+        return response.output_text or ""
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return _parse_study_pack_json(self.generate_text(prompt, credential))
 
 
 class MinimaxStudyPackProvider:
@@ -78,7 +82,7 @@ class MinimaxStudyPackProvider:
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
 
-    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
         if not credential or credential.provider != "minimax":
             raise AIGenerationError("Minimax credential is required.")
         if credential.auth_type not in {"api_key"}:
@@ -94,7 +98,14 @@ class MinimaxStudyPackProvider:
             json={
                 "model": "MiniMax-M2",
                 "messages": [
-                    {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "Return compact strict JSON only. No markdown, "
+                            "no code fences, no commentary, no prose, "
+                            "no trailing text."
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 "max_completion_tokens": 8192,
@@ -108,7 +119,10 @@ class MinimaxStudyPackProvider:
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         if not content:
             raise AIGenerationError("Minimax returned empty response.")
-        return _parse_study_pack_json(content)
+        return content
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return _parse_study_pack_json(self.generate_text(prompt, credential))
 
 
 class ClaudeStudyPackProvider:
@@ -117,7 +131,7 @@ class ClaudeStudyPackProvider:
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
 
-    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
         if not credential or credential.provider != "claude":
             raise AIGenerationError("Claude credential is required.")
         if credential.auth_type not in {"api_key"}:
@@ -144,7 +158,10 @@ class ClaudeStudyPackProvider:
         content = data.get("content", [{}])[0].get("text", "")
         if not content:
             raise AIGenerationError("Claude returned empty response.")
-        return _parse_study_pack_json(content)
+        return content
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return _parse_study_pack_json(self.generate_text(prompt, credential))
 
 
 def build_study_pack_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 5) -> str:
@@ -155,7 +172,8 @@ def build_study_pack_prompt(text: str, num_flashcards: int = 3, num_mcqs: int = 
         f"Generate exactly {num_flashcards} flashcards and exactly {num_mcqs} MCQs. "
         "flashcards: array of objects with front and back. "
         "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
-        "Cover key definitions, mechanisms, cause-effect links, comparisons, classifications, formulas, and exam-relevant traps. "
+        "Cover key definitions, mechanisms, cause-effect links, comparisons, "
+        "classifications, formulas, and exam-relevant traps. "
         "Make the MCQs NEET-style, concept-focused, and not trivial.\n\n"
         f"{sample}"
     )
@@ -209,9 +227,18 @@ def build_iterative_study_pack_prompt(
     existing_mcqs = existing_mcqs or []
 
     mode_instructions = {
-        "core": "Extract core facts, definitions, names, classifications, direct recall points, and high-yield statements.",
-        "mechanisms": "Extract mechanisms, pathways, processes, sequences, cause-effect links, relationships, and functional reasoning points.",
-        "traps": "Extract comparisons, exceptions, confusing look-alikes, edge cases, exam traps, and application-focused concepts that make strong MCQs.",
+        "core": (
+            "Extract core facts, definitions, names, classifications, direct "
+            "recall points, and high-yield statements."
+        ),
+        "mechanisms": (
+            "Extract mechanisms, pathways, processes, sequences, cause-effect "
+            "links, relationships, and functional reasoning points."
+        ),
+        "traps": (
+            "Extract comparisons, exceptions, confusing look-alikes, edge cases, "
+            "exam traps, and application-focused concepts that make strong MCQs."
+        ),
     }
     instruction = mode_instructions.get(mode, mode_instructions["core"])
 
@@ -221,8 +248,10 @@ def build_iterative_study_pack_prompt(
     return (
         "You are preparing dense study material for Indian medical entrance exam revision. "
         "Return compact strict JSON only with keys flashcards and mcqs. "
-        f"Generate up to {max_flashcards} flashcards and up to {max_mcqs} MCQs, focusing on NEW items not already covered. "
-        "Prefer maximum useful coverage, not minimal output. If the text supports many good items, fill the response close to capacity. "
+        f"Generate up to {max_flashcards} flashcards and up to {max_mcqs} "
+        "MCQs, focusing on NEW items not already covered. "
+        "Prefer maximum useful coverage, not minimal output. If the text "
+        "supports many good items, fill the response close to capacity. "
         "Do not repeat meaning-equivalent items. "
         "flashcards: array of objects with front and back. "
         "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
@@ -235,6 +264,55 @@ def build_iterative_study_pack_prompt(
         "Source text:\n"
         f"{sample}"
     )
+
+
+def build_title_generation_prompt(text: str, filename: str) -> str:
+    sample = (text or "")[:12000]
+    safe_filename = (filename or "upload.pdf").strip()
+    return (
+        "Return strict JSON only with keys title and description. "
+        "Choose the best deck title from the source text. "
+        "Rule: if the material is clearly a chapter, title must be exactly in the form "
+        "'Chapter {number} - {full chapter or book title}'. "
+        "If it is not clearly a chapter, use the full book title only. "
+        "Do not include file extensions. Keep title under 255 characters. "
+        "Description should be a concise 1-2 sentence summary under 500 characters. "
+        f"Filename: {safe_filename}\n\n"
+        "Source text:\n"
+        f"{sample}"
+    )
+
+
+
+def parse_title_generation_json(raw: str) -> tuple[str | None, str | None]:
+    raw = (raw or "").strip()
+    candidates = [raw]
+    if "```" in raw:
+        fenced = re.findall(r"```(?:json)?\s*(.*?)\s*```", raw, flags=re.S)
+        candidates.extend(item.strip() for item in fenced if item.strip())
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        extracted = raw[start:end + 1].strip()
+        if extracted and extracted not in candidates:
+            candidates.append(extracted)
+
+    data = None
+    last_exc = None
+    for candidate in candidates:
+        try:
+            data = json.loads(candidate)
+            break
+        except json.JSONDecodeError as exc:
+            last_exc = exc
+
+    if data is None:
+        raise AIGenerationError("AI provider returned invalid JSON for title generation.") from last_exc
+
+    title = str(data.get("title", "") or "").strip() or None
+    description = str(data.get("description", "") or "").strip() or None
+    return title, description
+
 
 
 def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
@@ -326,8 +404,6 @@ def get_study_pack_provider(name: str) -> StudyPackProvider:
     raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
 
 
-
-
 class OpencodeStudyPackProvider:
     """OpenCode provider using MiniMax API."""
     name = "opencode"
@@ -351,7 +427,14 @@ class OpencodeStudyPackProvider:
             json={
                 "model": "MiniMax-M2",
                 "messages": [
-                    {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "Return compact strict JSON only. No markdown, "
+                            "no code fences, no commentary, no prose, "
+                            "no trailing text."
+                        ),
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 "max_completion_tokens": 8192,
@@ -368,7 +451,6 @@ class OpencodeStudyPackProvider:
         return _parse_study_pack_json(content)
 
 
-
 class CodexStudyPackProvider:
     """Codex CLI provider for study pack generation."""
     name = "codex"
@@ -377,14 +459,14 @@ class CodexStudyPackProvider:
         import subprocess
         import tempfile
         import os
-        
+
         prompt = _build_prompt(text)
-        
+
         # Create temp file with prompt
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             f.write(prompt)
             prompt_file = f.name
-        
+
         try:
             result = subprocess.run(
                 ["codex", "exec", f"Return JSON only (no explanation): {prompt}"],
@@ -402,10 +484,10 @@ class CodexStudyPackProvider:
             raise AIGenerationError("Codex CLI not found. Install with: npm install -g @openai/codex")
         finally:
             os.unlink(prompt_file)
-        
+
         if not output or "error" in output.lower():
             raise AIGenerationError(f"Codex CLI error: {output[:200]}")
-        
+
         return _parse_study_pack_json(output)
 
 

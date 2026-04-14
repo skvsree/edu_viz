@@ -5,6 +5,7 @@ Run as: python -m app.services.job_worker
 
 import io
 import os
+import re
 import signal
 import sys
 import threading
@@ -19,10 +20,30 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
-from app.models import Card, CardState, Job, JobStatus, BulkAIUpload, BulkAIUploadStatus, BulkAIUploadFile, BulkAIUploadFileStatus, Deck, Review, User
+from app.models import (
+    BulkAIUpload,
+    BulkAIUploadFile,
+    BulkAIUploadFileStatus,
+    BulkAIUploadStatus,
+    Card,
+    CardState,
+    Deck,
+    Job,
+    JobStatus,
+    Review,
+    User,
+)
 from app.services.access import normalize_deck_name
 from app.services.ai_auth import get_env_ai_provider_name, get_scope_provider, resolve_ai_credential
-from app.services.ai_generation import AIGenerationError, build_iterative_study_pack_prompt, get_study_pack_provider, merge_study_packs, normalize_generated_text
+from app.services.ai_generation import (
+    AIGenerationError,
+    build_iterative_study_pack_prompt,
+    build_title_generation_prompt,
+    get_study_pack_provider,
+    merge_study_packs,
+    normalize_generated_text,
+    parse_title_generation_json,
+)
 from app.services.storage import get_storage, StorageError
 
 
@@ -48,17 +69,81 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         return ""
 
 
+def _clean_title_line(line: str) -> str:
+    return re.sub(r"\s+", " ", (line or "").strip())
+
+
+def _looks_like_noise(line: str) -> bool:
+    if not line:
+        return True
+    lowered = line.lower()
+    if len(line) < 4:
+        return True
+    if line.isdigit():
+        return True
+    noise_prefixes = (
+        "unit ",
+        "lesson ",
+        "page ",
+        "www.",
+        "http://",
+        "https://",
+    )
+    if lowered.startswith(noise_prefixes):
+        return True
+    if re.fullmatch(r"[\d\s\-–—.:]+", line):
+        return True
+    return False
+
+
+def _derive_best_title(lines: list[str], filename: str) -> str:
+    cleaned = [_clean_title_line(line) for line in lines[:40]]
+    candidates = [line for line in cleaned if not _looks_like_noise(line)]
+    if not candidates:
+        return Path(filename).stem[:250]
+
+    chapter_line = None
+    chapter_number = None
+    chapter_title_part = None
+    for line in candidates[:20]:
+        match = re.match(
+            r"^chapter\s+([0-9]+|[ivxlcdm]+)\b(?:\s*[:\-–—.]\s*|\s+)(.+)$",
+            line,
+            re.IGNORECASE,
+        )
+        if match:
+            chapter_number = match.group(1).upper() if re.fullmatch(r"[ivxlcdm]+", match.group(1), re.IGNORECASE) else match.group(1)
+            chapter_title_part = _clean_title_line(match.group(2))
+            chapter_line = line
+            break
+        match = re.match(r"^chapter\s+([0-9]+|[ivxlcdm]+)\b$", line, re.IGNORECASE)
+        if match:
+            chapter_number = match.group(1).upper() if re.fullmatch(r"[ivxlcdm]+", match.group(1), re.IGNORECASE) else match.group(1)
+            chapter_line = line
+            continue
+        if chapter_number and not chapter_title_part and line.lower() != chapter_line.lower():
+            chapter_title_part = line
+            break
+
+    book_title = None
+    for line in candidates[:12]:
+        lowered = line.lower()
+        if lowered.startswith("chapter "):
+            continue
+        book_title = line
+        break
+
+    if chapter_number:
+        full_title = chapter_title_part or book_title or Path(filename).stem
+        return f"Chapter {chapter_number} - {full_title}"[:250]
+
+    return (book_title or Path(filename).stem)[:250]
+
+
 def extract_title_from_text(text: str, filename: str) -> tuple[str, str | None]:
     lines = text.strip().split("\n") if text else []
-    title = None
+    title = _derive_best_title(lines, filename)
     description = None
-    for line in lines[:20]:
-        line = line.strip()
-        if line and len(line) > 3 and not line.isdigit():
-            title = line[:250]
-            break
-    if not title:
-        title = Path(filename).stem[:250]
     if title:
         title_idx = text.find(title)
         if title_idx != -1:
@@ -127,7 +212,6 @@ def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars
     return chunks
 
 
-
 def _clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
     card_ids = db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
     card_id_list = list(card_ids)
@@ -136,7 +220,6 @@ def _clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
     db.execute(delete(CardState).where(CardState.card_id.in_(card_id_list)))
     db.execute(delete(Review).where(Review.card_id.in_(card_id_list)))
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
-
 
 
 def process_bulk_ai_upload(db: Session, job: Job) -> None:
@@ -165,7 +248,11 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         db.commit()
         return
 
-    owner = db.get(User, bulk.user_id) if bulk.user_id else (db.get(User, bulk.deck.user_id) if getattr(bulk, 'deck', None) else None)
+    owner = (
+        db.get(User, bulk.user_id)
+        if bulk.user_id
+        else (db.get(User, bulk.deck.user_id) if getattr(bulk, "deck", None) else None)
+    )
     if not owner:
         bulk.status = BulkAIUploadStatus.FAILED.value
         bulk.error_message = "Missing deck owner"
@@ -233,7 +320,28 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
             text = extract_text_from_pdf(pdf_data)
             title, description = extract_title_from_text(text, pdf_name)
-            print(f"[job-worker] extracted title job={job.id} file={pdf_name} title={title!r} text_len={len(text or '')}", flush=True)
+            try:
+                title_prompt = build_title_generation_prompt(text, pdf_name)
+                raw_title_response = provider_client.generate_text(title_prompt, credential)
+                ai_title, ai_description = parse_title_generation_json(raw_title_response)
+                if ai_title:
+                    title = ai_title[:250]
+                if ai_description:
+                    description = ai_description[:5000]
+                print(
+                    f"[job-worker] ai title ok job={job.id} file={pdf_name} title={title!r}",
+                    flush=True,
+                )
+            except Exception as title_exc:
+                print(
+                    f"[job-worker] ai title fallback job={job.id} file={pdf_name} err={str(title_exc)[:200]}",
+                    flush=True,
+                )
+            print(
+                f"[job-worker] extracted title job={job.id} file={pdf_name} "
+                f"title={title!r} text_len={len(text or '')}",
+                flush=True,
+            )
 
             deck = None
             if file_record.created_deck_id:
@@ -272,25 +380,50 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             existing_flashcards: set[tuple[str, str]] = set()
             existing_mcqs: set[str] = set()
 
-            print(f"[job-worker] generation start job={job.id} file={pdf_name} chunks={len(chunks)} provider={credential.provider}", flush=True)
+            print(
+                f"[job-worker] generation start job={job.id} file={pdf_name} "
+                f"chunks={len(chunks)} provider={credential.provider}",
+                flush=True,
+            )
             for chunk_index, chunk in enumerate(chunks, start=1):
-                print(f"[job-worker] chunk start job={job.id} file={pdf_name} chunk={chunk_index}/{len(chunks)} chunk_len={len(chunk)}", flush=True)
+                print(
+                    f"[job-worker] chunk start job={job.id} file={pdf_name} "
+                    f"chunk={chunk_index}/{len(chunks)} chunk_len={len(chunk)}",
+                    flush=True,
+                )
                 chunk_pack = merge_study_packs()
                 for mode in modes:
-                    print(f"[job-worker] ai pass start job={job.id} file={pdf_name} chunk={chunk_index}/{len(chunks)} mode={mode}", flush=True)
+                    print(
+                        f"[job-worker] ai pass start job={job.id} file={pdf_name} "
+                        f"chunk={chunk_index}/{len(chunks)} mode={mode}",
+                        flush=True,
+                    )
                     prompt = build_iterative_study_pack_prompt(
                         chunk,
                         mode=mode,
-                        existing_flashcards=[item.front for item in merge_study_packs(aggregate, chunk_pack).flashcards],
+                        existing_flashcards=[
+                            item.front
+                            for item in merge_study_packs(aggregate, chunk_pack).flashcards
+                        ],
                         existing_mcqs=[item.question for item in merge_study_packs(aggregate, chunk_pack).mcqs],
                         max_flashcards=18,
                         max_mcqs=18,
                     )
                     try:
                         pass_pack = provider_client.generate_from_prompt(prompt, credential)
-                        print(f"[job-worker] ai pass ok job={job.id} file={pdf_name} chunk={chunk_index}/{len(chunks)} mode={mode} flashcards={len(pass_pack.flashcards)} mcqs={len(pass_pack.mcqs)}", flush=True)
+                        print(
+                            f"[job-worker] ai pass ok job={job.id} file={pdf_name} "
+                            f"chunk={chunk_index}/{len(chunks)} mode={mode} "
+                            f"flashcards={len(pass_pack.flashcards)} mcqs={len(pass_pack.mcqs)}",
+                            flush=True,
+                        )
                     except AIGenerationError as e:
-                        print(f"[job-worker] ai pass failed job={job.id} file={pdf_name} chunk={chunk_index}/{len(chunks)} mode={mode} err={str(e)[:200]}", flush=True)
+                        print(
+                            f"[job-worker] ai pass failed job={job.id} file={pdf_name} "
+                            f"chunk={chunk_index}/{len(chunks)} mode={mode} "
+                            f"err={str(e)[:200]}",
+                            flush=True,
+                        )
                         continue
                     chunk_pack = merge_study_packs(chunk_pack, pass_pack)
 
@@ -302,7 +435,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         continue
                     existing_flashcards.add(key)
                     flashcards_generated += 1
-                    new_cards.append(Card(deck_id=deck.id, front=item.front, back=item.back, card_type='basic', source_label='bulk-ai-upload'))
+                    new_cards.append(
+                        Card(
+                            deck_id=deck.id,
+                            front=item.front,
+                            back=item.back,
+                            card_type="basic",
+                            source_label="bulk-ai-upload",
+                        )
+                    )
                 for item in chunk_pack.mcqs:
                     key = normalize_generated_text(item.question)
                     if key in existing_mcqs:
@@ -333,7 +474,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             if not flashcards_generated and not mcqs_generated:
                 raise AIGenerationError('AI provider did not return usable flashcards or MCQs.')
 
-            print(f"[job-worker] file completed job={job.id} file={pdf_name} flashcards={flashcards_generated} mcqs={mcqs_generated} duplicates={duplicate_count}", flush=True)
+            print(
+                f"[job-worker] file completed job={job.id} file={pdf_name} "
+                f"flashcards={flashcards_generated} mcqs={mcqs_generated} "
+                f"duplicates={duplicate_count}",
+                flush=True,
+            )
             file_record.status = BulkAIUploadFileStatus.COMPLETED.value
             file_record.flashcards_generated = flashcards_generated
             file_record.mcqs_generated = mcqs_generated
@@ -354,11 +500,23 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     if bulk:
         bulk.processed_files = job.processed_items
         bulk.failed_files = job.failed_items
-        bulk.status = BulkAIUploadStatus.FAILED.value if job.failed_items > 0 and job.processed_items == 0 else BulkAIUploadStatus.COMPLETED.value
+        bulk.status = (
+            BulkAIUploadStatus.FAILED.value
+            if job.failed_items > 0 and job.processed_items == 0
+            else BulkAIUploadStatus.COMPLETED.value
+        )
         bulk.completed_at = datetime.utcnow()
 
-    print(f"[job-worker] job finalize job={job.id} processed={job.processed_items} failed={job.failed_items}", flush=True)
-    job.status = JobStatus.FAILED.value if job.failed_items > 0 and job.processed_items == 0 else JobStatus.COMPLETED.value
+    print(
+        f"[job-worker] job finalize job={job.id} processed={job.processed_items} "
+        f"failed={job.failed_items}",
+        flush=True,
+    )
+    job.status = (
+        JobStatus.FAILED.value
+        if job.failed_items > 0 and job.processed_items == 0
+        else JobStatus.COMPLETED.value
+    )
     job.completed_at = datetime.utcnow()
     db.commit()
 
@@ -378,11 +536,9 @@ def _mark_job_active(job_id: uuid.UUID) -> bool:
         return True
 
 
-
 def _mark_job_inactive(job_id: uuid.UUID) -> None:
     with _active_jobs_lock:
         _active_jobs.discard(job_id)
-
 
 
 def process_job(job_id: uuid.UUID) -> None:
@@ -447,7 +603,12 @@ def claim_available_jobs(db: Session, capacity: int) -> list[Job]:
     running_jobs = db.execute(
         select(Job)
         .where(Job.status == JobStatus.RUNNING.value)
-        .where((Job.worker_id == WORKER_ID) | (Job.worker_id == None) | (Job.locked_at == None) | (Job.locked_at < stale_before))
+        .where(
+            (Job.worker_id == WORKER_ID)
+            | (Job.worker_id.is_(None))
+            | (Job.locked_at.is_(None))
+            | (Job.locked_at < stale_before)
+        )
         .order_by(Job.created_at.asc())
         .limit(capacity)
     ).scalars().all()
@@ -467,7 +628,7 @@ def claim_available_jobs(db: Session, capacity: int) -> list[Job]:
         pending_jobs = db.execute(
             select(Job)
             .where(Job.status == JobStatus.PENDING.value)
-            .where((Job.worker_id == None) | (Job.locked_at == None) | (Job.locked_at < stale_before))
+            .where((Job.worker_id.is_(None)) | (Job.locked_at.is_(None)) | (Job.locked_at < stale_before))
             .order_by(Job.created_at.asc())
             .limit(remaining)
         ).scalars().all()

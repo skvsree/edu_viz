@@ -28,6 +28,7 @@
 - Prefer small targeted template/CSS fixes over broad layout rewrites.
 - For UI changes in deployed app code, rebuild and restart the `app` service with Docker Compose.
 - Code is baked into the image, not bind-mounted. Template/CSS changes require rebuild.
+- Run PEP 8 checks with `./scripts/lint_pep8.sh` after Python changes; flake8 config lives in `.flake8`.
 
 ## Deployment notes
 - Active deploy path: `/opt/edu_viz`
@@ -104,3 +105,12 @@
 - Collection `eduviz-media` stores uploaded images, PDFs, etc.
 - Filer port 8888, S3 gateway port 8333, master port 9333, volume port 8080
 - Fix: `-volumeSizeLimitMB` flag was wrong → correct is `-master.volumeSizeLimitMB`
+
+## Bulk AI upload title generation
+
+- Bulk AI upload deck titles are now AI-first in `app/services/job_worker.py` using the same configured provider/credential already selected for study-pack generation.
+- Shared provider code in `app/services/ai_generation.py` now exposes raw text generation so non-study-pack JSON tasks can reuse OpenAI / Minimax / Claude safely.
+- Title prompt requires strict JSON `{title, description}`.
+- Naming rule: if source text clearly identifies a chapter, format the title as `Chapter {number} - {full chapter or book title}`; otherwise use the full book title only.
+- If AI title generation fails or returns invalid JSON, worker falls back to existing heuristic `extract_title_from_text(...)` behavior instead of failing the upload.
+- App was rebuilt with `docker compose up --build -d app` after this change because code is baked into the image.
