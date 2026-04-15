@@ -7,7 +7,8 @@
 
 ## Branch strategy
 - `main`: stable base branch.
-- `feature/deck_segregation`: current active deploy branch in `/opt/edu_viz` for role-based browse tabs, folder UX, and deck access work.
+- `feature/bulk-ai-upload`: current active deploy branch in `/opt/edu_viz` for bulk AI upload flow, jobs page updates, and storage-backed upload handling.
+- `feature/deck_segregation`: older branch used for role-based browse tabs, folder UX, and deck access work.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
 - Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from the branch currently used by production.
 
@@ -107,10 +108,21 @@
 - Fix: `-volumeSizeLimitMB` flag was wrong → correct is `-master.volumeSizeLimitMB`
 
 ## Bulk AI upload title generation
-
+ 
 - Bulk AI upload deck titles are now AI-first in `app/services/job_worker.py` using the same configured provider/credential already selected for study-pack generation.
 - Shared provider code in `app/services/ai_generation.py` now exposes raw text generation so non-study-pack JSON tasks can reuse OpenAI / Minimax / Claude safely.
 - Title prompt requires strict JSON `{title, description}`.
 - Naming rule: if source text clearly identifies a chapter, format the title as `Chapter {number} - {full chapter or book title}`; otherwise use the full book title only.
 - If AI title generation fails or returns invalid JSON, worker falls back to existing heuristic `extract_title_from_text(...)` behavior instead of failing the upload.
 - App was rebuilt with `docker compose up --build -d app` after this change because code is baked into the image.
+
+## Bulk AI upload + jobs flow
+
+- Current active work in `/opt/edu_viz` is on `feature/bulk-ai-upload`; verify branch before assuming older folder/browse-only context.
+- Bulk AI upload queuing lives in `app/api/routers/bulk_ai_upload.py` via `enqueue_ai_upload_job(...)`.
+- Uploads store source PDFs in SeaweedFS through `app/services/storage.py` when storage is available; file rows fall back to inline text only if storage save fails.
+- Single-PDF AI import can target an existing deck; ZIP uploads must create/reuse per-file decks and cannot target one existing deck.
+- UX intent: bulk upload popup should show loading only until submission, then redirect to `/settings/jobs` with a notice instead of showing long in-modal progress.
+- `/settings/jobs` is the place to monitor background bulk upload progress and should stay mobile-friendly.
+- Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
+
