@@ -125,4 +125,5 @@
 - UX intent: bulk upload popup should show loading only until submission, then redirect to `/settings/jobs` with a notice instead of showing long in-modal progress.
 - `/settings/jobs` is the place to monitor background bulk upload progress and should stay mobile-friendly.
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
+- New users created during first OIDC sign-in inherit `settings.test_enabled_default`; current intended default is enabled so tests are on for brand-new users unless later overridden.
 
