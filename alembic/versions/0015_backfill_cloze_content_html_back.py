@@ -23,20 +23,20 @@ def upgrade():
     # Only backfill rows where content_html exists but content_html_back is NULL
     # and card_type is 'cloze'
     conn = op.get_bind()
-    
+
     # Get rows to update
     result = conn.execute(
         text("""
-            SELECT id, content_html 
-            FROM cards 
-            WHERE card_type = 'cloze' 
-              AND content_html IS NOT NULL 
+            SELECT id, content_html
+            FROM cards
+            WHERE card_type = 'cloze'
+              AND content_html IS NOT NULL
               AND content_html_back IS NULL
         """)
     )
-    
+
     rows = result.fetchall()
-    
+
     # We'll use a Python function to render cloze back
     # For simplicity, we just copy content_html to content_html_back for now
     # In a real scenario, you'd run the cloze renderer
@@ -45,13 +45,13 @@ def upgrade():
         # The cloze renderer would be called here in production
         conn.execute(
             text("""
-                UPDATE cards 
-                SET content_html_back = content_html 
+                UPDATE cards
+                SET content_html_back = content_html
                 WHERE id = :id
             """),
             {"id": row[0]}
         )
-    
+
     print(f"Backfilled {len(rows)} cloze cards with content_html_back")
 
 

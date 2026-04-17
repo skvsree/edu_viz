@@ -22,7 +22,19 @@ import threading
 from app.api.deps import current_user
 from app.api.routers.pages import templates
 from app.core.db import get_db
-from app.models import Card, CardState, Deck, Review as CardReview, Test, TestAttempt, TestAttemptAnswer, TestQuestion, User, AIUploadGeneration, AIUploadGenerationStatus
+from app.models import (
+    AIUploadGeneration,
+    AIUploadGenerationStatus,
+    Card,
+    CardState,
+    Deck,
+    Review as CardReview,
+    Test,
+    TestAttempt,
+    TestAttemptAnswer,
+    TestQuestion,
+    User,
+)
 from app.services.access import (
     ROLE_SYSTEM_ADMIN,
     can_access_deck,
@@ -33,17 +45,41 @@ from app.services.access import (
     can_open_test_center,
     can_use_ai_generation,
 )
-from app.services.ai_auth import get_env_ai_provider_name, get_scope_provider, resolve_ai_credential
-from app.services.ai_generation import AIGenerationError, build_iterative_study_pack_prompt, build_study_pack_prompt, generate_study_pack, get_study_pack_provider, merge_study_packs, normalize_generated_text, _parse_study_pack_json
-from app.services.content_extraction import ContentExtractionError, extract_text
+from app.services.ai_auth import (
+    get_env_ai_provider_name,
+    get_scope_provider,
+    resolve_ai_credential,
+)
+from app.services.ai_generation import (
+    AIGenerationError,
+    _parse_study_pack_json,
+    build_iterative_study_pack_prompt,
+    build_study_pack_prompt,
+    generate_study_pack,
+    get_study_pack_provider,
+    merge_study_packs,
+    normalize_generated_text,
+)
+from app.services.content_extraction import extract_text
 from app.services.mcq_import import McqImportError, parse_mcq_json
-from app.services.tests import build_test_report, create_test_from_deck, list_accessible_tests, submit_attempt, user_attempts_for_test
+from app.services.tests import (
+    build_test_report,
+    create_test_from_deck,
+    list_accessible_tests,
+    submit_attempt,
+    user_attempts_for_test,
+)
 
 router = APIRouter(tags=["content"])
 logger = logging.getLogger(__name__)
 
 
-def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars: int = 800) -> list[str]:
+def _split_text_for_ai_upload(
+    text: str,
+    *,
+    max_chars: int = 6000,
+    overlap_chars: int = 800,
+) -> list[str]:
     source = (text or "").strip()
     if not source:
         return []
@@ -210,7 +246,7 @@ def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) ->
         db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(affected_test_ids)))
         db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
         db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
- 
+
     db.execute(delete(CardState).where(CardState.card_id.in_(card_ids)))
     db.execute(delete(CardReview).where(CardReview.card_id.in_(card_ids)))
     db.execute(delete(Card).where(Card.id.in_(card_ids)))
@@ -263,11 +299,21 @@ def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str,
 
         existing_flashcards = {
             (normalize_generated_text(card.front or ""), normalize_generated_text(card.back or ""))
-            for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "basic")).scalars().all()
+            for card in db.execute(
+                select(Card).where(
+                    Card.deck_id == deck.id,
+                    Card.card_type == "basic",
+                )
+            ).scalars().all()
         }
         existing_mcqs = {
             normalize_generated_text(card.front or "")
-            for card in db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "mcq")).scalars().all()
+            for card in db.execute(
+                select(Card).where(
+                    Card.deck_id == deck.id,
+                    Card.card_type == "mcq",
+                )
+            ).scalars().all()
         }
 
         created_flashcards = 0
@@ -288,7 +334,13 @@ def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str,
                 try:
                     pass_pack = provider_client.generate_from_prompt(prompt, credential)
                 except AIGenerationError as exc:
-                    logger.warning("AI upload mode %s failed for deck %s chunk %s: %s", mode, deck_id, index, exc)
+                    logger.warning(
+                        "AI upload mode %s failed for deck %s chunk %s: %s",
+                        mode,
+                        deck_id,
+                        index,
+                        exc,
+                    )
                     continue
                 chunk_pack = merge_study_packs(chunk_pack, pass_pack)
 
@@ -300,7 +352,15 @@ def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str,
                     continue
                 existing_flashcards.add(key)
                 created_flashcards += 1
-                new_cards.append(Card(deck_id=deck.id, front=item.front, back=item.back, card_type="basic", source_label="ai-upload"))
+                new_cards.append(
+                    Card(
+                        deck_id=deck.id,
+                        front=item.front,
+                        back=item.back,
+                        card_type="basic",
+                        source_label="ai-upload",
+                    )
+                )
             for item in chunk_pack.mcqs:
                 key = normalize_generated_text(item.question)
                 if key in existing_mcqs:
@@ -365,7 +425,6 @@ def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str,
         db.close()
 
 
-
 def _require_system_admin(user: User) -> None:
     if user.role != ROLE_SYSTEM_ADMIN:
         raise HTTPException(status_code=403, detail="Only system admins can access this page.")
@@ -380,90 +439,6 @@ def _require_mcq_json_access(user: User) -> None:
     if not can_import_mcq_json(user):
         raise HTTPException(status_code=403, detail="You do not have permission to import MCQ JSON.")
 
-
-@router.post("/decks/{deck_id}/ai-import/start")
-def ai_import_deck_content_start(
-    deck_id: str,
-    source_file: UploadFile = File(...),
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    _require_ai_generation_access(user)
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_manage_deck(user, deck):
-        raise HTTPException(status_code=404)
-
-    if not source_file.filename:
-        raise HTTPException(status_code=400, detail="Please choose a PDF or DOCX file.")
-
-    try:
-        provider_name, credential = _resolve_ai_provider_and_credential(db, user)
-    except AIGenerationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    latest = db.execute(
-        select(AIUploadGeneration)
-        .where(AIUploadGeneration.deck_id == deck.id)
-        .order_by(AIUploadGeneration.created_at.desc())
-    ).scalars().first()
-    if latest and latest.status == AIUploadGenerationStatus.IN_PROGRESS.value:
-        return {
-            "ok": True,
-            "already_running": True,
-            "generation_id": str(latest.id),
-            "provider": latest.provider or credential.provider or provider_name,
-            "total": latest.total_chunks or 0,
-            "completed": latest.processed_chunks,
-            "flashcards_generated": latest.flashcards_generated,
-            "mcqs_generated": latest.mcqs_generated,
-            "duplicates_skipped": latest.duplicates_skipped,
-        }
-
-    payload = source_file.file.read()
-    source_file.file.close()
-    if not payload:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-
-    generation = AIUploadGeneration(
-        deck_id=deck.id,
-        status=AIUploadGenerationStatus.IN_PROGRESS.value,
-        total_chunks=None,
-        processed_chunks=0,
-        flashcards_generated=0,
-        mcqs_generated=0,
-        duplicates_skipped=0,
-        provider=credential.provider or provider_name,
-        filename=(source_file.filename or "")[:255],
-        started_at=datetime.utcnow(),
-    )
-    db.add(generation)
-    db.commit()
-    db.refresh(generation)
-
-    worker = threading.Thread(
-        target=_run_ai_upload_generation,
-        kwargs={
-            "generation_id": str(generation.id),
-            "deck_id": str(deck.id),
-            "user_id": str(user.id),
-            "filename": source_file.filename or "",
-            "payload": payload,
-        },
-        daemon=True,
-    )
-    worker.start()
-
-    return {
-        "ok": True,
-        "already_running": False,
-        "generation_id": str(generation.id),
-        "provider": credential.provider or provider_name,
-        "total": 0,
-        "completed": 0,
-        "flashcards_generated": 0,
-        "mcqs_generated": 0,
-        "duplicates_skipped": 0,
-    }
 
 
 @router.get("/decks/{deck_id}/ai-import/status")
@@ -538,9 +513,17 @@ def generate_mcqs_for_deck(
     resolution = resolve_ai_credential(db, user, provider)
     credential = resolution.credential
     if not credential:
-        return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus(resolution.reason or 'No AI credential configured for you or your organization.')}", status_code=303)
+        return RedirectResponse(
+            url=(
+                f"/decks/{deck.id}?import_error="
+                f"{quote_plus(resolution.reason or 'No AI credential configured for you or your organization.')}"
+            ),
+            status_code=303,
+        )
 
-    source_cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.asc())).scalars().all()
+    source_cards = db.execute(
+        select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.asc())
+    ).scalars().all()
     source_text = "\n\n".join(
         part.strip()
         for card in source_cards
@@ -548,7 +531,13 @@ def generate_mcqs_for_deck(
         if part and part.strip()
     )
     if not source_text:
-        return RedirectResponse(url=f"/decks/{deck.id}?import_error={quote_plus('No study text found to generate MCQs.')}", status_code=303)
+        return RedirectResponse(
+            url=(
+                f"/decks/{deck.id}?import_error="
+                f"{quote_plus('No study text found to generate MCQs.')}"
+            ),
+            status_code=303,
+        )
 
     try:
         pack = generate_study_pack(source_text, provider_name=credential.provider, credential=credential)
@@ -572,7 +561,13 @@ def generate_mcqs_for_deck(
         db.flush()
         db.add_all([CardState(card_id=card.id) for card in mcq_cards])
         db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}?import_success={quote_plus(f'Generated {len(mcq_cards)} MCQs')}", status_code=303)
+    return RedirectResponse(
+        url=(
+            f"/decks/{deck.id}?import_success="
+            f"{quote_plus(f'Generated {len(mcq_cards)} MCQs')}"
+        ),
+        status_code=303,
+    )
 
 
 @router.post("/decks/{deck_id}/mcqs/import-json")
@@ -610,7 +605,13 @@ def import_mcqs_json(
     db.flush()
     db.add_all([CardState(card_id=card.id) for card in cards])
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?import_success={quote_plus(f'Imported {len(cards)} MCQs from JSON')}", status_code=303)
+    return RedirectResponse(
+        url=(
+            f"/decks/{deck.id}/mcqs?import_success="
+            f"{quote_plus(f'Imported {len(cards)} MCQs from JSON')}"
+        ),
+        status_code=303,
+    )
 
 
 @router.get("/sample-mcqs.json")
@@ -646,8 +647,18 @@ def _build_anki_mcq_apkg(deck: Deck, cards: list[Card]) -> Path:
 
     conn = sqlite3.connect(":memory:")
     try:
-        conn.execute("CREATE TABLE col (id integer primary key, crt integer, mod integer, scm integer, ver integer, dty integer, usn integer, ls integer, conf text, models text, decks text, dconf text, tags text)")
-        conn.execute("CREATE TABLE notes (id integer primary key, guid text, mid integer, mod integer, usn integer, tags text, flds text, sfld integer, csum integer, flags integer, data text)")
+        conn.execute(
+            "CREATE TABLE col ("
+            "id integer primary key, crt integer, mod integer, scm integer, "
+            "ver integer, dty integer, usn integer, ls integer, conf text, "
+            "models text, decks text, dconf text, tags text)"
+        )
+        conn.execute(
+            "CREATE TABLE notes ("
+            "id integer primary key, guid text, mid integer, mod integer, "
+            "usn integer, tags text, flds text, sfld integer, csum integer, "
+            "flags integer, data text)"
+        )
         model_id = 1001
         model = {
             str(model_id): {
@@ -656,14 +667,35 @@ def _build_anki_mcq_apkg(deck: Deck, cards: list[Card]) -> Path:
                 "flds": [{"name": "Question"}, {"name": "Options"}, {"name": "Answer"}, {"name": "Explanation"}],
             }
         }
-        deck_map = {str(1): {"id": 1, "name": deck.name, "mod": 0, "usn": 0, "collapsed": False, "browserCollapsed": False, "extendNew": 0, "extendRev": 0, "conf": 1, "desc": ""}}
-        conn.execute("INSERT INTO col VALUES (1, 0, 0, 0, 11, 0, 0, 0, '{}', ?, ?, '{}', '{}')", (json.dumps(model), json.dumps(deck_map)))
+        deck_map = {
+            str(1): {
+                "id": 1,
+                "name": deck.name,
+                "mod": 0,
+                "usn": 0,
+                "collapsed": False,
+                "browserCollapsed": False,
+                "extendNew": 0,
+                "extendRev": 0,
+                "conf": 1,
+                "desc": "",
+            }
+        }
+        conn.execute(
+            "INSERT INTO col VALUES (1, 0, 0, 0, 11, 0, 0, 0, '{}', ?, ?, '{}', '{}')",
+            (json.dumps(model), json.dumps(deck_map)),
+        )
         note_id = 1
         for card in cards:
             if card.card_type != "mcq":
                 continue
             options = card.mcq_options or []
-            answer = options[card.mcq_answer_index] if card.mcq_answer_index is not None and 0 <= card.mcq_answer_index < len(options) else ""
+            answer = (
+                options[card.mcq_answer_index]
+                if card.mcq_answer_index is not None
+                and 0 <= card.mcq_answer_index < len(options)
+                else ""
+            )
             flds = "\x1f".join([
                 card.front or "",
                 "<br>".join(options),
@@ -715,7 +747,11 @@ def export_anki_mcqs(deck_id: str, user: User = Depends(current_user), db: Sessi
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id, Card.card_type == "mcq").order_by(Card.created_at.asc())).scalars().all()
+    cards = db.execute(
+        select(Card)
+        .where(Card.deck_id == deck.id, Card.card_type == "mcq")
+        .order_by(Card.created_at.asc())
+    ).scalars().all()
     apkg_path = _build_anki_mcq_apkg(deck, cards)
     return Response(
         content=apkg_path.read_bytes(),
@@ -725,16 +761,38 @@ def export_anki_mcqs(deck_id: str, user: User = Depends(current_user), db: Sessi
 
 
 @router.get("/decks/{deck_id}/flashcards/{card_id}/edit", response_class=HTMLResponse)
-def edit_flashcard_page(deck_id: str, card_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def edit_flashcard_page(
+    deck_id: str,
+    card_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     deck = db.get(Deck, deck_id)
     card = db.get(Card, card_id)
     if not deck or not card or card.deck_id != deck.id or not can_manage_deck(user, deck) or card.card_type != "basic":
         raise HTTPException(status_code=404)
-    return templates.TemplateResponse("cards/edit_flashcard.html", {"request": request, "user": user, "deck": deck, "card": card, "title": f"Edit flashcard | {deck.name}"})
+    return templates.TemplateResponse(
+        "cards/edit_flashcard.html",
+        {
+            "request": request,
+            "user": user,
+            "deck": deck,
+            "card": card,
+            "title": f"Edit flashcard | {deck.name}",
+        },
+    )
 
 
 @router.post("/decks/{deck_id}/flashcards/{card_id}/edit")
-def edit_flashcard(deck_id: str, card_id: str, front: str = Form(...), back: str = Form(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def edit_flashcard(
+    deck_id: str,
+    card_id: str,
+    front: str = Form(...),
+    back: str = Form(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     deck = db.get(Deck, deck_id)
     card = db.get(Card, card_id)
     if not deck or not card or card.deck_id != deck.id or not can_manage_deck(user, deck) or card.card_type != "basic":
@@ -742,16 +800,37 @@ def edit_flashcard(deck_id: str, card_id: str, front: str = Form(...), back: str
     card.front = front.strip()
     card.back = back.strip()
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_success={quote_plus('Flashcard updated')}", status_code=303)
+    return RedirectResponse(
+        url=(
+            f"/decks/{deck.id}/flashcards?update_success="
+            f"{quote_plus('Flashcard updated')}"
+        ),
+        status_code=303,
+    )
 
 
 @router.get("/decks/{deck_id}/mcqs/{card_id}/edit", response_class=HTMLResponse)
-def edit_mcq_page(deck_id: str, card_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def edit_mcq_page(
+    deck_id: str,
+    card_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     deck = db.get(Deck, deck_id)
     card = db.get(Card, card_id)
     if not deck or not card or card.deck_id != deck.id or not can_manage_deck(user, deck) or card.card_type != "mcq":
         raise HTTPException(status_code=404)
-    return templates.TemplateResponse("cards/edit_mcq.html", {"request": request, "user": user, "deck": deck, "card": card, "title": f"Edit MCQ | {deck.name}"})
+    return templates.TemplateResponse(
+        "cards/edit_mcq.html",
+        {
+            "request": request,
+            "user": user,
+            "deck": deck,
+            "card": card,
+            "title": f"Edit MCQ | {deck.name}",
+        },
+    )
 
 
 @router.post("/decks/{deck_id}/mcqs/{card_id}/edit")
@@ -793,15 +872,33 @@ def bulk_delete_flashcards(
 
     unique_ids = sorted({card_id for card_id in card_ids if card_id})
     if not unique_ids:
-        return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_error={quote_plus('Select at least one flashcard to delete.')}", status_code=303)
+        return RedirectResponse(
+            url=(
+                f"/decks/{deck.id}/flashcards?update_error="
+                f"{quote_plus('Select at least one flashcard to delete.')}"
+            ),
+            status_code=303,
+        )
 
     cards = db.execute(select(Card.id, Card.deck_id, Card.card_type).where(Card.id.in_(unique_ids))).all()
     if len(cards) != len(unique_ids) or any(card.deck_id != deck.id or card.card_type != "basic" for card in cards):
-        return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_error={quote_plus('Some selected flashcards are invalid for this deck.')}", status_code=303)
+        return RedirectResponse(
+            url=(
+                f"/decks/{deck.id}/flashcards?update_error="
+                f"{quote_plus('Some selected flashcards are invalid for this deck.')}"
+            ),
+            status_code=303,
+        )
 
     _delete_cards_with_test_dependencies(db, card_ids=unique_ids)
     db.commit()
-    return RedirectResponse(url=f"/decks/{deck.id}/flashcards?update_success={quote_plus(f'Deleted {len(unique_ids)} flashcard(s)')}", status_code=303)
+    return RedirectResponse(
+        url=(
+            f"/decks/{deck.id}/flashcards?update_success="
+            f"{quote_plus(f'Deleted {len(unique_ids)} flashcard(s)')}"
+        ),
+        status_code=303,
+    )
 
 
 @router.post("/decks/{deck_id}/mcqs/bulk-delete")
@@ -818,11 +915,27 @@ def bulk_delete_mcqs(
 
     unique_ids = sorted({card_id for card_id in card_ids if card_id})
     if not unique_ids:
-        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_error={quote_plus('Select at least one MCQ to delete.')}", status_code=303)
+        return RedirectResponse(
+            url=(
+                f"/decks/{deck.id}/mcqs?update_error="
+                f"{quote_plus('Select at least one MCQ to delete.')}"
+            ),
+            status_code=303,
+        )
 
-    cards = db.execute(select(Card.id, Card.deck_id, Card.card_type, Card.source_label).where(Card.id.in_(unique_ids))).all()
+    cards = db.execute(
+        select(Card.id, Card.deck_id, Card.card_type, Card.source_label).where(
+            Card.id.in_(unique_ids)
+        )
+    ).all()
     if len(cards) != len(unique_ids) or any(card.deck_id != deck.id or card.card_type != "mcq" for card in cards):
-        return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_error={quote_plus('Some selected MCQs are invalid for this deck.')}", status_code=303)
+        return RedirectResponse(
+            url=(
+                f"/decks/{deck.id}/mcqs?update_error="
+                f"{quote_plus('Some selected MCQs are invalid for this deck.')}"
+            ),
+            status_code=303,
+        )
 
     deleted_ai_generated = any((card.source_label or "").startswith("ai-mcq") for card in cards)
 
@@ -838,7 +951,13 @@ def bulk_delete_mcqs(
 
     db.commit()
     reset_suffix = " and reset generation state" if deleted_ai_generated else ""
-    return RedirectResponse(url=f"/decks/{deck.id}/mcqs?update_success={quote_plus(f'Deleted {len(unique_ids)} MCQ(s){reset_suffix}')}", status_code=303)
+    return RedirectResponse(
+        url=(
+            f"/decks/{deck.id}/mcqs?update_success="
+            f"{quote_plus(f'Deleted {len(unique_ids)} MCQ(s){reset_suffix}')}"
+        ),
+        status_code=303,
+    )
 
 
 @router.get("/decks/{deck_id}/tests", response_class=HTMLResponse)
@@ -847,7 +966,13 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
     tests = list_accessible_tests(db, deck_id=deck.id)
-    has_test_content = bool(db.execute(select(Card.id).where(Card.deck_id == deck.id, Card.card_type == "mcq").limit(1)).scalars().all())
+    has_test_content = bool(
+        db.execute(
+            select(Card.id).where(Card.deck_id == deck.id, Card.card_type == "mcq").limit(1)
+        )
+        .scalars()
+        .all()
+    )
     if not can_open_test_center(user, deck, has_test_content=has_test_content, has_published_tests=bool(tests)):
         raise HTTPException(status_code=403, detail="Tests are not enabled for your account.")
     attempts_by_test = {str(test.id): user_attempts_for_test(db, test_id=test.id, user_id=user.id) for test in tests}
@@ -867,7 +992,12 @@ def deck_tests_page(deck_id: str, request: Request, user: User = Depends(current
 
 
 @router.post("/decks/{deck_id}/tests")
-def create_test(deck_id: str, count: int = Form(default=0), user: User = Depends(current_user), db: Session = Depends(get_db)):
+def create_test(
+    deck_id: str,
+    count: int = Form(default=0),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     from app.services.access import check_test_throttle
 
     deck = db.get(Deck, deck_id)
@@ -906,7 +1036,14 @@ def create_test(deck_id: str, count: int = Form(default=0), user: User = Depends
 
 @router.get("/tests/{test_id}", response_class=HTMLResponse)
 def take_test_page(test_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    test = db.execute(select(Test).options(selectinload(Test.questions).selectinload(TestQuestion.card), selectinload(Test.deck)).where(Test.id == test_id)).scalar_one_or_none()
+    test = db.execute(
+        select(Test)
+        .options(
+            selectinload(Test.questions).selectinload(TestQuestion.card),
+            selectinload(Test.deck),
+        )
+        .where(Test.id == test_id)
+    ).scalar_one_or_none()
     if not test or not can_access_tests(user, test.deck):
         raise HTTPException(status_code=404)
 
@@ -927,7 +1064,12 @@ def take_test_page(test_id: str, request: Request, user: User = Depends(current_
 
 
 @router.post("/tests/{test_id}/submit")
-async def submit_test(test_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def submit_test(
+    test_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     test = db.execute(select(Test).options(selectinload(Test.deck)).where(Test.id == test_id)).scalar_one_or_none()
     if not test or not can_access_tests(user, test.deck):
         raise HTTPException(status_code=404)
@@ -943,11 +1085,25 @@ async def submit_test(test_id: str, request: Request, user: User = Depends(curre
 
 
 @router.get("/attempts/{attempt_id}", response_class=HTMLResponse)
-def attempt_report_page(attempt_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def attempt_report_page(
+    attempt_id: str,
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
     attempt, summary = build_test_report(db, attempt_id=attempt_id)
     if attempt.user_id != user.id and user.role != ROLE_SYSTEM_ADMIN:
         raise HTTPException(status_code=404)
-    return templates.TemplateResponse("tests/report.html", {"request": request, "user": user, "attempt": attempt, "summary": summary, "title": f"Report | {attempt.test.title}"})
+    return templates.TemplateResponse(
+        "tests/report.html",
+        {
+            "request": request,
+            "user": user,
+            "attempt": attempt,
+            "summary": summary,
+            "title": f"Report | {attempt.test.title}",
+        },
+    )
 
 
 def _resolve_generation_provider_and_credential(db: Session, user: User):
@@ -963,7 +1119,6 @@ def _resolve_generation_provider_and_credential(db: Session, user: User):
 
     resolution = resolve_ai_credential(db, user, provider)
     return provider, resolution
-
 
 
 def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) -> None:
@@ -997,7 +1152,10 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
 
         pending_cards = [
             card for card in source_cards
-            if item_by_card_id.get(str(card.id)) and item_by_card_id[str(card.id)].status != DeckMcqGenerationItemStatus.COMPLETED.value
+            if item_by_card_id.get(str(card.id)) and (
+                item_by_card_id[str(card.id)].status
+                != DeckMcqGenerationItemStatus.COMPLETED.value
+            )
         ]
 
         total_cards = len(source_cards)
@@ -1068,7 +1226,14 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
                     json={
                         "model": "MiniMax-M2",
                         "messages": [
-                            {"role": "system", "content": "Return compact strict JSON only. No markdown, no code fences, no commentary, no prose, no trailing text."},
+                            {
+                                "role": "system",
+                                "content": (
+                                    "Return compact strict JSON only. No markdown, "
+                                    "no code fences, no commentary, no prose, "
+                                    "no trailing text."
+                                ),
+                            },
                             {"role": "user", "content": prompt},
                         ],
                         "max_completion_tokens": 2048,
@@ -1155,7 +1320,14 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
                     continue
                 save_batch_success(batch, pack)
             except Exception as batch_exc:
-                logger.warning("mcq batch failed, retrying smaller generation_id=%s deck_id=%s batch_start=%s error=%s", generation_id, deck_id, i, batch_exc)
+                logger.warning(
+                    "mcq batch failed, retrying smaller generation_id=%s deck_id=%s "
+                    "batch_start=%s error=%s",
+                    generation_id,
+                    deck_id,
+                    i,
+                    batch_exc,
+                )
                 recovered = False
                 for card in batch:
                     try:
@@ -1171,10 +1343,20 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
                         save_batch_success([card], single_pack)
                         recovered = True
                     except Exception as single_exc:
-                        logger.warning("mcq single-card fallback failed generation_id=%s deck_id=%s card_id=%s error=%s", generation_id, deck_id, card.id, single_exc)
+                        logger.warning(
+                            "mcq single-card fallback failed generation_id=%s deck_id=%s "
+                            "card_id=%s error=%s",
+                            generation_id,
+                            deck_id,
+                            card.id,
+                            single_exc,
+                        )
                         mark_batch_failed([card])
                 if not recovered and failed_this_run:
-                    mcq_gen.error_message = f"Some source cards failed due to invalid AI output. Skipped {failed_this_run} item(s)."
+                    mcq_gen.error_message = (
+                        "Some source cards failed due to invalid AI output. "
+                        f"Skipped {failed_this_run} item(s)."
+                    )
                     db.commit()
 
         mcq_gen.status = MCQGenerationStatus.COMPLETED.value
@@ -1216,13 +1398,18 @@ def start_generate_mcqs_for_deck(
     if not credential:
         raise HTTPException(status_code=400, detail=resolution.reason or "No AI credential configured.")
 
-    source_cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.asc())).scalars().all()
+    source_cards = db.execute(
+        select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.asc())
+    ).scalars().all()
     source_cards = [card for card in source_cards if card.card_type != "mcq"]
     if not source_cards:
         raise HTTPException(status_code=400, detail="No non-MCQ source cards found")
 
     existing_running = db.execute(
-        select(MCQGeneration).where(MCQGeneration.deck_id == deck.id, MCQGeneration.status == MCQGenerationStatus.IN_PROGRESS.value)
+        select(MCQGeneration).where(
+            MCQGeneration.deck_id == deck.id,
+            MCQGeneration.status == MCQGenerationStatus.IN_PROGRESS.value,
+        )
     ).scalars().first()
     if existing_running:
         started_at = existing_running.started_at or existing_running.created_at
@@ -1233,7 +1420,12 @@ def start_generate_mcqs_for_deck(
             existing_running.error_message = "Generation stalled without completing."
             db.commit()
         else:
-            return {"ok": True, "generation_id": str(existing_running.id), "provider": provider, "already_running": True}
+            return {
+                "ok": True,
+                "generation_id": str(existing_running.id),
+                "provider": provider,
+                "already_running": True,
+            }
 
     existing_items = db.execute(
         select(DeckMcqGenerationItem).where(DeckMcqGenerationItem.deck_id == deck.id)
@@ -1243,7 +1435,13 @@ def start_generate_mcqs_for_deck(
     for card in source_cards:
         key = str(card.id)
         if key not in item_by_card_id:
-            db.add(DeckMcqGenerationItem(deck_id=deck.id, source_card_id=card.id, status=DeckMcqGenerationItemStatus.NOT_STARTED.value))
+            db.add(
+                DeckMcqGenerationItem(
+                    deck_id=deck.id,
+                    source_card_id=card.id,
+                    status=DeckMcqGenerationItemStatus.NOT_STARTED.value,
+                )
+            )
             changed = True
     if changed:
         db.commit()
@@ -1305,7 +1503,9 @@ def generate_mcqs_stream(
             local_db = next(get_db())
             try:
                 latest = local_db.execute(
-                    select(MCQGeneration).where(MCQGeneration.deck_id == deck.id).order_by(MCQGeneration.created_at.desc())
+                    select(MCQGeneration)
+                    .where(MCQGeneration.deck_id == deck.id)
+                    .order_by(MCQGeneration.created_at.desc())
                 ).scalars().first()
                 if latest is None:
                     payload = {"message": "No generation found."}
@@ -1334,7 +1534,7 @@ def generate_mcqs_stream(
                         event_name = "generation_error"
                     else:
                         event_name = "progress"
-                    yield f": keep-alive\n\n"
+                    yield ": keep-alive\n\n"
                     yield f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
                     sent_state = state_key
                     if latest.status in {MCQGenerationStatus.COMPLETED.value, MCQGenerationStatus.FAILED.value}:
@@ -1362,18 +1562,18 @@ def get_mcq_generation_status(
 ):
     """Get current MCQ generation status for a deck."""
     from app.models import MCQGeneration, DeckMcqGenerationItem, DeckMcqGenerationItemStatus
-    
+
     deck = db.get(Deck, deck_id)
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
-    
+
     generations = db.execute(
         select(MCQGeneration).where(MCQGeneration.deck_id == deck.id).order_by(MCQGeneration.created_at.desc())
     ).scalars().all()
-    
+
     # Get latest generation
     latest = generations[0] if generations else None
-    
+
     # Count existing MCQs for this deck
     mcq_count = db.execute(
         select(Card.id).where(Card.deck_id == deck.id, Card.card_type == "mcq")

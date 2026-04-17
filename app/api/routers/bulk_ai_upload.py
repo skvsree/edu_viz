@@ -5,20 +5,144 @@ from datetime import datetime
 from pathlib import Path
 
 import pypdf
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import delete, select, update
 
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
 from app.core.db import get_db
-from app.models import BulkAIUpload, BulkAIUploadFile, BulkAIUploadStatus, BulkAIUploadFileStatus, Card, CardState, Deck, Job, JobStatus, Review, User
+from app.models import (
+    BulkAIUpload,
+    BulkAIUploadFile,
+    BulkAIUploadFileStatus,
+    BulkAIUploadStatus,
+    Card,
+    CardState,
+    Deck,
+    Job,
+    JobStatus,
+    Review,
+    User,
+)
 from app.models.deck import DeckAccessScope
 from app.services.access import normalize_deck_name
-from app.services.storage import get_storage, guess_content_type
+from app.services.storage import StorageError, get_storage, guess_content_type
 
 
 router = APIRouter(prefix="/api/v1", tags=["bulk-ai-upload"])
+
+
+def enqueue_ai_upload_job(
+    db: Session,
+    *,
+    user: User,
+    source_file: UploadFile,
+    folder_id: str | None = None,
+    existing_deck_id: str | None = None,
+) -> tuple[BulkAIUpload, Job]:
+    """Queue AI upload work using the shared bulk upload job path.
+
+    When existing_deck_id is provided, the worker reuses that deck instead of creating a new one.
+    """
+    filename = source_file.filename or ""
+    is_zip = filename.lower().endswith(".zip")
+
+    if not is_zip and not filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only ZIP or PDF files are accepted")
+
+    try:
+        target_folder_id = uuid.UUID(folder_id) if folder_id else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid folder id") from exc
+
+    upload_bytes = source_file.file.read()
+    if not upload_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    source_file.file.seek(0)
+
+    files_to_queue: list[tuple[str, bytes]] = []
+    if is_zip:
+        try:
+            with zipfile.ZipFile(io.BytesIO(upload_bytes)) as archive:
+                for info in archive.infolist():
+                    if info.is_dir():
+                        continue
+                    if not info.filename.lower().endswith(".pdf"):
+                        continue
+                    with archive.open(info) as file_obj:
+                        files_to_queue.append((Path(info.filename).name, file_obj.read()))
+        except zipfile.BadZipFile as exc:
+            raise HTTPException(status_code=400, detail="Invalid ZIP file") from exc
+        if not files_to_queue:
+            raise HTTPException(status_code=400, detail="ZIP file does not contain any PDFs")
+        if existing_deck_id:
+            raise HTTPException(status_code=400, detail="ZIP upload cannot target an existing deck")
+    else:
+        files_to_queue.append((filename, upload_bytes))
+
+    bulk = BulkAIUpload(
+        user_id=user.id,
+        filename=filename,
+        status=BulkAIUploadStatus.PENDING.value,
+        total_files=len(files_to_queue),
+        processed_files=0,
+        flashcards_generated=0,
+        mcqs_generated=0,
+        failed_files=0,
+        error_message=f"folder_id={target_folder_id}" if target_folder_id else None,
+        is_auto_stop=False,
+        deck_id=uuid.UUID(existing_deck_id) if existing_deck_id else None,
+    )
+    db.add(bulk)
+    db.flush()
+
+    storage = get_storage()
+    for index, (queued_name, queued_bytes) in enumerate(files_to_queue):
+        deck = _ensure_bulk_upload_deck(
+            db,
+            user,
+            queued_name,
+            target_folder_id,
+            existing_deck_id=existing_deck_id if index == 0 else None,
+        )
+        storage_key = None
+        try:
+            object_key = f"bulk-ai-upload/{bulk.id}/{uuid.uuid4()}-{Path(queued_name).name}"
+            stored = storage.save_bytes(
+                key=object_key,
+                data=queued_bytes,
+                content_type=guess_content_type(queued_name),
+            )
+            storage_key = stored.key
+        except StorageError:
+            storage_key = None
+
+        file_row = BulkAIUploadFile(
+            bulk_upload_id=bulk.id,
+            original_filename=queued_name,
+            content_text=None if storage_key else queued_bytes.decode("latin1"),
+            storage_key=storage_key,
+            status=BulkAIUploadFileStatus.PENDING.value,
+            created_deck_id=deck.id,
+        )
+        db.add(file_row)
+
+    job = Job(
+        job_type="bulk_ai_upload",
+        status=JobStatus.PENDING.value,
+        reference_id=bulk.id,
+        total_items=len(files_to_queue),
+        processed_items=0,
+        failed_items=0,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(bulk)
+    db.refresh(job)
+    return bulk, job
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
@@ -84,7 +208,6 @@ def _make_unique_deck_name(db: Session, user: User, base_title: str) -> str:
         suffix += 1
 
 
-
 def _clear_deck_generated_content(db: Session, deck_id):
     card_ids = db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
     card_id_list = list(card_ids)
@@ -95,8 +218,13 @@ def _clear_deck_generated_content(db: Session, deck_id):
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
 
-
-def _ensure_bulk_upload_deck(db: Session, user: User, filename: str, folder_id: str | None, existing_deck_id=None) -> Deck:
+def _ensure_bulk_upload_deck(
+    db: Session,
+    user: User,
+    filename: str,
+    folder_id: str | None,
+    existing_deck_id=None,
+) -> Deck:
     if existing_deck_id:
         existing = db.get(Deck, existing_deck_id)
         if existing and existing.user_id == user.id and not existing.is_deleted:
@@ -129,100 +257,105 @@ def start_bulk_ai_upload(
     db: Session = Depends(get_db),
 ):
     """Accept upload, create all file rows and decks up front, then queue worker processing."""
-    print(f"[bulk-ai-upload/start] user={user.id} folder_id={folder_id!r} filename={getattr(source_file, 'filename', None)!r}", flush=True)
-    filename = source_file.filename or ""
-    is_zip = filename.lower().endswith(".zip")
-
-    if not is_zip and not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only ZIP or PDF files are accepted")
-
-    try:
-        target_folder_id = uuid.UUID(folder_id) if folder_id else None
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid folder id")
-
-    file_bytes = source_file.file.read()
-    storage = get_storage()
-
-    queue_prefix = f"bulk-ai-uploads/{user.id}/{uuid.uuid4()}"
-
-    pdf_entries: list[tuple[str, bytes]] = []
-    if is_zip:
-        try:
-            with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
-                pdf_names = [n for n in zf.namelist() if n.lower().endswith(".pdf") and not n.startswith("__")]
-                for name in pdf_names:
-                    pdf_entries.append((name, zf.read(name)))
-        except zipfile.BadZipFile as exc:
-            raise HTTPException(status_code=400, detail="Invalid ZIP file") from exc
-        if not pdf_entries:
-            raise HTTPException(status_code=400, detail="ZIP contains no PDF files")
-    else:
-        pdf_entries.append((filename or "upload.pdf", file_bytes))
-
-    bulk = BulkAIUpload(
-        deck_id=None,
-        user_id=user.id,
-        filename=filename,
-        status=BulkAIUploadStatus.PENDING.value,
-        total_files=len(pdf_entries),
-        error_message=(f"folder_id={target_folder_id or ''}"),
+    print(
+        (
+            f"[bulk-ai-upload/start] user={user.id} "
+            f"folder_id={folder_id!r} "
+            f"filename={getattr(source_file, 'filename', None)!r}"
+        ),
+        flush=True,
     )
-    db.add(bulk)
-    db.flush()
-
-    created_deck_ids: list[str] = []
-    for pdf_name, pdf_data in pdf_entries:
-        deck = _ensure_bulk_upload_deck(db, user, pdf_name, target_folder_id)
-        if bulk.deck_id is None:
-            bulk.deck_id = deck.id
-        created_deck_ids.append(str(deck.id))
-        object_key = f"{queue_prefix}/{Path(pdf_name).name or 'upload.pdf'}"
-        try:
-            storage.save_bytes(
-                key=object_key,
-                data=pdf_data,
-                content_type=guess_content_type(pdf_name or "upload.pdf"),
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Failed to queue upload storage: {exc}") from exc
-
-        title, description = extract_title_from_text(extract_text_from_pdf(pdf_data), pdf_name)
-        file_record = BulkAIUploadFile(
-            bulk_upload_id=bulk.id,
-            original_filename=pdf_name,
-            created_deck_id=deck.id,
-            extracted_title=title or deck.name,
-            extracted_description=description,
-            content_text=None,
-            storage_key=object_key,
-            file_size=len(pdf_data),
-            status=BulkAIUploadFileStatus.PENDING.value,
-        )
-        db.add(file_record)
-
-    db.commit()
-    db.refresh(bulk)
-
-    job = Job(
-        job_type="bulk_ai_upload",
-        reference_id=bulk.id,
-        status=JobStatus.PENDING.value,
-        total_items=bulk.total_files,
+    bulk, job = enqueue_ai_upload_job(
+        db,
+        user=user,
+        source_file=source_file,
+        folder_id=folder_id,
     )
-    db.add(job)
-    db.commit()
+
+    file_rows = db.execute(
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+        .order_by(BulkAIUploadFile.created_at)
+    ).scalars().all()
+    created_deck_ids = [str(row.created_deck_id) for row in file_rows if row.created_deck_id]
 
     return {
         "id": str(bulk.id),
         "job_id": str(job.id),
         "status": bulk.status,
-        "deck_id": str(bulk.deck_id) if bulk.deck_id else None,
+        "deck_id": (
+            str(bulk.deck_id)
+            if bulk.deck_id
+            else (created_deck_ids[0] if created_deck_ids else None)
+        ),
         "deck_ids": created_deck_ids,
         "total_files": bulk.total_files,
         "created_decks": len(created_deck_ids),
         "message": "Submitted. Redirecting to Jobs.",
     }
+
+
+@router.post("/decks/{deck_id}/ai-import/start")
+def start_single_deck_ai_upload(
+    deck_id: str,
+    request: Request,
+    source_file: UploadFile = File(...),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or deck.is_deleted:
+        raise HTTPException(status_code=404)
+
+    from app.services.access import can_manage_deck, can_use_ai_generation
+
+    if not can_use_ai_generation(user) or not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    existing_pending_job = db.execute(
+        select(Job)
+        .join(BulkAIUpload, BulkAIUpload.id == Job.reference_id)
+        .where(Job.job_type == "bulk_ai_upload")
+        .where(Job.status.in_([JobStatus.PENDING.value, JobStatus.RUNNING.value]))
+        .where(BulkAIUpload.deck_id == deck.id)
+        .order_by(Job.created_at.desc())
+        .limit(1)
+    ).scalars().first()
+    wants_json = "application/json" in (request.headers.get("accept") or "") or request.headers.get("x-requested-with") == "fetch"
+
+    if existing_pending_job:
+        payload = {
+            "job_id": str(existing_pending_job.id),
+            "status": existing_pending_job.status,
+            "already_running": True,
+        }
+        if wants_json:
+            return JSONResponse(payload)
+        return RedirectResponse(
+            url=f"/settings/jobs?submitted=bulk-ai-upload&job={existing_pending_job.id}&notice=Bulk+upload+already+running",
+            status_code=303,
+        )
+
+    bulk, job = enqueue_ai_upload_job(
+        db,
+        user=user,
+        source_file=source_file,
+        existing_deck_id=deck_id,
+    )
+    payload = {
+        "job_id": str(job.id),
+        "bulk_upload_id": str(bulk.id),
+        "status": bulk.status,
+        "total_files": bulk.total_files,
+        "already_running": False,
+        "message": "Submitted. Redirecting to Jobs.",
+    }
+    if wants_json:
+        return JSONResponse(payload)
+    return RedirectResponse(
+        url=f"/settings/jobs?submitted=bulk-ai-upload&job={job.id}&notice=Bulk+upload+submitted",
+        status_code=303,
+    )
 
 
 @router.get("/bulk-ai-upload/{bulk_id}")

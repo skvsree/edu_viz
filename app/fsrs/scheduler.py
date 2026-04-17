@@ -78,7 +78,12 @@ class FsrsScheduler:
         R = self._retrievability(elapsed_days=elapsed_days, stability=stability)
 
         # Difficulty update
-        diff_delta = {1: self.w["diff_gain_again"], 2: self.w["diff_gain_hard"], 3: self.w["diff_gain_good"], 4: self.w["diff_gain_easy"]}[rating]
+        diff_delta = {
+            1: self.w["diff_gain_again"],
+            2: self.w["diff_gain_hard"],
+            3: self.w["diff_gain_good"],
+            4: self.w["diff_gain_easy"],
+        }[rating]
         # If card was barely remembered (low R), increase difficulty slightly even for good.
         difficulty = difficulty + diff_delta + (0.15 * (1.0 - R))
         difficulty = self._clamp(difficulty, 1.0, 10.0)

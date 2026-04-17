@@ -6,7 +6,6 @@ from pathlib import Path
 from scripts.bulk_import_ncert import build_payloads, load_anki_by_deck, load_mcqs_by_deck
 
 
-
 def test_load_anki_by_deck_groups_by_grade_and_chapter(tmp_path: Path):
     csv_path = tmp_path / "class_6__curiosity.csv"
     csv_path.write_text(
@@ -22,7 +21,6 @@ def test_load_anki_by_deck_groups_by_grade_and_chapter(tmp_path: Path):
     assert result[(6, 1)][0]["front"] == "F1"
     assert len(result[(6, 2)]) == 1
     assert result[(6, 2)][0]["back"] == "B2"
-
 
 
 def test_load_mcqs_by_deck_groups_by_grade_and_chapter(tmp_path: Path):
@@ -52,7 +50,6 @@ def test_load_mcqs_by_deck_groups_by_grade_and_chapter(tmp_path: Path):
     assert len(result[(6, 1)]) == 1
     assert result[(6, 1)][0]["question"] == "Q1"
     assert result[(6, 1)][0]["answer_index"] == 2
-
 
 
 def test_build_payloads_merges_sources_and_builds_full_grade_deck(tmp_path: Path):

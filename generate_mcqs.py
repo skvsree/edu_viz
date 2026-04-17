@@ -25,12 +25,12 @@ def load_flashcards(path: str) -> list[dict]:
     if path.suffix == ".json":
         with open(path) as f:
             return json.load(f)
-    
+
     # Plain text: front|back per line, blank line separates cards
     cards = []
     with open(path) as f:
         content = f.read().strip()
-    
+
     for block in content.split("\n\n"):
         block = block.strip()
         if not block:
@@ -146,7 +146,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate MCQs from flashcards using AI")
     parser.add_argument("--input", "-i", required=True, help="Input flashcard file (.txt or .json)")
     parser.add_argument("--output", "-o", default="mcqs.json", help="Output JSON file (default: mcqs.json)")
-    parser.add_argument("--provider", "-p", default=os.environ.get("AI_PROVIDER", "openai"), 
+    parser.add_argument("--provider", "-p", default=os.environ.get("AI_PROVIDER", "openai"),
                         choices=list(PROVIDERS.keys()), help="AI provider")
     parser.add_argument("--api-key", "-k", default=os.environ.get("AI_API_KEY"),
                         help="API key (or set AI_API_KEY env var)")
@@ -177,7 +177,7 @@ def main():
     # Save output
     with open(args.output, "w") as f:
         json.dump(result, f, indent=2)
-    
+
     mcqs = result.get("mcqs", [])
     print(f"Generated {len(mcqs)} MCQs -> {args.output}")
 

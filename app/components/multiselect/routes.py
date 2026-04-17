@@ -51,7 +51,7 @@ def multiselect_options(
     # Hidden input has name=control_name, so we read from that param
     selected = request.query_params.get(name, "")
     selected_keys = _parse_selected(selected)
-    
+
     # Sanitize query
     query = _parse_query(query)
 

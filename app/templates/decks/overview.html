@@ -23,7 +23,6 @@
       <div class="deck-overview-live-meta" data-deck-id="{{ deck.id }}">
         <span class="deck-overview-pill"><strong data-flashcard-count>{{ flashcard_count }}</strong> Flashcards</span>
         <span class="deck-overview-pill"><strong data-mcq-count>{{ mcq_count }}</strong> MCQs</span>
-        <span class="deck-overview-pill deck-overview-pill--processing" data-processing-badge {% if not show_processing_badge %}hidden{% endif %}>Processing…</span>
       </div>
     </div>
   </section>
@@ -212,9 +211,6 @@
     border: 1px solid var(--border-color);
     font-size: 0.8rem;
     color: var(--muted-color, #6b7280);
-  }
-  .deck-overview-pill--processing {
-    color: #2563eb;
   }
 
   .deck-overview-pill[hidden] {

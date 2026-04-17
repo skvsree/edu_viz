@@ -31,12 +31,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(['user_id'], ['users.id']),
         sa.ForeignKeyConstraint(['organization_id'], ['organizations.id']),
     )
-    
+
     # Create indexes
     op.create_index('ix_folders_parent_id', 'folders', ['parent_id'], unique=False)
     op.create_index('ix_folders_user_id', 'folders', ['user_id'], unique=False)
     op.create_index('ix_folders_organization_id', 'folders', ['organization_id'], unique=False)
-    
+
     # Unique constraint: no duplicate sibling folder names for same user
     # Using partial index approach for nullable columns
     op.create_index(
@@ -46,7 +46,7 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text('parent_id IS NOT NULL'),
     )
-    
+
     # Unique constraint: no duplicate sibling folder names at root level for same user
     op.create_index(
         'ix_folders_root_user_name',
@@ -55,7 +55,7 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text('parent_id IS NULL'),
     )
-    
+
     # Unique constraint: no duplicate sibling folder names for same organization
     op.create_index(
         'ix_folders_parent_org_name',
@@ -64,7 +64,7 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text('parent_id IS NOT NULL AND organization_id IS NOT NULL'),
     )
-    
+
     # Unique constraint: no duplicate sibling folder names at root level for same organization
     op.create_index(
         'ix_folders_root_org_name',
@@ -73,7 +73,7 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text('parent_id IS NULL AND organization_id IS NOT NULL'),
     )
-    
+
     # Add folder_id to decks table
     op.add_column(
         'decks',
@@ -95,7 +95,7 @@ def downgrade() -> None:
     op.drop_constraint('fk_decks_folder_id', 'decks', type_='foreignkey')
     op.drop_index('ix_decks_folder_id', table_name='decks')
     op.drop_column('decks', 'folder_id')
-    
+
     # Drop folder indexes
     op.drop_index('ix_folders_root_org_name', table_name='folders')
     op.drop_index('ix_folders_parent_org_name', table_name='folders')
@@ -104,6 +104,6 @@ def downgrade() -> None:
     op.drop_index('ix_folders_organization_id', table_name='folders')
     op.drop_index('ix_folders_user_id', table_name='folders')
     op.drop_index('ix_folders_parent_id', table_name='folders')
-    
+
     # Drop folders table
     op.drop_table('folders')

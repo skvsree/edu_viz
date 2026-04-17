@@ -234,7 +234,13 @@ def can_access_tests(user: Any, deck: Any) -> bool:
     return False
 
 
-def can_open_test_center(user: Any, deck: Any, *, has_test_content: bool = False, has_published_tests: bool = False) -> bool:
+def can_open_test_center(
+    user: Any,
+    deck: Any,
+    *,
+    has_test_content: bool = False,
+    has_published_tests: bool = False,
+) -> bool:
     if can_manage_tests(user, deck):
         return can_access_deck(user, deck)
     return can_access_tests(user, deck) and (has_test_content or has_published_tests)
@@ -424,7 +430,9 @@ def check_test_throttle(user: Any, deck: Any, db: "Session") -> tuple[bool, str]
         ).scalars().first()
 
         if last_attempt:
-            remaining = settings.test_cooldown_seconds - int((datetime.now(timezone.utc) - last_attempt.started_at).total_seconds())
+            remaining = settings.test_cooldown_seconds - int(
+                (datetime.now(timezone.utc) - last_attempt.started_at).total_seconds()
+            )
             if remaining > 0:
                 return False, f"Please wait {remaining} seconds before taking another test on this deck."
 

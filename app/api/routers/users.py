@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from app.api.deps import current_user
-from app.core.db import get_db
 from app.models import User
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])

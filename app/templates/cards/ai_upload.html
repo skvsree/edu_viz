@@ -126,7 +126,7 @@
   {% if import_success %}<section class="status-banner status-banner--success"><strong>Import complete.</strong><span>{{ import_success }}</span></section>{% endif %}
 
   <section class="card form-card">
-    <form id="ai-upload-form" method="post" action="/decks/{{ deck.id }}/ai-import/start" enctype="multipart/form-data" class="stack-md">
+    <form id="ai-upload-form" method="post" action="/api/v1/decks/{{ deck.id }}/ai-import/start" enctype="multipart/form-data" class="stack-md">
       <div><label>Source file</label><input id="ai-upload-file" type="file" name="source_file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required /></div>
       <p class="muted compact-copy">Counts are no longer chosen here. AI upload builds the biggest useful flashcard + MCQ set it can from the document. You choose how many to use later when starting review or a test.</p>
       <button id="ai-upload-submit" type="submit" class="button">Generate study pack</button>
@@ -150,7 +150,7 @@
 <div id="ai-upload-progress-modal" class="ai-upload-progress-modal" aria-hidden="true">
   <div class="ai-upload-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-upload-progress-title">
     <div class="ai-upload-progress-header">
-      <h3 id="ai-upload-progress-title">Generating study pack</h3>
+      <h3 id="ai-upload-progress-title">Importing study pack</h3>
       <button type="button" id="ai-upload-progress-close" class="button button-secondary button-small" hidden>Close</button>
     </div>
     <div class="ai-upload-progress-body">
@@ -161,7 +161,7 @@
       </div>
       <div class="ai-upload-progress-metrics">
         <div class="ai-upload-progress-metric muted">
-          <span>Chunks completed</span>
+          <span>Files imported</span>
           <span><span id="ai-upload-processed">0</span> / <span id="ai-upload-total">0</span></span>
         </div>
         <div class="ai-upload-progress-metric muted">
@@ -172,234 +172,59 @@
           <span>MCQs</span>
           <span id="ai-upload-mcqs">0</span>
         </div>
-        <div class="ai-upload-progress-metric muted">
-          <span>Duplicates skipped</span>
-          <span id="ai-upload-duplicates">0</span>
-        </div>
       </div>
-      <p id="ai-upload-provider" class="muted ai-upload-progress-provider"></p>
     </div>
   </div>
 </div>
 
 <script>
-  (() => {
-    const form = document.getElementById("ai-upload-form");
-    const fileInput = document.getElementById("ai-upload-file");
-    const submitBtn = document.getElementById("ai-upload-submit");
-    const modal = document.getElementById("ai-upload-progress-modal");
-    const progressBar = document.getElementById("ai-upload-progress-bar");
-    const progressStatus = document.getElementById("ai-upload-progress-status");
-    const processedSpan = document.getElementById("ai-upload-processed");
-    const totalSpan = document.getElementById("ai-upload-total");
-    const flashcardsSpan = document.getElementById("ai-upload-flashcards");
-    const mcqsSpan = document.getElementById("ai-upload-mcqs");
-    const duplicatesSpan = document.getElementById("ai-upload-duplicates");
-    const providerSpan = document.getElementById("ai-upload-provider");
-    const errorBox = document.getElementById("ai-upload-progress-error");
-    const closeBtn = document.getElementById("ai-upload-progress-close");
-    const deckId = {{ deck.id|string|tojson }};
+  (function () {
+    var form = document.getElementById("ai-upload-form");
+    var fileInput = document.getElementById("ai-upload-file");
+    var submitBtn = document.getElementById("ai-upload-submit");
 
-    if (!form) return;
+    if (!form || !fileInput || !submitBtn) return;
 
-    const clearError = () => {
-      errorBox.textContent = "";
-      errorBox.hidden = true;
-    };
-
-    const showError = (message) => {
-      errorBox.textContent = message || "Unknown error";
-      errorBox.hidden = false;
-    };
-
-    const openModal = () => {
-      modal.setAttribute("aria-hidden", "false");
-    };
-
-    const closeModal = () => {
-      modal.setAttribute("aria-hidden", "true");
-    };
-
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
+    form.addEventListener("submit", async function (event) {
       if (!fileInput.files || !fileInput.files[0]) {
-        showError("Please choose a PDF or DOCX file.");
         return;
       }
 
-      openModal();
-      progressStatus.textContent = "Connecting...";
-      progressBar.style.width = "0%";
-      processedSpan.textContent = "0";
-      totalSpan.textContent = "0";
-      flashcardsSpan.textContent = "0";
-      mcqsSpan.textContent = "0";
-      duplicatesSpan.textContent = "0";
-      providerSpan.textContent = "";
-      clearError();
-      closeBtn.hidden = true;
+      event.preventDefault();
       submitBtn.disabled = true;
-      fileInput.disabled = true;
-
-      let pollTimer = null;
-      let activeGenerationId = null;
-      let lastSeenStatus = null;
-
-      const stopPolling = () => {
-        if (pollTimer) {
-          window.clearTimeout(pollTimer);
-          pollTimer = null;
-        }
-      };
-
-      const applyStatus = (data) => {
-        if (!data) return;
-        activeGenerationId = data.generation_id || activeGenerationId;
-        const processed = data.completed ?? 0;
-        const total = data.total || 0;
-        const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
-
-        progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
-        processedSpan.textContent = processed;
-        totalSpan.textContent = total;
-        flashcardsSpan.textContent = data.flashcards_generated || 0;
-        mcqsSpan.textContent = data.mcqs_generated || 0;
-        duplicatesSpan.textContent = data.duplicates_skipped || 0;
-        providerSpan.textContent = data.provider ? `Provider: ${data.provider}` : "";
-
-        if (data.status === "in_progress") {
-          clearError();
-          progressStatus.textContent = total > 0
-            ? `Completed ${processed} of ${total} chunks (${percent}%)`
-            : "Generating study pack...";
-          closeBtn.hidden = true;
-          submitBtn.disabled = true;
-          fileInput.disabled = true;
-          return true;
-        }
-
-        if (data.status === "completed") {
-          clearError();
-          progressBar.style.width = "100%";
-          progressStatus.textContent = `Complete! Created ${data.flashcards_generated || 0} flashcards and ${data.mcqs_generated || 0} MCQs`;
-          closeBtn.hidden = false;
-          submitBtn.disabled = false;
-          fileInput.disabled = false;
-          return false;
-        }
- 
-        if (data.status === "failed") {
-          progressStatus.textContent = "Generation failed";
-          showError(data.message || "AI upload failed.");
-          closeBtn.hidden = false;
-          submitBtn.disabled = false;
-          fileInput.disabled = false;
-          return false;
-        }
-
-
-        progressStatus.textContent = "Waiting to start...";
-        return false;
-      };
-
-      const pollStatus = async () => {
-        try {
-          const resp = await fetch(`/decks/${deckId}/ai-import/status`, {
-            method: "GET",
-            credentials: "same-origin",
-            headers: { "Accept": "application/json" },
-            cache: "no-store"
-          });
-          if (!resp.ok) {
-            throw new Error("Unable to fetch upload status.");
-          }
-          const data = await resp.json();
-          lastSeenStatus = data.status || null;
-          const shouldContinue = applyStatus(data);
-          if (shouldContinue) {
-            pollTimer = window.setTimeout(pollStatus, 2500);
-          } else {
-            stopPolling();
-          }
-        } catch (err) {
-          progressStatus.textContent = "Reconnecting...";
-          showError(err?.message || "Unable to fetch upload status.");
-          pollTimer = window.setTimeout(pollStatus, 4000);
-        }
-      };
-
-      const startPolling = () => {
-        stopPolling();
-        pollStatus();
-      };
+      submitBtn.textContent = "Submitting...";
 
       try {
-        const formData = new FormData();
-        formData.append("source_file", fileInput.files[0]);
-
-        const startResp = await fetch(`/decks/${deckId}/ai-import/start`, {
+        var formData = new FormData(form);
+        var response = await fetch(form.action, {
           method: "POST",
           body: formData,
-          credentials: "same-origin",
-          headers: { "Accept": "application/json", "X-Requested-With": "fetch" }
+          headers: { "Accept": "application/json" },
         });
 
-        const parseResponseMessage = async (response, fallbackMessage) => {
-          const contentType = response.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            const data = await response.json();
-            return { data, message: data?.detail || data?.message || fallbackMessage };
-          }
-          const text = await response.text();
-          const cleaned = text
-            ? text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
-            : "";
-          return { data: null, message: cleaned || fallbackMessage };
-        };
-
-        if (!startResp.ok) {
-          const parsed = await parseResponseMessage(startResp, "Unable to start AI upload.");
-          throw new Error(parsed.message);
-        }
- 
-        const parsedStart = await parseResponseMessage(startResp, "Unable to start AI upload.");
-        const startData = parsedStart.data;
-        if (!startData) {
-          throw new Error(parsedStart.message);
+        var data = null;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          data = null;
         }
 
-        activeGenerationId = startData.generation_id || null;
-        totalSpan.textContent = startData.total || 0;
-        processedSpan.textContent = startData.completed || 0;
-        flashcardsSpan.textContent = startData.flashcards_generated || 0;
-        mcqsSpan.textContent = startData.mcqs_generated || 0;
-        duplicatesSpan.textContent = startData.duplicates_skipped || 0;
-        providerSpan.textContent = `Provider: ${startData.provider || "unknown"}`;
-        progressStatus.textContent = startData.already_running ? "Reconnected to running upload..." : "Upload started...";
-        startPolling();
-      } catch (err) {
-        console.error("AI upload progress error:", err);
-        progressStatus.textContent = "Failed to start generation";
-        showError(err?.message || "Unable to start generation.");
-        closeBtn.hidden = false;
+        if (!response.ok) {
+          var message = (data && (data.message || data.detail)) || "Upload failed";
+          throw new Error(message + " (" + response.status + ")");
+        }
+
+        var jobId = data && data.job_id;
+        var notice = encodeURIComponent((data && data.message) || "Submitted. Redirecting to Jobs.");
+        var target = jobId
+          ? "/settings/jobs?submitted=bulk-ai-upload&job=" + encodeURIComponent(jobId) + "&notice=" + notice
+          : "/settings/jobs?submitted=bulk-ai-upload&notice=" + notice;
+        window.location.href = target;
+      } catch (error) {
         submitBtn.disabled = false;
-        fileInput.disabled = false;
+        submitBtn.textContent = "Generate study pack";
+        window.alert((error && error.message) || "Upload failed");
       }
-
-      closeBtn.onclick = () => {
-        closeModal();
-        if (lastSeenStatus === "completed") {
-          window.location.reload();
-        }
-      };
-
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible" && modal.getAttribute("aria-hidden") === "false" && lastSeenStatus === "in_progress") {
-          startPolling();
-        }
-      });
-
-      window.addEventListener("beforeunload", stopPolling);
     });
   })();
 </script>

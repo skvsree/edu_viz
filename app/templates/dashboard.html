@@ -60,7 +60,7 @@
                 <div class="deck-card__live-meta" data-live-meta>
                   <span class="deck-card__count-pill"><strong data-flashcard-count>0</strong> Flashcards</span>
                   <span class="deck-card__count-pill"><strong data-mcq-count>0</strong> MCQs</span>
-                  <span class="deck-card__count-pill deck-card__count-pill--processing" data-processing-badge hidden>Processing…</span>
+                  <span class="deck-card__count-pill deck-card__count-pill--processing" data-processing-badge hidden>Import in progress</span>
                 </div>
               </div>
               <button type="button" class="deck-favorite-btn deck-favorite-btn--active" data-deck-id="{{ item.deck.id }}" title="Remove from favorites" aria-label="Remove from favorites">
@@ -648,21 +648,25 @@
     if (!cards.length) return;
 
     const deckIds = cards.map((card) => card.dataset.deckId).filter(Boolean);
-    const applyCounts = (payload) => {
-      const counts = payload?.counts || {};
-      cards.forEach((card) => {
-        const deckId = card.dataset.deckId;
-        const meta = counts[deckId] || { flashcard_count: 0, mcq_count: 0 };
-        const flashEl = card.querySelector("[data-flashcard-count]");
-        const mcqEl = card.querySelector("[data-mcq-count]");
-        if (flashEl) flashEl.textContent = String(meta.flashcard_count || 0);
-        if (mcqEl) mcqEl.textContent = String(meta.mcq_count || 0);
-        const processingBadge = card.querySelector("[data-processing-badge]");
-        if (processingBadge) {
-          processingBadge.hidden = !((meta.flashcard_count || 0) === 0 && (meta.mcq_count || 0) === 0);
-        }
-      });
-    };
+      const applyCounts = (payload) => {
+        const counts = payload?.counts || {};
+        const imports = payload?.imports || {};
+        cards.forEach((card) => {
+          const deckId = card.dataset.deckId;
+          const meta = counts[deckId] || { flashcard_count: 0, mcq_count: 0 };
+          const importMeta = imports[deckId] || { import_in_progress: false, badge_text: "" };
+          const flashEl = card.querySelector("[data-flashcard-count]");
+          const mcqEl = card.querySelector("[data-mcq-count]");
+          if (flashEl) flashEl.textContent = String(meta.flashcard_count || 0);
+          if (mcqEl) mcqEl.textContent = String(meta.mcq_count || 0);
+          const processingBadge = card.querySelector("[data-processing-badge]");
+          if (processingBadge) {
+            processingBadge.textContent = importMeta.badge_text || "Import in progress";
+            processingBadge.hidden = !importMeta.import_in_progress;
+          }
+        });
+      };
+
 
     fetch(`/api/v1/live/decks/counts?deck_ids=${encodeURIComponent(deckIds.join(","))}`)
       .then((res) => res.ok ? res.json() : null)

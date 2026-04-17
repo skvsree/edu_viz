@@ -29,8 +29,18 @@ class BulkAIUpload(Base):
     __tablename__ = "bulk_ai_uploads"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    deck_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("decks.id", ondelete="CASCADE"), index=True, nullable=True)
-    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=True)
+    deck_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("decks.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
 
     status: Mapped[str] = mapped_column(String(50), default=BulkAIUploadStatus.PENDING.value, nullable=False)
     total_files: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -49,15 +59,30 @@ class BulkAIUpload(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     deck = relationship("Deck", back_populates="bulk_ai_uploads")
-    files = relationship("BulkAIUploadFile", back_populates="bulk_upload", cascade="all, delete-orphan", order_by="BulkAIUploadFile.created_at")
+    files = relationship(
+        "BulkAIUploadFile",
+        back_populates="bulk_upload",
+        cascade="all, delete-orphan",
+        order_by="BulkAIUploadFile.created_at",
+    )
 
 
 class BulkAIUploadFile(Base):
     __tablename__ = "bulk_ai_upload_files"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    bulk_upload_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("bulk_ai_uploads.id", ondelete="CASCADE"), index=True, nullable=False)
-    created_deck_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("decks.id", ondelete="SET NULL"), index=True, nullable=True)
+    bulk_upload_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bulk_ai_uploads.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    created_deck_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("decks.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
 
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     extracted_title: Mapped[str | None] = mapped_column(String(255), nullable=True)

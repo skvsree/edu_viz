@@ -3,80 +3,106 @@
 {% set can_delete = deck.id|string in deletable_deck_ids %}
 {% set can_manage_access = deck.id|string in access_manageable_deck_ids %}
 {% set is_owner = deck.user_id == user.id %}
-<article class="browse-item browse-item--deck"
+<article class="browse-item browse-item--deck browse-table__row"
+  role="row"
   data-item-type="deck"
   data-item-id="{{ deck.id }}"
   data-deck-id="{{ deck.id }}"
   data-can-write="{{ 'true' if can_write else 'false' }}"
   data-access-level="{{ deck.access_level }}"
 >
-  {% if can_write %}
-    <div class="item-cb-wrap">
-      <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
-    </div>
-  {% endif %}
-
-  <button
-    type="button"
-    class="deck-favorite-btn{% if deck.id|string in favorite_deck_ids %} deck-favorite-btn--active{% endif %}"
-    data-deck-id="{{ deck.id }}"
-    aria-label="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
-    title="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
-  >
-    {% if deck.id|string in favorite_deck_ids %}
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-    {% else %}
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+  <div class="browse-table__cell browse-table__cell--select" role="cell">
+    {% if can_write %}
+      <div class="item-cb-wrap item-cb-wrap--table">
+        <input type="checkbox" class="item-cb" data-type="deck" data-id="{{ deck.id }}" />
+      </div>
     {% endif %}
-  </button>
+  </div>
 
-  <a href="/decks/{{ deck.id }}" class="deck-item-card__link">
-    <span class="deck-item-icon" aria-hidden="true">
+  <div class="browse-table__cell browse-table__cell--type" role="cell">
+    <span class="deck-item-icon deck-item-icon--deck" aria-hidden="true" title="Deck">
       <svg viewBox="0 0 24 24" fill="currentColor">
         <path d="M7.5 3.75A2.75 2.75 0 0 0 4.75 6.5v9A2.75 2.75 0 0 0 7.5 18.25h6A2.75 2.75 0 0 0 16.25 15.5v-9A2.75 2.75 0 0 0 13.5 3.75z"></path>
         <path d="M10.5 6.75A2.75 2.75 0 0 0 7.75 9.5v8A2.75 2.75 0 0 0 10.5 20.25h6A2.75 2.75 0 0 0 19.25 17.5v-8A2.75 2.75 0 0 0 16.5 6.75z" opacity="0.72"></path>
       </svg>
     </span>
-    <span class="deck-item__text">
-      <span class="deck-item-name">{{ deck.name }}</span>
-      <span class="deck-item-desc">{{ deck.description or 'Study deck' }}</span>
-      {% if not (can_write or can_manage_access) %}
-        {% if deck.access_level|string == 'global' %}
-        <span class="deck-scope-badge deck-scope-badge--global deck-scope-badge--inline">Global</span>
-        {% elif deck.access_level|string == 'org' %}
-        <span class="deck-scope-badge deck-scope-badge--org deck-scope-badge--inline">Org</span>
-        {% endif %}
+  </div>
+
+  <div class="browse-table__cell browse-table__cell--name" role="cell">
+    <div class="browse-table__name-wrap">
+      <a href="/decks/{{ deck.id }}" class="browse-table__link" title="{{ deck.name }}">{{ deck.name }}</a>
+    </div>
+  </div>
+
+  <div class="browse-table__cell browse-table__cell--actions" role="cell">
+    <button
+      type="button"
+      class="browse-info-btn"
+      title="{{ deck.description or 'Study deck' }}"
+      aria-label="Show description for {{ deck.name }}"
+      data-info-title="{{ deck.name }}"
+      data-info-body="{{ deck.description or 'Study deck' }}"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>
+    </button>
+  </div>
+
+  <div class="browse-table__cell browse-table__cell--actions" role="cell">
+    {% set current_access = deck.access_level|string %}
+    {% if can_write %}
+    <button
+      type="button"
+      class="deck-access-toggle deck-access-toggle--{{ current_access }}"
+      data-deck-id="{{ deck.id }}"
+      data-access-level="{{ current_access }}"
+      title="Toggle access level"
+      aria-label="Access level for {{ deck.name }}: {{ current_access }}"
+    >
+      {% if current_access == 'global' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18"></path><path d="M12 3a15 15 0 0 0 0 18"></path></svg>
+      {% elif current_access == 'org' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 12h.01"></path><path d="M15 12h.01"></path></svg>
+      {% else %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg>
       {% endif %}
-      {% if can_write or can_manage_access %}
-      <span class="deck-access-wrap">
-        {% if can_write %}
-        <select
-          class="deck-access-select"
-          data-deck-id="{{ deck.id }}"
-          title="Change access level"
-          aria-label="Access level for {{ deck.name }}"
-        >
-          {% for val, label in access_level_options %}
-            <option value="{{ val }}" {% if deck.access_level|string == val %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-        {% endif %}
-        {% if can_manage_access %}
-        <button
-          type="button"
-          class="deck-security-btn"
-          data-deck-id="{{ deck.id }}"
-          title="Manage user access"
-          aria-label="Manage user access for {{ deck.name }}"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-          </svg>
-        </button>
-        {% endif %}
-      </span>
+    </button>
+    {% elif can_manage_access %}
+    <span class="deck-access-indicator deck-access-indicator--{{ current_access }}" title="{{ current_access|capitalize }} access" aria-label="{{ current_access|capitalize }} access">
+      {% if current_access == 'global' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18"></path><path d="M12 3a15 15 0 0 0 0 18"></path></svg>
+      {% elif current_access == 'org' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 12h.01"></path><path d="M15 12h.01"></path></svg>
+      {% else %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg>
       {% endif %}
     </span>
-  </a>
+    {% else %}
+    <span class="deck-access-indicator deck-access-indicator--{{ current_access }}" title="{{ current_access|capitalize }} access" aria-label="{{ current_access|capitalize }} access">
+      {% if current_access == 'global' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18"></path><path d="M12 3a15 15 0 0 0 0 18"></path></svg>
+      {% elif current_access == 'org' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 12h.01"></path><path d="M15 12h.01"></path></svg>
+      {% else %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg>
+      {% endif %}
+    </span>
+    {% endif %}
+  </div>
+
+  <div class="browse-table__cell browse-table__cell--favorite" role="cell">
+    <button
+      type="button"
+      class="deck-favorite-btn deck-favorite-btn--table{% if deck.id|string in favorite_deck_ids %} deck-favorite-btn--active{% endif %}"
+      data-deck-id="{{ deck.id }}"
+      aria-label="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
+      title="{% if deck.id|string in favorite_deck_ids %}Remove from favorites{% else %}Add to favorites{% endif %}"
+    >
+      {% if deck.id|string in favorite_deck_ids %}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      {% else %}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      {% endif %}
+    </button>
+  </div>
 </article>
 {% endmacro %}

@@ -152,6 +152,12 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
+Run PEP 8 checks:
+
+```bash
+./scripts/lint_pep8.sh
+```
+
 Requires PostgreSQL 15+ running locally.
 
 ---

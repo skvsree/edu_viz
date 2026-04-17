@@ -23,9 +23,14 @@ class ReviewService:
             db.flush()
         return state
 
-    def next_due_card(self, db: Session, *, user: User, deck_id: uuid.UUID | None = None) -> Card | None:
+    def next_due_card(
+        self,
+        db: Session,
+        *,
+        user: User,
+        deck_id: uuid.UUID | None = None,
+    ) -> Card | None:
         # Pick the earliest due card from the decks visible to this user.
-        now = datetime.now(timezone.utc)
         stmt = (
             select(Card)
             .join(Card.deck)
@@ -34,13 +39,24 @@ class ReviewService:
         )
         if deck_id is not None:
             stmt = stmt.where(Card.deck_id == deck_id)
-        stmt = stmt.order_by(CardState.due.asc().nullsfirst(), Card.created_at.asc()).limit(1)
+        stmt = stmt.order_by(
+            CardState.due.asc().nullsfirst(),
+            Card.created_at.asc(),
+        ).limit(1)
         result = db.execute(stmt).scalars().first()
         if result:
             import sys
-            print(f"REVIEW_DEBUG: requested_deck={deck_id} returned_deck={result.deck_id} card={result.id}", file=sys.stderr, flush=True)
+            print(
+                (
+                    "REVIEW_DEBUG: "
+                    f"requested_deck={deck_id} "
+                    f"returned_deck={result.deck_id} "
+                    f"card={result.id}"
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
         return result
-
 
     def rate(self, db: Session, *, card_id: uuid.UUID, rating: int) -> Review:
         now = datetime.now(timezone.utc)
