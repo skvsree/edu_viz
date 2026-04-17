@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from starlette.responses import RedirectResponse
 
+from app.models import User
+
 from app.api.routers import auth, pages
 from app.services.microsoft_identity import (
     build_claims_options,
@@ -68,6 +70,28 @@ def test_login_starts_oauth_for_anonymous_user():
             response = asyncio.run(auth.login(make_request(path="/login"), user=None))
 
     assert response is redirect_response
+
+
+def test_new_oidc_user_gets_tests_enabled_by_default():
+    db = SimpleNamespace(execute=lambda stmt: SimpleNamespace(scalars=lambda: SimpleNamespace(first=lambda: None)))
+    added: list[User] = []
+
+    def add(obj):
+        added.append(obj)
+
+    db.add = add
+    db.commit = lambda: None
+
+    cfg = SimpleNamespace(subject_claim="sub")
+    user = auth._resolve_user_from_oidc_userinfo(
+        db,
+        cfg,
+        {"sub": "new-user-sub", "email": "new@example.com"},
+    )
+
+    assert isinstance(user, User)
+    assert user.is_test_enabled is True
+    assert added and added[0].is_test_enabled is True
 
 
 def test_build_oauth_uses_split_authorize_url():

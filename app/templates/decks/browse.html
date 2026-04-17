@@ -68,6 +68,7 @@
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-rename" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-move" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-delete" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
+          <button type="button" class="browse-btn browse-btn--sm" id="bulk-ai-upload-btn" aria-label="AI Bulk Upload" title="AI Bulk Upload">◈ Upload</button>
         </div>
       </div>
       {% endif %}
@@ -260,6 +261,189 @@
     </div>
   </dialog>
 {% endif %}
+
+{# ── Bulk AI Upload Modal ────────────────────────────────────────────── #}
+<dialog id="bulk-ai-upload-modal" class="modal">
+  <form id="bulk-ai-upload-form" method="post" action="/api/v1/bulk-ai-upload/start" enctype="multipart/form-data" class="modal__surface" style="width:min(100%, 480px);">
+    <header class="modal__header">
+      <h2 class="modal__title">AI Bulk Upload</h2>
+      <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="bulk-ai-upload-modal" aria-label="Close">Close</button>
+    </header>
+    <div class="modal__body stack-md">
+      <p class="muted">Upload a ZIP file containing multiple PDFs or a single PDF. A new deck will be created for each PDF using inferred title and description.</p>
+      <input type="hidden" id="bulk-folder-id" name="folder_id" value="{{ current_folder.id if current_folder else '' }}" />
+      <p class="muted" style="font-size:0.8rem; margin:0;">Location: {% if current_folder %}{{ current_folder.name }}{% else %}Root{% endif %}</p>
+      <div class="stack-sm">
+        <label for="bulk-source-file" style="font-weight:600; font-size:0.85rem;">File (ZIP or PDF)</label>
+        <input id="bulk-source-file" type="file" name="source_file" accept=".zip,.pdf,application/zip,application/pdf" required style="width:100%; padding:0.4rem; border:1px solid var(--border-color); border-radius:6px; background:var(--input-bg); color:var(--text); font-size:0.85rem;" />
+      </div>
+      <p class="muted" style="font-size:0.8rem; margin:0;">ZIP files should contain PDF files. Each PDF's content will be analyzed to extract title, description, and generate study cards.</p>
+      <div id="bulk-ai-upload-error" class="muted" style="font-size:0.8rem; color:#dc2626; display:none;"></div>
+    </div>
+    <footer class="modal__footer">
+      <button id="bulk-ai-upload-submit" type="submit" class="browse-btn browse-btn--sm browse-btn--primary">Start Upload</button>
+      <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="bulk-ai-upload-modal">Cancel</button>
+    </footer>
+  </form>
+</dialog>
+
+<div id="bulk-ai-upload-progress-modal" class="modal ai-upload-progress-modal" aria-hidden="true">
+  <div class="modal__surface ai-upload-progress-dialog" role="dialog" aria-modal="true" aria-labelledby="bulk-ai-upload-progress-title">
+    <div class="ai-upload-progress-header">
+      <h3 id="bulk-ai-upload-progress-title">Generating study pack</h3>
+      <button type="button" id="bulk-ai-upload-progress-close" class="button button-secondary button-small" hidden>Close</button>
+    </div>
+    <div class="ai-upload-progress-body">
+      <p id="bulk-ai-upload-progress-status">Initializing...</p>
+      <p id="bulk-ai-upload-progress-error" class="ai-upload-progress-error" hidden></p>
+      <div class="progress-bar-container" aria-hidden="true">
+        <div id="bulk-ai-upload-progress-bar" class="progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="ai-upload-progress-metrics">
+        <div class="ai-upload-progress-metric muted">
+          <span>Chunks completed</span>
+          <span><span id="bulk-ai-upload-processed">0</span> / <span id="bulk-ai-upload-total">0</span></span>
+        </div>
+        <div class="ai-upload-progress-metric muted">
+          <span>Flashcards</span>
+          <span id="bulk-ai-upload-flashcards">0</span>
+        </div>
+        <div class="ai-upload-progress-metric muted">
+          <span>MCQs</span>
+          <span id="bulk-ai-upload-mcqs">0</span>
+        </div>
+        <div class="ai-upload-progress-metric muted">
+          <span>Duplicates skipped</span>
+          <span id="bulk-ai-upload-duplicates">0</span>
+        </div>
+      </div>
+      <p id="bulk-ai-upload-provider" class="muted ai-upload-progress-provider"></p>
+    </div>
+  </div>
+</div>
+
+<style>
+  .ai-upload-progress-modal {
+    max-width: calc(100vw - 24px);
+  }
+
+  .ai-upload-progress-modal[aria-hidden="false"] {
+    display: grid;
+    place-items: center;
+  }
+
+  .ai-upload-progress-modal.modal--open,
+  .ai-upload-progress-modal[aria-hidden="false"] {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    padding: 1rem;
+    background: rgba(2, 6, 23, 0.7);
+    backdrop-filter: blur(4px);
+  }
+
+  .ai-upload-progress-dialog {
+    width: min(100%, 560px);
+    max-width: min(100%, 560px);
+    gap: 0;
+    color: var(--text);
+    overflow: hidden;
+  }
+
+  .ai-upload-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.15rem 1.25rem 0.95rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ai-upload-progress-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .ai-upload-progress-body {
+    padding: 1.1rem 1.25rem 1.25rem;
+  }
+
+  .ai-upload-progress-body p {
+    margin: 0.45rem 0;
+  }
+
+  .ai-upload-progress-body #bulk-ai-upload-progress-status {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .ai-upload-progress-metrics {
+    display: grid;
+    gap: 0.6rem;
+    margin-top: 0.95rem;
+  }
+
+  .ai-upload-progress-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  .ai-upload-progress-metric span:last-child {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .ai-upload-progress-error {
+    margin-top: 0.85rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 18px;
+    border: 1px solid rgba(248, 113, 113, 0.32);
+    background: var(--danger-soft);
+    color: #fecaca;
+    font-weight: 600;
+  }
+
+  .ai-upload-progress-provider {
+    margin-top: 0.95rem;
+    color: var(--muted);
+  }
+
+  .ai-upload-progress-body .progress-bar-container {
+    margin-top: 0.85rem;
+    height: 12px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.14);
+    border: 1px solid var(--border);
+  }
+
+  .ai-upload-progress-body .progress-bar {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary), #8b7fff);
+    transition: width 0.25s ease;
+  }
+
+  [data-theme="light"] .ai-upload-progress-modal,
+  :root:not([data-theme="dark"]) .ai-upload-progress-modal {
+    background: rgba(15, 23, 42, 0.18);
+  }
+
+  [data-theme="light"] .ai-upload-progress-error,
+  :root:not([data-theme="dark"]) .ai-upload-progress-error {
+    color: #b91c1c;
+    background: rgba(254, 242, 242, 0.96);
+  }
+</style>
 
 <script type="application/json" id="folder-tree-data">{{ folder_tree | tojson }}</script>
 
@@ -1454,6 +1638,167 @@ dialog.modal::backdrop {
       } finally { grantBtn.disabled = false; }
     });
   }
+
+  // Bulk AI Upload
+  const bulkUploadBtn = document.getElementById("bulk-ai-upload-btn");
+  const bulkModal = document.getElementById("bulk-ai-upload-modal");
+  const bulkForm = document.getElementById("bulk-ai-upload-form");
+  const bulkSubmitBtn = document.getElementById("bulk-ai-upload-submit");
+  const bulkFolderIdInput = document.getElementById("bulk-folder-id");
+  const bulkSourceFile = document.getElementById("bulk-source-file");
+  const bulkErrorEl = document.getElementById("bulk-ai-upload-error");
+  const bulkProgressModal = document.getElementById("bulk-ai-upload-progress-modal");
+  const bulkProgressBar = document.getElementById("bulk-ai-upload-progress-bar");
+  const bulkProgressStatus = document.getElementById("bulk-ai-upload-progress-status");
+  const bulkProcessedSpan = document.getElementById("bulk-ai-upload-processed");
+  const bulkTotalSpan = document.getElementById("bulk-ai-upload-total");
+  const bulkFlashcardsSpan = document.getElementById("bulk-ai-upload-flashcards");
+  const bulkMcqsSpan = document.getElementById("bulk-ai-upload-mcqs");
+  const bulkDuplicatesSpan = document.getElementById("bulk-ai-upload-duplicates");
+  const bulkProviderSpan = document.getElementById("bulk-ai-upload-provider");
+  const bulkProgressError = document.getElementById("bulk-ai-upload-progress-error");
+  const bulkProgressCloseBtn = document.getElementById("bulk-ai-upload-progress-close");
+
+  const clearBulkError = () => {
+    if (!bulkErrorEl) return;
+    bulkErrorEl.textContent = "";
+    bulkErrorEl.style.display = "none";
+  };
+
+  const showBulkError = (message) => {
+    if (!bulkErrorEl) return;
+    bulkErrorEl.textContent = message || "Upload failed";
+    bulkErrorEl.style.display = "block";
+  };
+
+  const clearBulkProgressError = () => {
+    if (!bulkProgressError) return;
+    bulkProgressError.textContent = "";
+    bulkProgressError.hidden = true;
+  };
+
+  const showBulkProgressError = (message) => {
+    if (!bulkProgressError) return;
+    bulkProgressError.textContent = message || "Upload failed";
+    bulkProgressError.hidden = false;
+  };
+
+  const openBulkProgressModal = () => {
+    bulkProgressModal?.setAttribute("aria-hidden", "false");
+    bulkProgressModal?.classList.add("modal--open");
+  };
+
+  const closeBulkProgressModal = () => {
+    bulkProgressModal?.setAttribute("aria-hidden", "true");
+    bulkProgressModal?.classList.remove("modal--open");
+  };
+
+  const parseBulkResponseMessage = async (response, fallbackMessage) => {
+    try {
+      const data = await response.clone().json();
+      if (typeof data?.detail === "string") return { message: data.detail, data };
+      if (Array.isArray(data?.detail)) {
+        const joined = data.detail.map(item => item?.msg || item?.message || JSON.stringify(item)).join("; ");
+        return { message: joined || fallbackMessage, data };
+      }
+      if (typeof data?.message === "string") return { message: data.message, data };
+      return { message: fallbackMessage, data };
+    } catch {
+      try {
+        const text = await response.clone().text();
+        return { message: text || fallbackMessage, data: null };
+      } catch {
+        return { message: fallbackMessage, data: null };
+      }
+    }
+  };
+
+  const applyBulkStatus = (data) => {
+    if (!data) return;
+    const processed = data.completed ?? data.processed ?? 0;
+    const total = data.total || 0;
+    const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
+    if (bulkProcessedSpan) bulkProcessedSpan.textContent = String(processed);
+    if (bulkTotalSpan) bulkTotalSpan.textContent = String(total);
+    if (bulkFlashcardsSpan) bulkFlashcardsSpan.textContent = String(data.flashcards_created ?? data.flashcards ?? 0);
+    if (bulkMcqsSpan) bulkMcqsSpan.textContent = String(data.mcqs_created ?? data.mcqs ?? 0);
+    if (bulkDuplicatesSpan) bulkDuplicatesSpan.textContent = String(data.duplicates_skipped ?? data.duplicates ?? 0);
+    if (bulkProgressBar) bulkProgressBar.style.width = `${Math.max(0, Math.min(percent, 100))}%`;
+    if (bulkProgressStatus) bulkProgressStatus.textContent = data.message || data.status_message || data.status || "Processing...";
+    if (bulkProviderSpan) {
+      const provider = data.provider || data.ai_provider || "";
+      bulkProviderSpan.textContent = provider ? `Provider: ${provider}` : "";
+    }
+    if (data.error) showBulkProgressError(data.error);
+  };
+
+  if (bulkUploadBtn && bulkModal) {
+    bulkUploadBtn.addEventListener("click", () => {
+      clearBulkError();
+      bulkModal.showModal();
+    });
+  }
+
+  if (bulkProgressCloseBtn) {
+    bulkProgressCloseBtn.addEventListener("click", () => {
+      closeBulkProgressModal();
+      window.location.reload();
+    });
+  }
+
+  const submitBulkUpload = async (event) => {
+    event?.preventDefault?.();
+    const selectedFile = bulkSourceFile?.files?.[0] || null;
+    const originalSubmitLabel = bulkSubmitBtn ? bulkSubmitBtn.textContent : "Start Upload";
+
+    if (!selectedFile) {
+      showBulkError("Please select a ZIP or PDF file.");
+      return;
+    }
+
+    clearBulkError();
+    if (bulkSubmitBtn) {
+      bulkSubmitBtn.disabled = true;
+      bulkSubmitBtn.textContent = "Submitting...";
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append("source_file", selectedFile);
+      if (bulkFolderIdInput?.value) {
+        formData.append("folder_id", bulkFolderIdInput.value);
+      }
+
+      const response = await fetch("/api/v1/bulk-ai-upload/start", {
+        method: "POST",
+        body: formData,
+        headers: { "Accept": "application/json" },
+      });
+
+      const parsed = await parseBulkResponseMessage(response, "Upload failed");
+      if (!response.ok) {
+        showBulkError(parsed.message || `Upload failed (${response.status})`);
+        return;
+      }
+
+      if (bulkModal?.open) bulkModal.close();
+      const jobId = parsed?.data?.job_id;
+      const notice = encodeURIComponent(parsed.message || "Bulk upload submitted.");
+      const target = jobId
+        ? `/settings/jobs?submitted=bulk-ai-upload&job=${encodeURIComponent(jobId)}&notice=${notice}`
+        : `/settings/jobs?submitted=bulk-ai-upload&notice=${notice}`;
+      window.location.href = target;
+    } catch (error) {
+      showBulkError(error?.message || "Upload failed");
+    } finally {
+      if (bulkSubmitBtn) {
+        bulkSubmitBtn.disabled = false;
+        bulkSubmitBtn.textContent = originalSubmitLabel;
+      }
+    }
+  };
+
+  document.getElementById("bulk-ai-upload-form")?.addEventListener("submit", submitBulkUpload);
 })();
 </script>
 {% endblock %}

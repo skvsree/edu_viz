@@ -27,9 +27,9 @@ class Settings(BaseSettings):
     # this many questions. Set to 0 to disable auto-start (shows modal instead).
     default_test_count: int = 0
 
-    # Default test access for users. Can be overridden at organization and user level.
-    # When False, users need explicit org-level or user-level enablement.
-    test_enabled_default: bool = False
+    # Default test access for newly created users at first sign-in.
+    # Can still be overridden later at organization and user level.
+    test_enabled_default: bool = True
 
     # Test throttling: max tests per user per day (0 = unlimited)
     test_daily_limit: int = 0
@@ -42,8 +42,6 @@ class Settings(BaseSettings):
     google_scopes: str = "openid email profile"
 
     # Microsoft Entra External ID / generic OIDC configuration.
-
-
     # Prefer the MICROSOFT_ENTRA_EXTERNAL_ID_* env vars for new deployments.
     # Legacy AZURE_B2C_* env vars are still accepted as fallbacks to ease migration.
     microsoft_entra_external_id_tenant_id: str | None = None

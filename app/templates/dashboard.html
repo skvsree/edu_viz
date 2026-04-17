@@ -57,6 +57,11 @@
                   <h3 class="deck-card__title">{{ item.deck.name }}</h3>
                 </a>
                 <div class="deck-card__path">{{ item.folder_path }}</div>
+                <div class="deck-card__live-meta" data-live-meta>
+                  <span class="deck-card__count-pill"><strong data-flashcard-count>0</strong> Flashcards</span>
+                  <span class="deck-card__count-pill"><strong data-mcq-count>0</strong> MCQs</span>
+                  <span class="deck-card__count-pill deck-card__count-pill--processing" data-processing-badge hidden>Processing…</span>
+                </div>
               </div>
               <button type="button" class="deck-favorite-btn deck-favorite-btn--active" data-deck-id="{{ item.deck.id }}" title="Remove from favorites" aria-label="Remove from favorites">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
@@ -91,6 +96,27 @@
       line-height: 1.2;
       color: var(--muted-color, #6b7280);
       word-break: break-word;
+    }
+    .deck-card__live-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.25rem;
+    }
+    .deck-card__count-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.18rem 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      color: var(--muted-color, #6b7280);
+      background: color-mix(in srgb, var(--card-bg, #fff) 88%, transparent);
+    }
+    .deck-card__count-pill--processing {
+      color: #2563eb;
+      border-color: color-mix(in srgb, #2563eb 35%, var(--border-color));
     }
   </style>
 
@@ -617,7 +643,43 @@
     });
   })();
 
-  // ── Create deck folder picker ──────────────────────────────────────────
+  (() => {
+    const cards = Array.from(document.querySelectorAll("#favorites-grid .deck-card[data-deck-id]"));
+    if (!cards.length) return;
+
+    const deckIds = cards.map((card) => card.dataset.deckId).filter(Boolean);
+    const applyCounts = (payload) => {
+      const counts = payload?.counts || {};
+      cards.forEach((card) => {
+        const deckId = card.dataset.deckId;
+        const meta = counts[deckId] || { flashcard_count: 0, mcq_count: 0 };
+        const flashEl = card.querySelector("[data-flashcard-count]");
+        const mcqEl = card.querySelector("[data-mcq-count]");
+        if (flashEl) flashEl.textContent = String(meta.flashcard_count || 0);
+        if (mcqEl) mcqEl.textContent = String(meta.mcq_count || 0);
+        const processingBadge = card.querySelector("[data-processing-badge]");
+        if (processingBadge) {
+          processingBadge.hidden = !((meta.flashcard_count || 0) === 0 && (meta.mcq_count || 0) === 0);
+        }
+      });
+    };
+
+    fetch(`/api/v1/live/decks/counts?deck_ids=${encodeURIComponent(deckIds.join(","))}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((data) => { if (data) applyCounts(data); })
+      .catch(() => {});
+
+    const stream = new EventSource(`/api/v1/live/decks/counts/stream?deck_ids=${encodeURIComponent(deckIds.join(","))}`);
+    stream.onmessage = (event) => {
+      try {
+        applyCounts(JSON.parse(event.data));
+      } catch (_) {}
+    };
+    stream.onerror = () => {};
+  })();
+ 
+   // ── Create deck folder picker ──────────────────────────────────────────
+
   (function() {
     const openBtn = document.getElementById("open-folder-picker-btn");
     const modal = document.getElementById("create-folder-picker-modal");

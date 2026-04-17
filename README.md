@@ -171,6 +171,8 @@ Requires PostgreSQL 15+ running locally.
 - Browse page supports role-based tabs: All, Global, Org, Mine (visibility depends on role).
 - Browse deck cards on mobile use a compact single-row layout with the favorite star kept as the last control.
 - Global/Org badge and deck access controls are intended to render below the deck title/description on mobile, not as a separate side column.
+- Deck overview live metadata uses server-rendered processing state plus SSE count refresh; count changes alone should not be treated as processing state.
+- Hidden UI badges in templates may need explicit CSS `display:none` enforcement when theme/reset styles override native `[hidden]` behavior.
 - Template/CSS changes require rebuilding the Docker image because the app code is baked into the container.
 
 ---
