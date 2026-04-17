@@ -23,7 +23,9 @@ class Card(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     # Anki import fields
-    content_html: Mapped[str | None] = mapped_column(Text, nullable=True)  # Full HTML with cloze/image markup (front/rendered)
+    content_html: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )  # Full HTML with cloze/image markup (front/rendered)
     content_html_back: Mapped[str | None] = mapped_column(Text, nullable=True)  # Back side HTML for cloze cards
     media_files: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)  # ["file1.jpg", "file2.png"]
     cloze_number: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Cloze index (1, 2, 3...) or NULL

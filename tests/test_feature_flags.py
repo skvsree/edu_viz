@@ -157,7 +157,6 @@ def test_ai_upload_page_requires_existing_ai_access_rules():
         assert getattr(exc, "status_code", None) == 404
 
 
-
 def test_sample_mcq_json_download_is_available():
     response = content.sample_mcq_json_download()
     assert response.media_type == "application/json"

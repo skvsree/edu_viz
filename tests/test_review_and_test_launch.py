@@ -32,7 +32,7 @@ def test_review_page_autoloads_session_when_count_is_selected():
     response = pages.review_page(make_request(path="/review", query_string=f"deck_id={deck.id}&count=25".encode()), user=user, db=FakeDB({str(deck.id): deck, deck.id: deck}))
 
     body = render_body(response)
-    assert f"/review/next?" in body
+    assert "/review/next?" in body
     assert f"deck_id={deck.id}" in body
     assert "remaining=25" in body
 
@@ -69,7 +69,6 @@ def test_create_test_auto_generates_title_and_redirects():
 
     fake_test = SimpleNamespace(id=uuid4())
     with patch.object(content, "create_test_from_deck", return_value=fake_test) as create_mock:
-        from starlette.datastructures import FormData
         response = content.create_test(deck_id=str(deck.id), count=25, user=user, db=db)
 
     assert response.status_code == 303

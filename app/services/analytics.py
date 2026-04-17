@@ -92,7 +92,7 @@ class AnalyticsService:
 
         # Get the user's analytics for today (or appropriate period)
         user_analytics = await self.get_user_analytics(event.user_id, period_days=1)
-        
+
         # Update metrics based on event type
         if event.event_type == AnalyticsEventType.REVIEW_COMPLETED:
             if event.event_data:
@@ -236,7 +236,7 @@ class AnalyticsService:
         Returns number of rows deleted.
         """
         cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
-        
+
         # Delete old events
         result = await self.db.execute(
             delete(AnalyticsEvent).where(
@@ -244,6 +244,6 @@ class AnalyticsService:
             )
         )
         deleted_count = result.rowcount
-        
+
         await self.db.flush()
         return deleted_count

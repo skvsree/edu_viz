@@ -10,6 +10,48 @@ import unicodedata
 logger = logging.getLogger(__name__)
 
 
+def _extract_minimax_text(data: dict) -> str:
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise AIGenerationError("Minimax returned no choices.")
+
+    choice = choices[0] or {}
+    if not isinstance(choice, dict):
+        raise AIGenerationError("Minimax returned an invalid choice payload.")
+
+    message = choice.get("message") or {}
+    if not isinstance(message, dict):
+        message = {}
+
+    content = message.get("content")
+    if isinstance(content, str):
+        content = content.strip()
+        if content:
+            return content
+    elif isinstance(content, list):
+        text_parts: list[str] = []
+        for item in content:
+            if isinstance(item, str) and item.strip():
+                text_parts.append(item.strip())
+                continue
+            if isinstance(item, dict):
+                for key in ("text", "content"):
+                    value = item.get(key)
+                    if isinstance(value, str) and value.strip():
+                        text_parts.append(value.strip())
+                        break
+        joined = "\n".join(part for part in text_parts if part)
+        if joined:
+            return joined
+
+    for key in ("reply", "output_text", "text"):
+        value = choice.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    raise AIGenerationError("Minimax returned empty response.")
+
+
 class AIGenerationError(RuntimeError):
     pass
 
@@ -116,10 +158,7 @@ class MinimaxStudyPackProvider:
         if response.status_code != 200:
             raise AIGenerationError(f"Minimax API error: {response.status_code} - {response.text[:200]}")
         data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        if not content:
-            raise AIGenerationError("Minimax returned empty response.")
-        return content
+        return _extract_minimax_text(data)
 
     def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return _parse_study_pack_json(self.generate_text(prompt, credential))

@@ -56,10 +56,10 @@
             </thead>
             <tbody>
               {% for job in jobs %}
-                <tr>
+                <tr data-job-row data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
                   <td><code class="jobs-code">{{ job.id }}</code></td>
                   <td>{{ job.job_type }}</td>
-                  <td>
+                  <td data-job-status-cell>
                     {% if job.status == "pending" %}
                       <span class="jobs-status jobs-status--pending">Pending</span>
                     {% elif job.status == "running" %}
@@ -72,14 +72,14 @@
                       {{ job.status }}
                     {% endif %}
                   </td>
-                  <td>
+                  <td data-job-progress-cell>
                     {{ job.processed_items }} / {{ job.total_items }} items
                     {% if job.failed_items > 0 %}
                       <span class="jobs-failed-inline">({{ job.failed_items }} failed)</span>
                     {% endif %}
                   </td>
                   <td class="jobs-time">{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '-' }}</td>
-                  <td class="jobs-time">{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
+                  <td class="jobs-time" data-job-completed-cell>{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
                 </tr>
                 {% if bulks.get(job.reference_id) %}
                   <tr class="jobs-table-bulk-row">
@@ -105,13 +105,13 @@
 
         <div class="jobs-mobile-list">
           {% for job in jobs %}
-            <article class="jobs-mobile-card">
+            <article class="jobs-mobile-card" data-job-mobile-card data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
               <div class="jobs-mobile-card__top">
                 <div>
                   <p class="jobs-mobile-label">Job</p>
                   <code class="jobs-code jobs-code--mobile">{{ job.id }}</code>
                 </div>
-                <div>
+                <div data-job-mobile-status-cell>
                   {% if job.status == "pending" %}
                     <span class="jobs-status jobs-status--pending">Pending</span>
                   {% elif job.status == "running" %}
@@ -133,7 +133,7 @@
                 </div>
                 <div>
                   <p class="jobs-mobile-label">Progress</p>
-                  <p>
+                  <p data-job-mobile-progress-cell>
                     {{ job.processed_items }} / {{ job.total_items }} items
                     {% if job.failed_items > 0 %}
                       <span class="jobs-failed-inline">({{ job.failed_items }} failed)</span>
@@ -146,7 +146,7 @@
                 </div>
                 <div>
                   <p class="jobs-mobile-label">Completed</p>
-                  <p>{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</p>
+                  <p data-job-mobile-completed-cell>{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</p>
                 </div>
               </div>
 
@@ -387,28 +387,153 @@
   }
 
   @media (max-width: 720px) {
+    .jobs-page {
+      padding: 0.9rem;
+    }
+
     .jobs-page__heading {
       align-items: flex-start;
       gap: 0.9rem;
+      flex-direction: column;
+    }
+
+    .jobs-page__heading .dashboard-actions {
+      width: 100%;
+    }
+
+    .jobs-page__heading .dashboard-actions .button {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .jobs-page__notice,
+    .jobs-live-card,
+    .jobs-mobile-card {
+      border-radius: 14px;
+    }
+
+    .jobs-live-card__header {
+      flex-direction: column;
+      gap: 0.4rem;
     }
 
     .jobs-live-grid {
       grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
     }
- 
+
+    .jobs-live-grid > div {
+      min-width: 0;
+    }
+
+    .jobs-live-grid > div > div,
+    .jobs-mobile-grid p,
+    .jobs-mobile-bulk p {
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    .jobs-code,
+    .jobs-code--mobile {
+      font-size: 0.68rem;
+      line-height: 1.35;
+    }
+
     .jobs-table-wrap {
       display: none;
     }
- 
+
     .jobs-mobile-list {
       display: grid;
-    }
- 
-    .jobs-mobile-grid {
-      grid-template-columns: 1fr;
       gap: 0.75rem;
     }
+
+    .jobs-mobile-card {
+      padding: 0.85rem;
+    }
+
+    .jobs-mobile-card__top {
+      gap: 0.6rem;
+      margin-bottom: 0.75rem;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .jobs-mobile-card__top > div:last-child {
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    .jobs-mobile-grid {
+      grid-template-columns: 1fr;
+      gap: 0.7rem;
+    }
+
+    .jobs-mobile-bulk {
+      margin-top: 0.8rem;
+      padding-top: 0.8rem;
+    }
+
+    .jobs-mobile-bulk__meta {
+      margin-top: 0.55rem;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.45rem;
+    }
+
+    .jobs-bulk-links,
+    .jobs-bulk-links--mobile,
+    #job-live-decks {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.45rem;
+    }
+
+    .jobs-bulk-links a,
+    .jobs-bulk-links--mobile a,
+    .jobs-live-deck-link {
+      white-space: normal;
+      line-height: 1.35;
+    }
+
+    .jobs-live-deck-link {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.1rem;
+    }
+
+    .jobs-page__footnote {
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
   }
+
+  @media (max-width: 420px) {
+    .jobs-page {
+      padding: 0.8rem;
+    }
+
+    .jobs-live-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .jobs-mobile-card {
+      padding: 0.8rem;
+    }
+
+    .jobs-status {
+      font-size: 0.74rem;
+      padding: 0.24rem 0.55rem;
+    }
+
+    .jobs-code,
+    .jobs-code--mobile {
+      font-size: 0.64rem;
+    }
+  }
+
 </style>
  
 <script>
@@ -416,7 +541,7 @@
   const params = new URLSearchParams(window.location.search);
   const submitted = params.get("submitted");
   const noticeText = params.get("notice");
-  const jobId = params.get("job") || params.get("job_id");
+  const focusJobId = params.get("job") || params.get("job_id");
   const notice = document.getElementById("job-submitted-notice");
   const liveCard = document.getElementById("job-live-card");
   const liveId = document.getElementById("job-live-id");
@@ -426,15 +551,16 @@
   const liveCards = document.getElementById("job-live-cards");
   const liveError = document.getElementById("job-live-error");
   const liveDecks = document.getElementById("job-live-decks");
+  const tableRows = Array.from(document.querySelectorAll("[data-job-row]"));
+  const mobileCards = Array.from(document.querySelectorAll("[data-job-mobile-card]"));
+  const mobileCardMap = new Map(mobileCards.map((card) => [card.dataset.jobId, card]));
+  const activeStatuses = new Set(["pending", "running"]);
+  const sources = new Map();
 
   if (notice && (submitted === "bulk-ai-upload" || noticeText)) {
-    notice.textContent = decodeURIComponent(noticeText || "Bulk upload submitted. Check this Jobs page for progress.") + (jobId ? ` Job: ${jobId}` : "");
+    notice.textContent = decodeURIComponent(noticeText || "Bulk upload submitted. Check this Jobs page for progress.") + (focusJobId ? ` Job: ${focusJobId}` : "");
     notice.style.display = "block";
   }
-
-  if (!jobId || !liveCard) return;
-  liveCard.style.display = "block";
-  if (liveId) liveId.textContent = jobId;
 
   const statusHtml = (status) => {
     if (status === "pending") return '<span class="jobs-status jobs-status--pending">Pending</span>';
@@ -444,9 +570,42 @@
     return status || "-";
   };
 
-  const render = (payload) => {
+  const progressText = (job) => `${job.processed_items || 0} / ${job.total_items || 0} items${job.failed_items ? ` (${job.failed_items} failed)` : ""}`;
+
+  const updateRow = (job) => {
+    const row = tableRows.find((item) => item.dataset.jobId === job.id);
+    if (!row) return;
+    row.dataset.jobStatus = job.status || "";
+    const statusCell = row.querySelector("[data-job-status-cell]");
+    const progressCell = row.querySelector("[data-job-progress-cell]");
+    const completedCell = row.querySelector("[data-job-completed-cell]");
+    if (statusCell) statusCell.innerHTML = statusHtml(job.status);
+    if (progressCell) progressCell.innerHTML = progressText(job);
+    if (completedCell && ["completed", "failed"].includes(job.status)) {
+      completedCell.textContent = "Done";
+    }
+  };
+
+  const updateMobileCard = (job) => {
+    const card = mobileCardMap.get(job.id);
+    if (!card) return;
+    card.dataset.jobStatus = job.status || "";
+    const statusCell = card.querySelector("[data-job-mobile-status-cell]");
+    const progressCell = card.querySelector("[data-job-mobile-progress-cell]");
+    const completedCell = card.querySelector("[data-job-mobile-completed-cell]");
+    if (statusCell) statusCell.innerHTML = statusHtml(job.status);
+    if (progressCell) progressCell.innerHTML = progressText(job);
+    if (completedCell && ["completed", "failed"].includes(job.status)) {
+      completedCell.textContent = "Done";
+    }
+  };
+
+  const renderLiveCard = (payload) => {
     const job = payload?.job || {};
     const bulk = payload?.bulk || {};
+    if (!focusJobId || job.id !== focusJobId || !liveCard) return;
+    liveCard.style.display = "block";
+    if (liveId) liveId.textContent = job.id;
     if (liveStatus) liveStatus.innerHTML = statusHtml(job.status);
     if (liveProgress) liveProgress.textContent = `${job.processed_items || 0} / ${job.total_items || 0}${job.failed_items ? ` (${job.failed_items} failed)` : ""}`;
     if (liveFiles) liveFiles.textContent = `${bulk.processed_files || 0} / ${bulk.total_files || 0}`;
@@ -467,14 +626,82 @@
     }
   };
 
-  fetch(`/api/v1/live/jobs/${encodeURIComponent(jobId)}/stream`, { headers: { Accept: "text/event-stream" } }).catch(() => {});
-  const source = new EventSource(`/api/v1/live/jobs/${encodeURIComponent(jobId)}/stream`);
-  source.onmessage = (event) => {
-    try {
-      render(JSON.parse(event.data));
-    } catch (_) {}
+  const handlePayload = (payload) => {
+    const job = payload?.job;
+    if (!job?.id) return;
+    updateRow(job);
+    updateMobileCard(job);
+    renderLiveCard(payload);
+    if (focusJobId && job.id === focusJobId && notice && !["pending", "running"].includes(job.status)) {
+      notice.style.display = "none";
+    }
+    if (!["pending", "running"].includes(job.status)) {
+      const source = sources.get(job.id);
+      if (source) {
+        source.close();
+        sources.delete(job.id);
+      }
+    }
   };
-  source.onerror = () => {};
+
+  const subscribe = (jobId) => {
+    if (!jobId || sources.has(jobId)) return;
+    const existingRow = tableRows.find((row) => row.dataset.jobId === jobId);
+    const existingMobileCard = mobileCardMap.get(jobId);
+    const existingStatus = (existingRow?.dataset.jobStatus || existingMobileCard?.dataset.jobStatus || "").toLowerCase();
+    if (existingStatus && !activeStatuses.has(existingStatus)) {
+      return;
+    }
+    const source = new EventSource(`/api/v1/live/jobs/${encodeURIComponent(jobId)}/stream`);
+    source.onmessage = (event) => {
+      try {
+        handlePayload(JSON.parse(event.data));
+      } catch (_) {}
+    };
+    source.onerror = () => {
+      const latestRow = tableRows.find((row) => row.dataset.jobId === jobId);
+      const latestMobileCard = mobileCardMap.get(jobId);
+      const latestStatus = (latestRow?.dataset.jobStatus || latestMobileCard?.dataset.jobStatus || "").toLowerCase();
+      if (!latestStatus || !activeStatuses.has(latestStatus)) {
+        source.close();
+        sources.delete(jobId);
+      }
+    };
+    sources.set(jobId, source);
+  };
+
+  if (focusJobId && liveCard) {
+    liveCard.style.display = "block";
+    if (liveId) liveId.textContent = focusJobId;
+    const existingRow = tableRows.find((row) => row.dataset.jobId === focusJobId);
+    const existingMobileCard = mobileCardMap.get(focusJobId);
+    const existingStatus = (existingRow?.dataset.jobStatus || existingMobileCard?.dataset.jobStatus || "").toLowerCase();
+    if (notice && existingStatus && !activeStatuses.has(existingStatus)) {
+      notice.style.display = "none";
+    }
+  }
+
+  const pendingJobIds = new Set();
+  tableRows.forEach((row) => {
+    if (activeStatuses.has(row.dataset.jobStatus || "")) {
+      pendingJobIds.add(row.dataset.jobId);
+    }
+  });
+  mobileCards.forEach((card) => {
+    if (activeStatuses.has(card.dataset.jobStatus || "")) {
+      pendingJobIds.add(card.dataset.jobId);
+    }
+  });
+  if (focusJobId) {
+    const focusRow = tableRows.find((row) => row.dataset.jobId === focusJobId);
+    const focusMobileCard = mobileCardMap.get(focusJobId);
+    const focusStatus = (focusRow?.dataset.jobStatus || focusMobileCard?.dataset.jobStatus || "").toLowerCase();
+    if (!focusStatus || activeStatuses.has(focusStatus)) {
+      pendingJobIds.add(focusJobId);
+    }
+  }
+
+  pendingJobIds.forEach(subscribe);
 })();
 </script>
 {% endblock %}

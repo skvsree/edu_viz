@@ -63,8 +63,12 @@ class BulkImportBatchResponse(BaseModel):
     total_cards_imported: int
 
 
-
-def _deck_name(grade_no: int, chapter_no: int | None, subject: str | None = None, custom_name: str | None = None) -> str:
+def _deck_name(
+    grade_no: int,
+    chapter_no: int | None,
+    subject: str | None = None,
+    custom_name: str | None = None,
+) -> str:
     if custom_name:
         return normalize_deck_name(custom_name)
     if chapter_no is None:
@@ -74,8 +78,12 @@ def _deck_name(grade_no: int, chapter_no: int | None, subject: str | None = None
     return f"grade_{grade_no}_science_chapter_{chapter_no}"
 
 
-
-def _clean_tag_names(grade_no: int, chapter_no: int | None, extra_tags: list[str], subject: str | None = None) -> list[str]:
+def _clean_tag_names(
+    grade_no: int,
+    chapter_no: int | None,
+    extra_tags: list[str],
+    subject: str | None = None,
+) -> list[str]:
     raw_names = [f"grade_{grade_no}", subject or "science"]
     if chapter_no is not None:
         raw_names.append(f"chapter_{chapter_no}")
@@ -93,7 +101,6 @@ def _clean_tag_names(grade_no: int, chapter_no: int | None, extra_tags: list[str
         seen.add(normalized)
         cleaned.append(name)
     return cleaned
-
 
 
 def _assign_deck_tags(db: Session, deck: Deck, owner: User, tag_names: list[str]) -> None:
@@ -120,11 +127,21 @@ def _assign_deck_tags(db: Session, deck: Deck, owner: User, tag_names: list[str]
     deck.tags = updated_tags
 
 
-
 def _system_admin_user(db: Session) -> User:
-    user = db.execute(select(User).where(User.role == ROLE_SYSTEM_ADMIN).order_by(User.created_at.asc())).scalars().first()
+    user = (
+        db.execute(
+            select(User)
+            .where(User.role == ROLE_SYSTEM_ADMIN)
+            .order_by(User.created_at.asc())
+        )
+        .scalars()
+        .first()
+    )
     if user is None:
-        raise HTTPException(status_code=503, detail="No system admin is available for bulk import")
+        raise HTTPException(
+            status_code=503,
+            detail="No system admin is available for bulk import",
+        )
     return user
 
 
@@ -135,7 +152,12 @@ def _import_chapter_deck(payload: BulkImportDeckPayload, db: Session) -> BulkImp
     deck_name = _deck_name(payload.grade_no, payload.chapter_no, payload.subject, payload.name)
     normalized_name = normalize_deck_name(deck_name)
     owner = _system_admin_user(db)
-    tag_names = _clean_tag_names(payload.grade_no, payload.chapter_no, payload.tags, payload.subject)
+    tag_names = _clean_tag_names(
+        payload.grade_no,
+        payload.chapter_no,
+        payload.tags,
+        payload.subject,
+    )
 
     query = select(Deck).where(
         Deck.normalized_name == normalized_name,
@@ -211,7 +233,10 @@ def _import_chapter_deck(payload: BulkImportDeckPayload, db: Session) -> BulkImp
         options = [option.strip() for option in item.options]
         if any(not option for option in options):
             raise HTTPException(status_code=400, detail="MCQ options cannot be empty")
-        source_label = (item.source_label or "mcq-bulk-import").strip() or "mcq-bulk-import"
+        source_label = (
+            (item.source_label or "mcq-bulk-import").strip()
+            or "mcq-bulk-import"
+        )
         key = (question, explanation, tuple(options), item.answer_index, "mcq", source_label)
         if key in existing_mcq_keys:
             continue
@@ -274,7 +299,11 @@ class AnkiImportResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
-@router.post("/decks/{deck_id}/anki-import", response_model=AnkiImportResponse, dependencies=[Depends(require_bulk_import_api_key)])
+@router.post(
+    "/decks/{deck_id}/anki-import",
+    response_model=AnkiImportResponse,
+    dependencies=[Depends(require_bulk_import_api_key)],
+)
 def import_anki_deck(
     deck_id: str,
     file: UploadFile = File(...),

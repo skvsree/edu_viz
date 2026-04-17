@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 
@@ -77,7 +79,7 @@ class Folder(Base):
         cascade="all, delete-orphan",
     )
     # Relationship to decks
-    decks: Mapped[list["Deck"]] = relationship(
+    decks: Mapped[list[object]] = relationship(
         "Deck",
         back_populates="folder",
     )

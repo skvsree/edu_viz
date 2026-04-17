@@ -3,6 +3,12 @@ when:
     branch: [main]
 
 steps:
+  - name: pep8
+    image: python:3.12-slim
+    commands:
+      - pip install --no-cache-dir -r requirements.txt
+      - ./scripts/lint_pep8.sh
+
   - name: build_and_push
     image: woodpeckerci/plugin-docker-buildx:5.0.0
     settings:

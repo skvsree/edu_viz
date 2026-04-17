@@ -171,7 +171,7 @@ class AnkiImportService:
             with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp:
                 tmp.write(db_data)
                 tmp_path = tmp.name
-            
+
             # Read media map from zip (new format uses JSON file)
             try:
                 media_content = zf.read('media')
@@ -179,13 +179,13 @@ class AnkiImportService:
                 logger.info(f"Loaded {len(media_map)} media mappings from zip")
             except KeyError:
                 logger.warning("No media file in zip - media map will be empty")
-            
+
             conn = sqlite3.connect(tmp_path)
             try:
                 # Parse col table - new format has separate columns for models/decks
                 cursor = conn.execute("SELECT * FROM col LIMIT 1")
                 row = cursor.fetchone()
-                
+
                 # Handle both old format (single JSON in first column) and new format (columns)
                 if isinstance(row[0], (str, bytes, bytearray)):
                     # Old format: first column is JSON string

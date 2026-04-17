@@ -88,7 +88,16 @@ class LocalStorage(BaseStorage):
 
 
 class S3Storage(BaseStorage):
-    def __init__(self, *, endpoint_url: str, access_key_id: str, secret_access_key: str, bucket: str, region: str | None = None, public_base_url: str | None = None):
+    def __init__(
+        self,
+        *,
+        endpoint_url: str,
+        access_key_id: str,
+        secret_access_key: str,
+        bucket: str,
+        region: str | None = None,
+        public_base_url: str | None = None,
+    ):
         self.bucket = bucket
         self.public_base_url = public_base_url.rstrip("/") if public_base_url else None
         self.client = boto3.client(

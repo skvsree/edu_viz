@@ -48,9 +48,10 @@ from app.services.storage import get_storage, StorageError
 
 
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
-MAX_WORKERS = int(os.environ.get("JOB_WORKER_THREADS", "2"))
+MAX_WORKERS = int(os.environ.get("JOB_WORKER_THREADS", "1"))
 POLL_INTERVAL = int(os.environ.get("JOB_POLL_INTERVAL", "5"))
 JOB_LEASE_SECONDS = int(os.environ.get("JOB_LEASE_SECONDS", "60"))
+MAX_529_RETRIES = int(os.environ.get("JOB_MAX_529_RETRIES", "5"))
 _shutdown = False
 _active_jobs: set[uuid.UUID] = set()
 _active_jobs_lock = threading.Lock()
@@ -154,6 +155,58 @@ def extract_title_from_text(text: str, filename: str) -> tuple[str, str | None]:
                 if description and not description.endswith("."):
                     description += "."
     return title, description
+
+
+def _is_retryable_529_error(exc: Exception) -> bool:
+    message = str(exc or "")
+    return bool(re.search(r"\b529\b", message) and "overloaded" in message.lower())
+
+
+
+def _generate_text_with_retry(provider_client, prompt: str, credential, *, log_prefix: str) -> str:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return provider_client.generate_text(prompt, credential)
+        except Exception as exc:
+            if _is_retryable_529_error(exc) and attempt < MAX_529_RETRIES:
+                sleep_seconds = min(60, 5 * attempt)
+                print(
+                    f"{log_prefix} retryable_529 attempt={attempt} sleep={sleep_seconds}s err={str(exc)[:200]}",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            if _is_retryable_529_error(exc):
+                raise AIGenerationError(
+                    f"AI provider overloaded after {attempt} attempts; please retry later."
+                ) from exc
+            raise
+
+
+
+def _generate_pack_with_retry(provider_client, prompt: str, credential, *, log_prefix: str):
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return provider_client.generate_from_prompt(prompt, credential)
+        except Exception as exc:
+            if _is_retryable_529_error(exc) and attempt < MAX_529_RETRIES:
+                sleep_seconds = min(60, 5 * attempt)
+                print(
+                    f"{log_prefix} retryable_529 attempt={attempt} sleep={sleep_seconds}s err={str(exc)[:200]}",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            if _is_retryable_529_error(exc):
+                raise AIGenerationError(
+                    f"AI provider overloaded after {attempt} attempts; please retry later."
+                ) from exc
+            raise
+
 
 
 def _resolve_ai_provider_and_credential(db: Session, user: User):
@@ -268,6 +321,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             folder_id = uuid.UUID(raw)
 
     provider_name, credential = _resolve_ai_provider_and_credential(db, owner)
+    provider_client = get_study_pack_provider(credential.provider)
     bulk.provider = credential.provider or provider_name
     db.commit()
 
@@ -303,7 +357,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             except StorageError:
                 upload_bytes = None
         if upload_bytes is None and file_record.content_text is not None:
-            upload_bytes = file_record.content_text.encode('latin1')
+            upload_bytes = file_record.content_text.encode('utf-8')
 
         if upload_bytes is None:
             file_record.status = BulkAIUploadFileStatus.FAILED.value
@@ -319,10 +373,16 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         try:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
             text = extract_text_from_pdf(pdf_data)
-            title, description = extract_title_from_text(text, pdf_name)
+            title = None
+            description = None
             try:
                 title_prompt = build_title_generation_prompt(text, pdf_name)
-                raw_title_response = provider_client.generate_text(title_prompt, credential)
+                raw_title_response = _generate_text_with_retry(
+                    provider_client,
+                    title_prompt,
+                    credential,
+                    log_prefix=f"[job-worker] ai title job={job.id} file={pdf_name}",
+                )
                 ai_title, ai_description = parse_title_generation_json(raw_title_response)
                 if ai_title:
                     title = ai_title[:250]
@@ -334,9 +394,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 )
             except Exception as title_exc:
                 print(
-                    f"[job-worker] ai title fallback job={job.id} file={pdf_name} err={str(title_exc)[:200]}",
+                    f"[job-worker] ai title failed job={job.id} file={pdf_name} err={str(title_exc)[:200]}",
                     flush=True,
                 )
+                raise
+            if not title:
+                raise AIGenerationError('AI provider did not return a usable title.')
             print(
                 f"[job-worker] extracted title job={job.id} file={pdf_name} "
                 f"title={title!r} text_len={len(text or '')}",
@@ -351,8 +414,19 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             if deck is None:
                 raise AIGenerationError('Missing pre-created deck for uploaded file.')
             if title:
-                deck.name = title[:255]
-                deck.normalized_name = normalize_deck_name(deck.name)
+                candidate_title = title[:255]
+                candidate_normalized = normalize_deck_name(candidate_title)
+                existing_deck = db.execute(
+                    select(Deck.id)
+                    .where(Deck.user_id == owner.id)
+                    .where(Deck.normalized_name == candidate_normalized)
+                    .where(Deck.is_deleted.is_(False))
+                    .where(Deck.id != deck.id)
+                    .limit(1)
+                ).scalar_one_or_none()
+                if existing_deck is None:
+                    deck.name = candidate_title
+                    deck.normalized_name = candidate_normalized
             if folder_id is not None:
                 deck.folder_id = folder_id
             if description:
@@ -374,7 +448,6 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             if not chunks:
                 raise AIGenerationError('No usable study text found in uploaded file.')
 
-            provider_client = get_study_pack_provider(credential.provider)
             aggregate = merge_study_packs()
             modes = ('core', 'mechanisms', 'traps')
             existing_flashcards: set[tuple[str, str]] = set()
@@ -410,7 +483,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         max_mcqs=18,
                     )
                     try:
-                        pass_pack = provider_client.generate_from_prompt(prompt, credential)
+                        pass_pack = _generate_pack_with_retry(
+                            provider_client,
+                            prompt,
+                            credential,
+                            log_prefix=(
+                                f"[job-worker] ai pass job={job.id} file={pdf_name} "
+                                f"chunk={chunk_index}/{len(chunks)} mode={mode}"
+                            ),
+                        )
                         print(
                             f"[job-worker] ai pass ok job={job.id} file={pdf_name} "
                             f"chunk={chunk_index}/{len(chunks)} mode={mode} "
@@ -584,6 +665,21 @@ def process_job(job_id: uuid.UUID) -> None:
                 job.status = JobStatus.FAILED.value
                 job.error_message = str(e)[:500]
                 job.completed_at = datetime.utcnow()
+                if job.job_type == "bulk_ai_upload" and job.reference_id:
+                    bulk = db.get(BulkAIUpload, job.reference_id)
+                    if bulk:
+                        bulk.status = BulkAIUploadStatus.FAILED.value
+                        bulk.error_message = str(e)[:500]
+                        bulk.completed_at = datetime.utcnow()
+                        file_records = db.execute(
+                            select(BulkAIUploadFile)
+                            .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+                            .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.PROCESSING.value)
+                        ).scalars().all()
+                        for file_record in file_records:
+                            file_record.status = BulkAIUploadFileStatus.FAILED.value
+                            file_record.error_message = str(e)[:500]
+                            file_record.completed_at = datetime.utcnow()
                 db.commit()
         except Exception:
             pass

@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import re
-from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import and_, delete, func, or_, select
-from sqlalchemy import literal
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
 from app.core.db import get_db
@@ -396,6 +394,7 @@ def move_folder(
     # Prevent moving into itself or a descendant
     if request.parent_id:
         descendant_ids = set()
+
         def collect_descendants(pid: UUID):
             descendants = db.execute(
                 select(Folder.id).where(Folder.parent_id == pid)

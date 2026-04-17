@@ -8,7 +8,12 @@ from app.models.card_state import CardState
 from app.models.mcq_generation import MCQGeneration, MCQGenerationStatus
 from app.models.deck_mcq_generation_status import DeckMcqGenerationItem, DeckMcqGenerationItemStatus
 from app.models.ai_upload_generation import AIUploadGeneration, AIUploadGenerationStatus
-from app.models.bulk_ai_upload import BulkAIUpload, BulkAIUploadStatus, BulkAIUploadFile, BulkAIUploadFileStatus
+from app.models.bulk_ai_upload import (  # noqa: F401
+    BulkAIUpload,
+    BulkAIUploadFile,
+    BulkAIUploadFileStatus,
+    BulkAIUploadStatus,
+)
 from app.models.review import Review
 from app.models.tag import Tag, deck_tags
 from app.models.test import Test
@@ -24,7 +29,7 @@ from app.models.analytics import (
 )
 from app.models.deck_access import DeckAccess, DeckAccessLevel
 from app.models.ai_credentials import AICredentialScope
-from app.models.job import Job, JobStatus
+from app.models.job import Job, JobStatus  # noqa: F401
 
 __all__ = [
     "Organization",

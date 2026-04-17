@@ -52,7 +52,12 @@ def decrypt_secret(token: str) -> str:
 def _env_credential(provider: str) -> ResolvedAICredential | None:
     provider = provider.strip().lower()
     if settings.ai_api_key and provider == settings.ai_provider.strip().lower():
-        return ResolvedAICredential(provider=settings.ai_provider.strip().lower(), auth_type="api_key", secret=settings.ai_api_key, source="env")
+        return ResolvedAICredential(
+            provider=settings.ai_provider.strip().lower(),
+            auth_type="api_key",
+            secret=settings.ai_api_key,
+            source="env",
+        )
     return None
 
 
@@ -77,7 +82,6 @@ def get_scope_provider(db: Session, scope_type: str, scope_id, default: str = "o
     return default if is_env_ai_available() else None
 
 
-
 def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: bool = True) -> AIResolution:
     provider = provider.strip().lower()
     if not provider:
@@ -86,14 +90,22 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
     env_cred = _env_credential(provider)
 
     if getattr(user, "id", None):
-        user_cred = db.query(AICredentialScope).filter_by(scope_type="user", scope_id=user.id, provider=provider).first()
+        user_cred = db.query(AICredentialScope).filter_by(
+            scope_type="user",
+            scope_id=user.id,
+            provider=provider,
+        ).first()
         if user_cred:
             return AIResolution(
                 credential=ResolvedAICredential(
                     provider=user_cred.provider,
                     auth_type=user_cred.auth_type,
                     secret=decrypt_secret(user_cred.secret_encrypted),
-                    refresh_token=decrypt_secret(user_cred.refresh_token_encrypted) if user_cred.refresh_token_encrypted else None,
+                    refresh_token=(
+                        decrypt_secret(user_cred.refresh_token_encrypted)
+                        if user_cred.refresh_token_encrypted
+                        else None
+                    ),
                     source="user",
                 ),
                 source="user",
@@ -103,14 +115,22 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
 
     org = db.get(Organization, user.organization_id) if getattr(user, "organization_id", None) else None
     if org and org.is_ai_enabled:
-        org_cred = db.query(AICredentialScope).filter_by(scope_type="organization", scope_id=org.id, provider=provider).first()
+        org_cred = db.query(AICredentialScope).filter_by(
+            scope_type="organization",
+            scope_id=org.id,
+            provider=provider,
+        ).first()
         if org_cred:
             return AIResolution(
                 credential=ResolvedAICredential(
                     provider=org_cred.provider,
                     auth_type=org_cred.auth_type,
                     secret=decrypt_secret(org_cred.secret_encrypted),
-                    refresh_token=decrypt_secret(org_cred.refresh_token_encrypted) if org_cred.refresh_token_encrypted else None,
+                    refresh_token=(
+                        decrypt_secret(org_cred.refresh_token_encrypted)
+                        if org_cred.refresh_token_encrypted
+                        else None
+                    ),
                     source="organization",
                 ),
                 source="organization",
@@ -119,7 +139,15 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
             )
         if env_cred and allow_env:
             return AIResolution(credential=env_cred, source="env", scope="organization", allowed=True)
-        return AIResolution(None, source="organization", scope="organization", allowed=False, reason="Your organization is AI-enabled, but no usable provider is configured.")
+        return AIResolution(
+            None,
+            source="organization",
+            scope="organization",
+            allowed=False,
+            reason=(
+                "Your organization is AI-enabled, but no usable provider is configured."
+            ),
+        )
 
     if env_cred and allow_env:
         return AIResolution(credential=env_cred, source="env", scope="env", allowed=True)
@@ -127,11 +155,35 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
     return AIResolution(None, reason="No AI credential configured for your user, organization, or environment.")
 
 
-def save_ai_credential(db: Session, *, scope_type: str, scope_id, provider: str, secret: str, auth_type: str = "api_key", refresh_token: str | None = None, metadata_json: str | None = None) -> AICredentialScope:
+def save_ai_credential(
+    db: Session,
+    *,
+    scope_type: str,
+    scope_id,
+    provider: str,
+    secret: str,
+    auth_type: str = "api_key",
+    refresh_token: str | None = None,
+    metadata_json: str | None = None,
+) -> AICredentialScope:
     provider = provider.strip().lower()
-    existing = db.query(AICredentialScope).filter_by(scope_type=scope_type, scope_id=scope_id, provider=provider).first()
+    existing = db.query(AICredentialScope).filter_by(
+        scope_type=scope_type,
+        scope_id=scope_id,
+        provider=provider,
+    ).first()
     if existing is None:
-        existing = AICredentialScope(scope_type=scope_type, scope_id=scope_id, provider=provider, auth_type=auth_type, secret_encrypted=encrypt_secret(secret), refresh_token_encrypted=encrypt_secret(refresh_token) if refresh_token else None, metadata_json=metadata_json)
+        existing = AICredentialScope(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            provider=provider,
+            auth_type=auth_type,
+            secret_encrypted=encrypt_secret(secret),
+            refresh_token_encrypted=(
+                encrypt_secret(refresh_token) if refresh_token else None
+            ),
+            metadata_json=metadata_json,
+        )
         db.add(existing)
     else:
         existing.auth_type = auth_type

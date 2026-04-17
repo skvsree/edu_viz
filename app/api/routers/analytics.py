@@ -226,7 +226,13 @@ def analytics_page(
 
     system_record = None
     if user.role == "system_admin":
-        system_record = db.execute(select(SystemAnalytics).order_by(SystemAnalytics.period_end.desc())).scalars().first()
+        system_record = (
+            db.execute(
+                select(SystemAnalytics).order_by(SystemAnalytics.period_end.desc())
+            )
+            .scalars()
+            .first()
+        )
 
     recent_events_stmt = select(AnalyticsEvent)
     if user.role == "system_admin":
@@ -235,7 +241,13 @@ def analytics_page(
         recent_events_stmt = recent_events_stmt.where(AnalyticsEvent.organization_id == user.organization_id)
     else:
         recent_events_stmt = recent_events_stmt.where(AnalyticsEvent.user_id == user.id)
-    recent_events = db.execute(recent_events_stmt.order_by(AnalyticsEvent.event_timestamp.desc()).limit(20)).scalars().all()
+    recent_events = (
+        db.execute(
+            recent_events_stmt.order_by(AnalyticsEvent.event_timestamp.desc()).limit(20)
+        )
+        .scalars()
+        .all()
+    )
 
     return templates.TemplateResponse(
         "analytics/index.html",

@@ -21,7 +21,6 @@ class ImportErrorRuntime(RuntimeError):
     pass
 
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Import NCERT Anki + MCQ chapter decks into edu_viz via API")
     parser.add_argument("--base-url", required=True, help="Base URL, e.g. https://qa.edu.selviz.in or https://edu.selviz.in")
@@ -37,13 +36,11 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-
 def parse_grade_from_book_slug(book_slug: str) -> int:
     match = re.match(r"class_(\d+)(__.*)?$", book_slug)
     if not match:
         raise ImportErrorRuntime(f"Unable to parse grade from book slug: {book_slug}")
     return int(match.group(1))
-
 
 
 def parse_chapter_no(value: str) -> int:
@@ -54,7 +51,6 @@ def parse_chapter_no(value: str) -> int:
     if slug_match:
         return int(slug_match.group(1))
     raise ImportErrorRuntime(f"Unable to parse chapter number from: {value}")
-
 
 
 def load_anki_by_deck(anki_root: Path) -> dict[tuple[int, int], list[dict]]:
@@ -79,7 +75,6 @@ def load_anki_by_deck(anki_root: Path) -> dict[tuple[int, int], list[dict]]:
                     }
                 )
     return decks
-
 
 
 def load_mcqs_by_deck(mcq_root: Path, mcq_output_root: Path) -> dict[tuple[int, int], list[dict]]:
@@ -113,7 +108,6 @@ def load_mcqs_by_deck(mcq_root: Path, mcq_output_root: Path) -> dict[tuple[int, 
                     }
                 )
     return decks
-
 
 
 def build_payloads(
@@ -174,7 +168,6 @@ def build_payloads(
     return payloads
 
 
-
 def post_payload(base_url: str, api_key: str, payload: dict) -> dict:
     url = base_url.rstrip("/") + API_PATH
     body = json.dumps(payload).encode("utf-8")
@@ -193,7 +186,6 @@ def post_payload(base_url: str, api_key: str, payload: dict) -> dict:
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
         raise ImportErrorRuntime(f"HTTP {exc.code} for {url}: {detail}") from exc
-
 
 
 def main() -> int:
