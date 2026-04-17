@@ -12,11 +12,7 @@
     <div class="browse-top-sticky">
       {# Header #}
       <div class="browse-header">
-        <div>
-          <h1 class="browse-title">
-            {% if current_folder %}{{ current_folder.name }}{% else %}All{% endif %}
-          </h1>
-        </div>
+        <div></div>
         <div class="browse-header-right">
           <form method="get" action="/decks/browse" class="browse-search">
             <input type="hidden" name="folder" value="{{ current_folder.id if current_folder else '' }}" />
@@ -79,10 +75,24 @@
     {% if q %}
       {# Search results — flat list #}
       {% if decks %}
-        <div class="browse-grid">
-          {% for deck in decks %}
-            {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
-          {% endfor %}
+        <div class="browse-table-wrap">
+          <div class="browse-table browse-table--search" role="table" aria-label="Search results">
+            <div class="browse-table__head" role="rowgroup">
+              <div class="browse-table__row browse-table__row--head" role="row">
+                <div class="browse-table__cell browse-table__cell--select" role="columnheader"></div>
+                <div class="browse-table__cell" role="columnheader"></div>
+                <div class="browse-table__cell" role="columnheader"></div>
+                <div class="browse-table__cell browse-table__cell--actions" role="columnheader" aria-label="Info"></div>
+                <div class="browse-table__cell browse-table__cell--actions" role="columnheader" aria-label="Access"></div>
+                <div class="browse-table__cell browse-table__cell--favorite" role="columnheader" aria-label="Favorite"></div>
+              </div>
+            </div>
+            <div class="browse-table__body" role="rowgroup">
+              {% for deck in decks %}
+                {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
+              {% endfor %}
+            </div>
+          </div>
         </div>
         {% if total_pages > 1 %}
           <div class="browse-pagination">
@@ -97,31 +107,57 @@
 
     {% elif current_folder %}
       {# Folder view: subfolders + decks #}
-      <div class="browse-grid">
-        {% for f in subfolders %}
-          <div class="browse-item browse-item--folder"
-            data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="{{ 'true' if f.can_write else 'false' }}" data-name="{{ f.name }}">
-            {% if f.can_write %}
-            <div class="item-cb-wrap">
-              <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
-            </div>
-            {% endif %}
-            <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-item__folder-link">
-              <span class="browse-item__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
-                </svg>
-              </span>
-              <span class="browse-item__text">
-                <span class="browse-item__name">{{ f.name }}</span>
-                <span class="browse-item__desc">Folder</span>
-              </span>
-            </a>
+      <div class="browse-table-wrap">
+        <div class="browse-table" role="table" aria-label="Folder contents">
+          <div class="browse-table__head" role="rowgroup">
+              <div class="browse-table__row browse-table__row--head" role="row">
+                <div class="browse-table__cell browse-table__cell--select" role="columnheader"></div>
+                <div class="browse-table__cell" role="columnheader"></div>
+                <div class="browse-table__cell" role="columnheader"></div>
+                <div class="browse-table__cell browse-table__cell--actions" role="columnheader" aria-label="Info"></div>
+                <div class="browse-table__cell browse-table__cell--actions" role="columnheader" aria-label="Access"></div>
+                <div class="browse-table__cell browse-table__cell--favorite" role="columnheader" aria-label="Favorite"></div>
+              </div>
+
           </div>
-        {% endfor %}
-        {% for deck in decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
-        {% endfor %}
+          <div class="browse-table__body" role="rowgroup">
+            {% for f in subfolders %}
+              <div class="browse-item browse-item--folder browse-table__row"
+                role="row"
+                data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="{{ 'true' if f.can_write else 'false' }}" data-name="{{ f.name }}">
+                <div class="browse-table__cell browse-table__cell--select" role="cell">
+                  {% if f.can_write %}
+                  <div class="item-cb-wrap item-cb-wrap--table">
+                    <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+                  </div>
+                  {% endif %}
+                </div>
+                <div class="browse-table__cell browse-table__cell--type" role="cell">
+                  <span class="browse-item__icon browse-item__icon--folder" aria-hidden="true" title="Folder">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
+                    </svg>
+                  </span>
+                </div>
+                <div class="browse-table__cell browse-table__cell--name" role="cell">
+                  <div class="browse-table__name-wrap">
+                    <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-table__link browse-table__link--folder" title="{{ f.name }}">{{ f.name }}</a>
+                  </div>
+                </div>
+                <div class="browse-table__cell browse-table__cell--actions" role="cell">
+                  <button type="button" class="browse-info-btn" title="Folder: {{ f.name }}" aria-label="Folder info for {{ f.name }}" data-info-title="{{ f.name }}" data-info-body="Folder">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>
+                  </button>
+                </div>
+                <div class="browse-table__cell browse-table__cell--actions" role="cell">—</div>
+                <div class="browse-table__cell browse-table__cell--favorite" role="cell">—</div>
+              </div>
+            {% endfor %}
+            {% for deck in decks %}
+              {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
+            {% endfor %}
+          </div>
+        </div>
       </div>
       {% if not subfolders and not decks %}
         <div class="browse-empty"><h3>This folder is empty</h3></div>
@@ -129,30 +165,55 @@
 
     {% else %}
       {# Root view: root folders + root decks #}
-      <div class="browse-grid">
-        {% for f in root_folders %}
-          <div class="browse-item browse-item--folder" data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="{{ 'true' if f.can_write else 'false' }}" data-name="{{ f.name }}">
-            {% if f.can_write %}
-            <div class="item-cb-wrap">
-              <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
-            </div>
-            {% endif %}
-            <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-item__folder-link">
-              <span class="browse-item__icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
-                </svg>
-              </span>
-              <span class="browse-item__text">
-                <span class="browse-item__name">{{ f.name }}</span>
-                <span class="browse-item__desc">Folder</span>
-              </span>
-            </a>
+      <div class="browse-table-wrap">
+        <div class="browse-table" role="table" aria-label="Root items">
+          <div class="browse-table__head" role="rowgroup">
+              <div class="browse-table__row browse-table__row--head" role="row">
+                <div class="browse-table__cell browse-table__cell--select" role="columnheader"></div>
+                <div class="browse-table__cell" role="columnheader"></div>
+                <div class="browse-table__cell" role="columnheader"></div>
+                <div class="browse-table__cell browse-table__cell--actions" role="columnheader" aria-label="Info"></div>
+                <div class="browse-table__cell browse-table__cell--actions" role="columnheader" aria-label="Access"></div>
+                <div class="browse-table__cell browse-table__cell--favorite" role="columnheader" aria-label="Favorite"></div>
+              </div>
+
           </div>
-        {% endfor %}
-        {% for deck in root_decks %}
-          {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
-        {% endfor %}
+          <div class="browse-table__body" role="rowgroup">
+            {% for f in root_folders %}
+              <div class="browse-item browse-item--folder browse-table__row" role="row" data-item-type="folder" data-item-id="{{ f.id }}" data-can-write="{{ 'true' if f.can_write else 'false' }}" data-name="{{ f.name }}">
+                <div class="browse-table__cell browse-table__cell--select" role="cell">
+                  {% if f.can_write %}
+                  <div class="item-cb-wrap item-cb-wrap--table">
+                    <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+                  </div>
+                  {% endif %}
+                </div>
+                <div class="browse-table__cell browse-table__cell--type" role="cell">
+                  <span class="browse-item__icon browse-item__icon--folder" aria-hidden="true" title="Folder">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M3.75 7.5A3.75 3.75 0 0 1 7.5 3.75h3.382c.995 0 1.949.395 2.652 1.098l1.018 1.018c.234.234.552.366.884.366H18A2.25 2.25 0 0 1 20.25 8.5v7.75A4 4 0 0 1 16.25 20.25H7.75a4 4 0 0 1-4-4z"></path>
+                    </svg>
+                  </span>
+                </div>
+                <div class="browse-table__cell browse-table__cell--name" role="cell">
+                  <div class="browse-table__name-wrap">
+                    <a href="/decks/browse?folder={{ f.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}" class="browse-table__link browse-table__link--folder" title="{{ f.name }}">{{ f.name }}</a>
+                  </div>
+                </div>
+                <div class="browse-table__cell browse-table__cell--actions" role="cell">
+                  <button type="button" class="browse-info-btn" title="Folder: {{ f.name }}" aria-label="Folder info for {{ f.name }}" data-info-title="{{ f.name }}" data-info-body="Folder">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7h.01"></path></svg>
+                  </button>
+                </div>
+                <div class="browse-table__cell browse-table__cell--actions" role="cell">—</div>
+                <div class="browse-table__cell browse-table__cell--favorite" role="cell">—</div>
+              </div>
+            {% endfor %}
+            {% for deck in root_decks %}
+              {{ browse_item_macro(deck, favorite_deck_ids, writable_deck_ids, deletable_deck_ids, access_manageable_deck_ids, user, access_level_options) }}
+            {% endfor %}
+          </div>
+        </div>
       </div>
       {% if not root_folders and not root_decks %}
         <div class="browse-empty">
@@ -285,6 +346,25 @@
       <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="bulk-ai-upload-modal">Cancel</button>
     </footer>
   </form>
+</dialog>
+
+<dialog id="browse-info-modal" class="modal" aria-labelledby="browse-info-title">
+  <div class="modal__surface" style="max-width:420px;">
+    <div class="modal__header">
+      <div>
+        <h3 id="browse-info-title">Info</h3>
+      </div>
+      <button type="button" class="modal__close" data-modal-close="browse-info-modal" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18"></path>
+          <path d="m6 6 12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <p id="browse-info-body" style="margin:0; white-space:pre-wrap; color:var(--text-color); line-height:1.5;"></p>
+    </div>
+  </div>
 </dialog>
 
 <div id="bulk-ai-upload-progress-modal" class="modal ai-upload-progress-modal" aria-hidden="true">
@@ -467,20 +547,20 @@
   top:0;
   z-index:6;
   background:var(--bg, var(--background-color));
-  padding:0 0 0.5rem;
+  padding:0 0 0.2rem;
 }
-.browse-header { display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap; }
+.browse-header { display:flex; justify-content:space-between; align-items:center; gap:0.5rem; margin-bottom:0.4rem; flex-wrap:wrap; }
 .browse-content-scroll {
   flex:1 1 auto;
   min-height:0;
   width:100%;
   overflow-y:auto;
   overflow-x:visible;
-  padding:0 0.2rem 0.5rem;
+  padding:0 0.2rem 0.2rem;
 }
-.browse-title { font-size:1.25rem; font-weight:700; margin:0; }
-.browse-header-right { display:flex; gap:0.5rem; align-items:center; }
-.browse-breadcrumb { margin:0 0 0.75rem; }
+.browse-title { font-size:1.25rem; font-weight:700; margin:0; line-height:1.1; }
+.browse-header-right { display:flex; gap:0.4rem; align-items:center; }
+.browse-breadcrumb { margin:0 0 0.35rem; }
 .browse-search {
   display:flex;
   gap:0.35rem;
@@ -534,12 +614,12 @@
 /* ── Action bar ─────────────────────────────────────────────────────── */
 .browse-action-bar {
   display:flex; align-items:center; justify-content:flex-start;
-  padding:0.5rem 0.75rem; margin-bottom:0.75rem;
+  padding:0.3rem 0.45rem; margin-bottom:0.4rem;
   background:var(--card-bg); border:1px solid var(--border-color);
   border-radius:10px; overflow-x:auto;
 }
 .browse-action-bar.has-selection { box-shadow: 0 0 0 1px rgba(59,130,246,0.25) inset; }
-.browse-action-bar__actions { display:flex; gap:0.375rem; flex-wrap:nowrap; white-space:nowrap; }
+.browse-action-bar__actions { display:flex; gap:0.25rem; flex-wrap:nowrap; white-space:nowrap; }
 .browse-action-bar__actions .browse-btn { flex:0 0 auto; }
 
 /* ── Tab bar ─────────────────────────────────────────────────────────── */
@@ -563,17 +643,65 @@
 }
 .browse-tab--active:hover { background:var(--accent-color,#2563eb); }
 
-/* ── Grid ────────────────────────────────────────────────────────────── */
-.browse-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:0.75rem; }
+/* ── Table layout ─────────────────────────────────────────────────────── */
+.browse-table-wrap {
+  width:100%;
+  overflow-x:auto;
+  border:1px solid var(--border-color);
+  border-radius:14px;
+  background:var(--card-bg);
+}
+.browse-table {
+  width:100%;
+  min-width:100%;
+}
+.browse-table__row {
+  display:grid;
+  grid-template-columns:44px 52px minmax(0, 1fr) 44px 44px 44px;
+  align-items:center;
+}
+.browse-table__row--head {
+  background:color-mix(in srgb, var(--card-bg) 88%, var(--accent) 12%);
+  border-bottom:1px solid var(--border-color);
+  position:sticky;
+  top:0;
+  z-index:2;
+}
+.browse-table__body .browse-table__row {
+  border-bottom:1px solid var(--border-color);
+}
+.browse-table__body .browse-table__row:last-child {
+  border-bottom:none;
+}
+.browse-table__cell {
+  padding:0.85rem 0.9rem;
+  min-width:0;
+  font-size:0.92rem;
+}
+.browse-table__row--head .browse-table__cell {
+  font-size:0.78rem;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+  color:var(--muted-color);
+}
+.browse-table__row--head .browse-table__cell:not([aria-label]) {
+  color:transparent;
+  font-size:0;
+  letter-spacing:0;
+}
 .browse-item {
-  background:var(--card-bg); border:1px solid var(--border-color);
-  border-radius:10px; padding:0.75rem;
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  text-align:center; gap:0.4rem;
+  background:transparent;
+  border:none;
+  border-radius:0;
+  padding:0;
   position:relative;
-  transition:box-shadow 0.15s, border-color 0.15s;
+  transition:background 0.15s ease;
   cursor:default;
-  min-height:100px;
+  min-height:0;
+}
+.browse-table__body .browse-item:hover {
+  background:color-mix(in srgb, var(--card-bg) 92%, var(--accent) 8%);
 }
 @media (max-width: 720px) {
   .browse-main {
@@ -582,7 +710,7 @@
   }
   .browse-top-sticky {
     top:0;
-    padding-bottom:0.35rem;
+    padding-bottom:0.15rem;
   }
   .browse-header {
     align-items:flex-start;
@@ -597,56 +725,50 @@
     min-width:0;
   }
   .browse-action-bar {
-    padding:0.4rem 0.5rem;
-    margin-bottom:0.5rem;
+    padding:0.22rem 0.3rem;
+    margin-bottom:0.3rem;
   }
   .browse-content-scroll {
-    padding:0 0.6rem 0.35rem 0.35rem;
+    padding:0 0.35rem 0.2rem 0.2rem;
   }
-  .browse-grid {
-    grid-template-columns:1fr;
-    gap:0.65rem;
+  .browse-table-wrap {
+    overflow-x:visible;
   }
   .browse-item {
-    min-height:88px;
-    padding-left:0.4rem;
+    min-height:0;
+    padding:0;
   }
 }
 .browse-item {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 18px rgba(15, 23, 42, 0.04);
+  box-shadow:none;
 }
-.browse-item:hover { box-shadow:0 4px 14px rgba(15,23,42,0.10); }
-.browse-item.is-selected { border-color:var(--accent); background:var(--active-bg); }
+.browse-item:hover { box-shadow:none; }
+.browse-item.is-selected { background:var(--active-bg); }
 
-/* Folder cards — theme aware */
+/* Folder/deck rows */
 .browse-item--folder {
-  background: color-mix(in srgb, var(--surface, var(--card-bg)) 88%, var(--accent) 12%);
-  border-color: color-mix(in srgb, var(--border, var(--border-color)) 72%, var(--accent) 28%);
+  background:color-mix(in srgb, var(--surface, var(--card-bg)) 94%, var(--accent) 6%);
 }
 .browse-item--folder:hover {
-  background: color-mix(in srgb, var(--surface, var(--card-bg)) 82%, var(--accent) 18%);
+  background:color-mix(in srgb, var(--surface, var(--card-bg)) 88%, var(--accent) 12%);
 }
 .browse-item--folder.is-selected {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--surface, var(--card-bg)) 76%, var(--accent) 24%);
+  background:color-mix(in srgb, var(--surface, var(--card-bg)) 82%, var(--accent) 18%);
 }
+.browse-item--deck { background:transparent; }
 
-/* Deck cards */
-.browse-item--deck { background:var(--card-bg); }
-.browse-item--deck:not(:has(.deck-access-wrap)) .deck-item-card__link {
-  padding-right: 3rem;
-}
-
-/* Top-right controls */
+/* Table controls */
 .browse-item > .item-cb-wrap {
-  position:absolute; top:0.5rem; right:5.5rem;
+  position:static;
+  width:20px;
+  height:20px;
 }
-.deck-favorite-btn {
-  position:absolute;
-  top:0.5rem;
-  right:3.25rem;
-  width:2rem;
-  height:2rem;
+  .browse-item--deck .deck-favorite-btn,
+  .deck-favorite-btn--table {
+    position:static;
+    width:2.15rem;
+    height:2.15rem;
+
   padding:0;
   display:inline-flex;
   align-items:center;
@@ -684,7 +806,8 @@
   cursor:pointer;
   vertical-align:middle;
 }
-.item-cb-wrap {
+.item-cb-wrap,
+.item-cb-wrap--table {
   display:flex;
   align-items:center;
   justify-content:center;
@@ -692,71 +815,83 @@
   height:20px;
 }
 
-/* Access level selector */
-.deck-access-wrap {
+/* Access / info / favorite action columns */
+.browse-table__cell--actions,
+.browse-table__cell--favorite {
   display:flex;
   align-items:center;
-  gap:0.25rem;
-  margin-left:auto;
-  flex-shrink:0;
+  justify-content:center;
 }
-.deck-access-select {
-  padding:0.2rem 0.5rem;
+.deck-access-toggle,
+.deck-access-indicator {
+  width:2.15rem;
+  height:2.15rem;
   border:1px solid var(--border-color);
-  border-radius:6px;
+  border-radius:999px;
   background:var(--card-bg);
-  color:var(--text-color);
-  font-size:0.78rem;
-  cursor:pointer;
-  min-width:70px;
-}
-.deck-access-select:hover {
-  border-color:var(--accent);
-}
-.deck-security-btn {
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  width:1.75rem;
-  height:1.75rem;
-  border:1px solid var(--border-color);
-  border-radius:6px;
-  background:var(--card-bg);
-  color:var(--text-dim);
-  cursor:pointer;
   padding:0;
-  flex-shrink:0;
-  transition:border-color 0.15s, color 0.15s, background 0.15s;
+  color:var(--muted-color, var(--muted));
 }
-.deck-security-btn:hover {
-  border-color:var(--accent);
-  color:var(--accent);
+.deck-access-toggle {
+  cursor:pointer;
+  transition:background 0.15s, border-color 0.15s, color 0.15s, transform 0.15s;
+}
+.deck-access-toggle:hover {
   background:var(--hover-bg);
+  transform:translateY(-1px);
 }
-.deck-scope-badge {
-  margin-left:auto;
-  padding:0.2rem 0.5rem;
-  border-radius:6px;
-  font-size:0.72rem;
-  font-weight:600;
-  letter-spacing:0.03em;
-  flex-shrink:0;
+.deck-access-toggle svg,
+.deck-access-indicator svg,
+.deck-security-btn svg,
+.deck-favorite-btn svg,
+.browse-info-btn svg {
+  width:1rem;
+  height:1rem;
 }
-.deck-scope-badge--inline {
-  display:inline-flex;
-  align-items:center;
-  width:fit-content;
-  margin:0.25rem 0 0;
-}
-.deck-scope-badge--global {
-  background:rgba(34,197,94,0.12);
+.deck-access-toggle--global,
+.deck-access-indicator--global {
   color:#16a34a;
-  border:1px solid rgba(34,197,94,0.3);
+  border-color:rgba(34,197,94,0.35);
+  background:rgba(34,197,94,0.10);
 }
-.deck-scope-badge--org {
-  background:rgba(59,130,246,0.12);
+.deck-access-toggle--org,
+.deck-access-indicator--org {
   color:#2563eb;
-  border:1px solid rgba(59,130,246,0.3);
+  border-color:rgba(37,99,235,0.35);
+  background:rgba(37,99,235,0.10);
+}
+.deck-access-toggle--user,
+.deck-access-indicator--user {
+  color:#7c3aed;
+  border-color:rgba(124,58,237,0.35);
+  background:rgba(124,58,237,0.10);
+}
+:root[data-theme="dark"] .deck-access-toggle--global,
+:root[data-theme="dark"] .deck-access-indicator--global,
+[data-theme="dark"] .deck-access-toggle--global,
+[data-theme="dark"] .deck-access-indicator--global {
+  color:#86efac;
+  border-color:rgba(134,239,172,0.35);
+  background:rgba(34,197,94,0.16);
+}
+:root[data-theme="dark"] .deck-access-toggle--org,
+:root[data-theme="dark"] .deck-access-indicator--org,
+[data-theme="dark"] .deck-access-toggle--org,
+[data-theme="dark"] .deck-access-indicator--org {
+  color:#93c5fd;
+  border-color:rgba(147,197,253,0.35);
+  background:rgba(37,99,235,0.18);
+}
+:root[data-theme="dark"] .deck-access-toggle--user,
+:root[data-theme="dark"] .deck-access-indicator--user,
+[data-theme="dark"] .deck-access-toggle--user,
+[data-theme="dark"] .deck-access-indicator--user {
+  color:#c4b5fd;
+  border-color:rgba(196,181,253,0.35);
+  background:rgba(124,58,237,0.18);
 }
 
 /* Cards */
@@ -779,7 +914,7 @@
 .deck-item__text {
   display:flex;
   flex-direction:column;
-  gap:0.18rem;
+  gap:0.2rem;
   min-width:0;
   width:100%;
 }
@@ -792,7 +927,6 @@
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  padding:0 0.25rem;
 }
 .browse-item__desc,
 .deck-item-desc {
@@ -803,27 +937,129 @@
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  padding:0 0.25rem;
 }
 
-/* Link wrappers */
-.browse-item__folder-link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.4rem; width:100%; justify-content:center; }
-.browse-item__folder-link:hover .browse-item__icon { opacity:0.7; }
-
-.deck-item-card__link { text-decoration:none; color:var(--text); display:flex; flex-direction:column; align-items:center; gap:0.35rem; width:100%; justify-content:center; padding-right:2.5rem; }
-.deck-item-icon {
-  width:2.5rem;
-  height:2.5rem;
+/* Type icons + links */
+.browse-table__cell--type {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.browse-table__name-wrap {
+  display:flex;
+  align-items:center;
+  gap:0.5rem;
+  min-width:0;
+}
+.browse-table__link--folder,
+.browse-table__link {
+  display:block;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-decoration:none;
+  font-weight:600;
+}
+.browse-table__link--folder {
+  color:#b45309;
+}
+.browse-table__link {
+  color:#2563eb;
+}
+.browse-table__link--folder:visited {
+  color:#b45309;
+}
+.browse-table__link:visited {
+  color:#2563eb;
+}
+.browse-table__link:hover,
+.browse-table__link:focus-visible {
+  color:#1d4ed8;
+}
+.browse-table__link--folder:hover,
+.browse-table__link--folder:focus-visible {
+  color:#92400e;
+}
+:root[data-theme="dark"] .browse-table__link--folder,
+[data-theme="dark"] .browse-table__link--folder {
+  color:#fbbf24;
+}
+:root[data-theme="dark"] .browse-table__link,
+[data-theme="dark"] .browse-table__link {
+  color:#60a5fa;
+}
+:root[data-theme="dark"] .browse-table__link--folder:visited,
+[data-theme="dark"] .browse-table__link--folder:visited {
+  color:#fbbf24;
+}
+:root[data-theme="dark"] .browse-table__link:visited,
+[data-theme="dark"] .browse-table__link:visited {
+  color:#60a5fa;
+}
+:root[data-theme="dark"] .browse-table__link:hover,
+:root[data-theme="dark"] .browse-table__link:focus-visible,
+[data-theme="dark"] .browse-table__link:hover,
+[data-theme="dark"] .browse-table__link:focus-visible {
+  color:#93c5fd;
+}
+:root[data-theme="dark"] .browse-table__link--folder:hover,
+:root[data-theme="dark"] .browse-table__link--folder:focus-visible,
+[data-theme="dark"] .browse-table__link--folder:hover,
+[data-theme="dark"] .browse-table__link--folder:focus-visible {
+  color:#fcd34d;
+}
+.browse-info-btn {
+  width:2.15rem;
+  height:2.15rem;
+  border:1px solid var(--border-color);
+  border-radius:999px;
+  background:transparent;
+  color:var(--muted-color, var(--muted));
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  color: color-mix(in srgb, #8b5cf6 44%, var(--text) 56%);
+  font-size:0.85rem;
+  font-weight:700;
+  flex:0 0 auto;
+  cursor:help;
 }
-:root[data-theme="dark"] .deck-item-icon,
-[data-theme="dark"] .deck-item-icon {
-  color: color-mix(in srgb, #8b5cf6 28%, var(--text) 72%);
+.browse-info-btn:hover {
+  color:var(--text);
+  border-color:var(--accent);
+  background:var(--hover-bg);
 }
-.deck-item-card__link:hover .deck-item-icon { opacity:0.7; }
+.deck-item-icon,
+.browse-item__icon {
+  width:1.7rem;
+  height:1.7rem;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.browse-table__row .browse-table__link--folder ~ .browse-info-btn,
+.browse-table__row .browse-item__icon--folder,
+.browse-table__row .deck-item-icon--folder {
+  color:#b45309;
+}
+.browse-table__row .browse-item__icon--deck,
+.browse-table__row .deck-item-icon--deck {
+  color:#2563eb;
+}
+:root[data-theme="dark"] .browse-table__row .browse-table__link--folder ~ .browse-info-btn,
+:root[data-theme="dark"] .browse-table__row .browse-item__icon--folder,
+:root[data-theme="dark"] .browse-table__row .deck-item-icon--folder,
+[data-theme="dark"] .browse-table__row .browse-table__link--folder ~ .browse-info-btn,
+[data-theme="dark"] .browse-table__row .browse-item__icon--folder,
+[data-theme="dark"] .browse-table__row .deck-item-icon--folder {
+  color:#fbbf24;
+}
+:root[data-theme="dark"] .browse-table__row .browse-item__icon--deck,
+:root[data-theme="dark"] .browse-table__row .deck-item-icon--deck,
+[data-theme="dark"] .browse-table__row .browse-item__icon--deck,
+[data-theme="dark"] .browse-table__row .deck-item-icon--deck {
+  color:#60a5fa;
+}
 
 /* ── Buttons ─────────────────────────────────────────────────────────── */
 .browse-btn {
@@ -897,9 +1133,9 @@
 .browse-btn[disabled] { opacity:0.4; cursor:not-allowed; pointer-events:none; }
 
 /* ── Deck items ─────────────────────────────────────────────────────── */
-.deck-item-icon { font-size:2.5rem; line-height:1; }
-.deck-item-name { font-weight:600; font-size:0.85rem; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 0.25rem; }
-.deck-item-card__actions { display:flex; gap:0.25rem; margin-top:0.25rem; position:absolute; bottom:0.5rem; left:50%; transform:translateX(-50%); }
+.deck-item-icon { font-size:1.5rem; line-height:1; }
+.deck-item-name { font-weight:600; font-size:0.85rem; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.deck-item-card__actions { display:none; }
 
 /* ── Pagination / Empty ─────────────────────────────────────────────── */
 .browse-pagination { display:flex; align-items:center; gap:0.5rem; margin-top:1rem; }
@@ -927,118 +1163,62 @@
     max-height:calc(100vh - 6.5rem);
   }
   .browse-top-sticky {
-    padding-bottom:0.4rem;
+    padding-bottom:0.12rem;
   }
   .browse-search-input {
     width:min(100%, 220px);
-    height:3rem;
+    height:2.5rem;
+    padding:0 0.7rem;
+    border-radius:10px;
   }
   .browse-search-submit,
   .browse-search-clear {
-    width:3rem;
-    min-width:3rem;
-    height:3rem;
+    width:2.5rem;
+    min-width:2.5rem;
+    height:2.5rem;
+    border-radius:10px;
   }
-  .browse-grid {
-    grid-template-columns: 1fr;
-    gap: 0.625rem;
+  .browse-table__row {
+    grid-template-columns:40px 46px minmax(0, 1fr) 40px 40px 40px;
   }
-  .browse-item {
-    min-height: unset;
-    padding: 0.8rem 0.85rem;
-    border-radius: 16px;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-start;
-    text-align: left;
-    gap: 0.45rem;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.06);
+  .browse-table__cell {
+    padding:0.62rem 0.45rem;
+    font-size:0.82rem;
   }
-  .browse-item > .item-cb-wrap {
-    position: static;
-    order: 0;
-    flex: 0 0 auto;
-    align-self: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .browse-table__row--head .browse-table__cell {
+    font-size:0.7rem;
   }
-  .deck-favorite-btn {
-    position: static;
-    order: 3;
-    flex: 0 0 auto;
-    margin: 0 0 0 auto;
-    align-self: center;
-    width: 2.4rem;
-    height: 2.4rem;
+  .browse-info-btn {
+    width:2rem;
+    height:2rem;
+    font-size:0.78rem;
   }
-  .item-cb {
-    width: 22px;
-    height: 22px;
+  .browse-table__name-wrap {
+    align-items:flex-start;
   }
-  .deck-favorite-btn svg {
-    width: 1.2rem;
-    height: 1.2rem;
-  }
-  .browse-item__folder-link,
-  .deck-item-card__link {
-    flex-direction: row;
-    align-items: flex-start;
-    justify-content: flex-start;
-    text-align: left;
-    gap: 0.35rem;
-    min-width: 0;
-    width: auto;
-    max-width: none;
-    flex: 1 1 auto;
-    align-self: stretch;
-    padding-right: 0;
-    order: 2;
-  }
-  .deck-access-wrap {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 0.3rem;
-    margin: 0.25rem 0 0;
-    white-space: nowrap;
-    width: fit-content;
-    max-width: 100%;
-  }
-  .browse-item > .item-cb-wrap + .deck-item-card__link,
-  .browse-item > .item-cb-wrap + .browse-item__folder-link {
-    order: 1;
-  }
-  .browse-item__icon,
-  .deck-item-icon {
-    width: 2rem;
-    height: 2rem;
-    flex: 0 0 auto;
-  }
-  .browse-item__text,
-  .deck-item__text {
-    align-items: flex-start;
-  }
-  .browse-item__name,
+  .browse-table__link--folder,
+  .browse-table__link,
   .deck-item-name {
-    padding: 0;
-    font-size: 0.95rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
+    overflow:visible;
+    text-overflow:clip;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+    line-height:1.2;
   }
-  .browse-item__desc,
-  .deck-item-desc {
-    padding: 0;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0;
+  .deck-item-icon,
+  .browse-item__icon {
+    width:1.45rem;
+    height:1.45rem;
   }
-  .browse-action-bar { padding:0.5rem; }
-  .browse-action-bar__actions { margin-left:0; flex-wrap:nowrap; }
+  .deck-access-toggle,
+  .deck-access-indicator,
+  .deck-favorite-btn--table {
+    width:1.95rem;
+    height:1.95rem;
+  }
+  .browse-action-bar { padding:0.2rem 0.25rem; }
+  .browse-action-bar__actions { margin-left:0; flex-wrap:nowrap; gap:0.2rem; }
   .browse-btn--icon {
     width:3rem; height:3rem; min-width:3rem;
     border-radius:14px;
@@ -1174,6 +1354,20 @@ dialog.modal::backdrop {
   const moveBtn = document.getElementById("move-btn");
   const deleteBtn = document.getElementById("delete-btn");
   const actionBar = document.getElementById("browse-action-bar");
+  const showBrowseInfo = (title, body) => {
+    const safeTitle = title || "Info";
+    const safeBody = body || "No additional information.";
+    const modal = document.getElementById("browse-info-modal");
+    const modalTitle = document.getElementById("browse-info-title");
+    const modalBody = document.getElementById("browse-info-body");
+    if (window.HTMLDialogElement && modal && modalTitle && modalBody) {
+      modalTitle.textContent = safeTitle;
+      modalBody.textContent = safeBody;
+      modal.showModal();
+      return;
+    }
+    alert(`${safeTitle}\n\n${safeBody}`);
+  };
   let selected = [];
   let pickerTree = null;
   let pickerSelectedFolderId = null;
@@ -1451,6 +1645,16 @@ dialog.modal::backdrop {
     });
   });
 
+  document.querySelectorAll(".browse-info-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const title = btn.dataset.infoTitle || btn.getAttribute("aria-label") || "Info";
+      const body = btn.dataset.infoBody || btn.getAttribute("title") || "No additional information.";
+      showBrowseInfo(title, body);
+    });
+  });
+
   // Favorites
   document.querySelectorAll(".deck-favorite-btn").forEach(btn => {
     btn.addEventListener("click", async e => {
@@ -1471,35 +1675,55 @@ dialog.modal::backdrop {
     });
   });
 
-  // Access level change
-  document.querySelectorAll(".deck-access-select").forEach(sel => {
-    sel.addEventListener("change", async e => {
-      const deckId = sel.dataset.deckId;
-      const newLevel = sel.value;
-      const btn = sel;
+  // Access level toggle
+  const accessCycle = ["user", "org", "global"];
+  const accessIcon = level => {
+    if (level === "global") {
+      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18"></path><path d="M12 3a15 15 0 0 0 0 18"></path></svg>`;
+    }
+    if (level === "org") {
+      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 12h.01"></path><path d="M15 12h.01"></path></svg>`;
+    }
+    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg>`;
+  };
+  const accessLabel = level => ({ user: "Mine", org: "Org", global: "Global" }[level] || level);
+  const applyAccessVisual = (btn, level, deckName) => {
+    if (!btn) return;
+    btn.dataset.accessLevel = level;
+    btn.classList.remove("deck-access-toggle--user", "deck-access-toggle--org", "deck-access-toggle--global");
+    btn.classList.add(`deck-access-toggle--${level}`);
+    btn.innerHTML = accessIcon(level);
+    btn.title = `Access: ${accessLabel(level)}. Tap to change.`;
+    btn.setAttribute("aria-label", `Access level for ${deckName}: ${accessLabel(level)}`);
+  };
+  document.querySelectorAll(".deck-access-toggle").forEach(btn => {
+    const deckName = btn.closest(".browse-item")?.querySelector(".browse-table__link")?.textContent?.trim() || "deck";
+    applyAccessVisual(btn, btn.dataset.accessLevel || "user", deckName);
+    btn.addEventListener("click", async e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const deckId = btn.dataset.deckId;
+      const currentLevel = btn.dataset.accessLevel || "user";
+      const nextLevel = accessCycle[(accessCycle.indexOf(currentLevel) + 1) % accessCycle.length];
       btn.disabled = true;
       try {
         const r = await fetch("/api/v1/decks/" + deckId + "/access-level", {
           method: "PUT",
           headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ access_level: newLevel }),
+          body: JSON.stringify({ access_level: nextLevel }),
         });
         if (!r.ok) {
           const d = await r.json().catch(() => ({}));
           alert(d.detail || "Failed to update access level");
-          // Revert
-          sel.value = sel.dataset._original || sel.options[0].value;
         } else {
-          sel.dataset._original = newLevel;
-          // Update badge
-          const item = sel.closest(".browse-item");
-          if (item) {
-            item.dataset.accessLevel = newLevel;
-          }
+          applyAccessVisual(btn, nextLevel, deckName);
+          const item = btn.closest(".browse-item");
+          if (item) item.dataset.accessLevel = nextLevel;
         }
-      } finally { btn.disabled = false; }
+      } finally {
+        btn.disabled = false;
+      }
     });
-    sel.dataset._original = sel.value;
   });
 
   // Security manage button

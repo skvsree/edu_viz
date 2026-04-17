@@ -69,18 +69,52 @@
             title="Toggle theme (T)"
           >🌙</button>
           {% if user %}
-            <a href="/dashboard">Home</a>
+            <a href="/dashboard" class="topbar-link topbar-link--home" aria-label="Home" title="Home">
+              <span class="topbar-link__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 10.5 12 3l9 7.5"></path>
+                  <path d="M5 9.5V20h14V9.5"></path>
+                </svg>
+              </span>
+              <span class="topbar-link__text">Home</span>
+            </a>
             {% if user.role in ["admin", "system_admin"] %}
-              <a href="/analytics">Analytics</a>
-              <a href="/settings">Settings</a>
+              <a href="/analytics" class="topbar-link topbar-link--analytics" aria-label="Analytics" title="Analytics">
+                <span class="topbar-link__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19h16"></path>
+                    <path d="M7 16V9"></path>
+                    <path d="M12 16V5"></path>
+                    <path d="M17 16v-4"></path>
+                  </svg>
+                </span>
+                <span class="topbar-link__text">Analytics</span>
+              </a>
+              <a href="/settings" class="topbar-link topbar-link--settings" aria-label="Settings" title="Settings">
+                <span class="topbar-link__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 8.91 4.6 1.65 1.65 0 0 0 10 3.09V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.58.92.94 1.6 1H21a2 2 0 0 1 0 4h-.09c-.68.06-1.24.42-1.51 1Z"></path>
+                  </svg>
+                </span>
+                <span class="topbar-link__text">Settings</span>
+              </a>
             {% endif %}
             <div class="user-menu">
               <div class="user-menu__meta user-menu__meta--inline">
-                <span class="user-menu__dot"></span>
                 <span class="user-menu__text">{{ user.email or user.identity_sub }}</span>
               </div>
               <form action="/logout" method="post">
-                <button type="submit" class="user-menu__logout user-menu__logout--inline">Logout</button>
+                <button type="submit" class="user-menu__logout user-menu__logout--inline topbar-link topbar-link--logout" aria-label="Logout" title="Logout">
+                  <span class="topbar-link__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                      <path d="M16 17l5-5-5-5"></path>
+                      <path d="M21 12H9"></path>
+                    </svg>
+                  </span>
+                  <span class="topbar-link__text">Logout</span>
+                </button>
               </form>
             </div>
           {% else %}
