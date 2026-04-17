@@ -63,6 +63,10 @@
 - Global/Org badge and access icon may sit side by side
 - Star on the right, not overlapping checkbox
 - Avoid extra right-edge clipping by keeping some right padding in `.browse-content-scroll`
+- Mobile top nav now uses icons for Home, Analytics, Settings, and Logout to save width.
+- Mobile header user/email area should stay compact: no green status dot, very small padding, truncated text.
+- Browse page should not repeat the current folder name above the search box.
+- Mobile browse header/action/search spacing is intentionally tight; prefer reducing padding/margins before changing structure.
 
 ## Deck access model
 - Deck visibility scope lives on `Deck.access_level` with values:
