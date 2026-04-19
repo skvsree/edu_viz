@@ -114,3 +114,90 @@ def test_users_page_shows_org_assignment_for_system_admin():
     assert "learner@example.com" in body
     assert f'value="{org.id}"' in body
     assert "Save user" in body
+
+
+class JobsSettingsDB(FakeDB):
+    def __init__(self, execute_results=None):
+        super().__init__(objects={})
+        self.execute_results = list(execute_results or [])
+
+    def execute(self, stmt):
+        result = self.execute_results.pop(0) if self.execute_results else []
+        if isinstance(result, list) and result and isinstance(result[0], tuple):
+            return SimpleNamespace(all=lambda: list(result))
+        return FakeResult(result)
+
+
+def test_jobs_page_shows_retry_for_failed_bulk_job():
+    admin = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="root@example.com",
+        identity_sub="root-sub",
+    )
+    bulk_id = uuid4()
+    deck_id = uuid4()
+    job = SimpleNamespace(
+        id=uuid4(),
+        job_type="bulk_ai_upload",
+        status="failed",
+        processed_items=2,
+        total_items=4,
+        failed_items=1,
+        created_at=None,
+        completed_at=None,
+        reference_id=bulk_id,
+    )
+    bulk = SimpleNamespace(
+        id=bulk_id,
+        filename="batch.zip",
+        total_files=4,
+        status="failed",
+        deck_id=deck_id,
+    )
+    deck = SimpleNamespace(id=deck_id, name="Deck One")
+    db = JobsSettingsDB([[job], [bulk], [(bulk_id, deck)], [deck]])
+
+    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+
+    body = render_body(response)
+    assert response.status_code == 200
+    assert f"/api/v1/bulk-ai-upload/{bulk_id}/resume" in body
+    assert ">Retry<" in body
+
+
+def test_jobs_page_hides_retry_for_running_bulk_job():
+    admin = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="root@example.com",
+        identity_sub="root-sub",
+    )
+    bulk_id = uuid4()
+    job = SimpleNamespace(
+        id=uuid4(),
+        job_type="bulk_ai_upload",
+        status="running",
+        processed_items=1,
+        total_items=4,
+        failed_items=0,
+        created_at=None,
+        completed_at=None,
+        reference_id=bulk_id,
+    )
+    bulk = SimpleNamespace(
+        id=bulk_id,
+        filename="batch.zip",
+        total_files=4,
+        status="processing",
+        deck_id=None,
+    )
+    db = JobsSettingsDB([[job], [bulk], [], []])
+
+    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+
+    body = render_body(response)
+    assert response.status_code == 200
+    assert f"/api/v1/bulk-ai-upload/{bulk_id}/resume" not in body

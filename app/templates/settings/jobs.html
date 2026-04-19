@@ -82,18 +82,27 @@
                   <td class="jobs-time" data-job-completed-cell>{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
                 </tr>
                 {% if bulks.get(job.reference_id) %}
+                  {% set bulk = bulks[job.reference_id] %}
+                  {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and job.status in ["failed", "completed"] and bulk.status in ["failed", "stopped"] %}
                   <tr class="jobs-table-bulk-row">
                     <td colspan="6">
                       <div class="jobs-bulk-row">
                         <div>
-                          <div>Bulk: {{ bulks[job.reference_id].filename }} ({{ bulks[job.reference_id].total_files }} files)</div>
+                          <div>Bulk: {{ bulk.filename }} ({{ bulk.total_files }} files)</div>
                           <div class="jobs-bulk-links">
                             {% for deck in bulk_output_decks.get(job.reference_id, []) %}
                               <a href="/decks/{{ deck.id }}">{{ deck.name }}</a>
                             {% endfor %}
                           </div>
                         </div>
-                        <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
+                        <div class="jobs-bulk-actions">
+                          {% if can_retry_bulk %}
+                            <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
+                              <button type="submit" class="btn btn-sm">Retry</button>
+                            </form>
+                          {% endif %}
+                          <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -151,17 +160,26 @@
               </div>
 
               {% if bulks.get(job.reference_id) %}
+                {% set bulk = bulks[job.reference_id] %}
+                {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and job.status in ["failed", "completed"] and bulk.status in ["failed", "stopped"] %}
                 <div class="jobs-mobile-bulk">
                   <p class="jobs-mobile-label">Bulk upload</p>
-                  <p>{{ bulks[job.reference_id].filename }}</p>
+                  <p>{{ bulk.filename }}</p>
                   <div class="jobs-bulk-links jobs-bulk-links--mobile">
                     {% for deck in bulk_output_decks.get(job.reference_id, []) %}
                       <a href="/decks/{{ deck.id }}">{{ deck.name }}</a>
                     {% endfor %}
                   </div>
                   <div class="jobs-mobile-bulk__meta">
-                    <span>{{ bulks[job.reference_id].total_files }} files</span>
-                    <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
+                    <span>{{ bulk.total_files }} files</span>
+                    <div class="jobs-bulk-actions jobs-bulk-actions--mobile">
+                      {% if can_retry_bulk %}
+                        <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
+                          <button type="submit" class="btn btn-sm">Retry</button>
+                        </form>
+                      {% endif %}
+                      <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
+                    </div>
                   </div>
                 </div>
               {% endif %}
@@ -302,6 +320,22 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.85rem;
+  }
+
+  .jobs-bulk-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  .jobs-bulk-actions--mobile {
+    justify-content: flex-start;
+  }
+
+  .jobs-retry-form {
+    margin: 0;
   }
 
   .jobs-bulk-row a,
