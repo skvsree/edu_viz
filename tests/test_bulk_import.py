@@ -26,7 +26,14 @@ class RecordingResult:
 
 
 class RecordingDB:
-    def __init__(self, *, system_admin, existing_deck=None, existing_cards=None, existing_tags=None):
+    def __init__(
+        self,
+        *,
+        system_admin,
+        existing_deck=None,
+        existing_cards=None,
+        existing_tags=None,
+    ):
         self.system_admin = system_admin
         self.existing_deck = existing_deck
         self.existing_cards = existing_cards or []
@@ -135,9 +142,17 @@ def test_bulk_import_creates_global_chapter_science_deck_and_cards_with_default_
     assert response.mcqs_imported == 1
     assert response.total_cards_imported == 2
     assert db.committed is True
-    created_deck = next(item for item in db.added if getattr(item, "name", None) == "grade_6_science_chapter_3")
+    created_deck = next(
+        item
+        for item in db.added
+        if getattr(item, "name", None) == "grade_6_science_chapter_3"
+    )
     assert created_deck.is_global is True
-    assert {tag.name for tag in created_deck.tags} == {"grade_6", "chapter_3", "science"}
+    assert {tag.name for tag in created_deck.tags} == {
+        "grade_6",
+        "chapter_3",
+        "science",
+    }
 
 
 def test_bulk_import_creates_full_grade_science_deck_name():
@@ -152,8 +167,16 @@ def test_bulk_import_creates_full_grade_science_deck_name():
     response = bulk_import.import_chapter_deck(payload, db=db)
 
     assert response.deck_name == "grade_6_science_full"
-    created_deck = next(item for item in db.added if getattr(item, "name", None) == "grade_6_science_full")
-    assert {tag.name for tag in created_deck.tags} == {"grade_6", "science", "full_book"}
+    created_deck = next(
+        item
+        for item in db.added
+        if getattr(item, "name", None) == "grade_6_science_full"
+    )
+    assert {tag.name for tag in created_deck.tags} == {
+        "grade_6",
+        "science",
+        "full_book",
+    }
 
 
 def test_bulk_import_creates_subject_full_deck_name():
@@ -169,8 +192,16 @@ def test_bulk_import_creates_subject_full_deck_name():
     response = bulk_import.import_chapter_deck(payload, db=db)
 
     assert response.deck_name == "grade_11_biology_full"
-    created_deck = next(item for item in db.added if getattr(item, "name", None) == "grade_11_biology_full")
-    assert {tag.name for tag in created_deck.tags} == {"grade_11", "biology", "full_book"}
+    created_deck = next(
+        item
+        for item in db.added
+        if getattr(item, "name", None) == "grade_11_biology_full"
+    )
+    assert {tag.name for tag in created_deck.tags} == {
+        "grade_11",
+        "biology",
+        "full_book",
+    }
 
 
 def test_bulk_import_skips_duplicate_cards_on_rerun():
@@ -202,7 +233,11 @@ def test_bulk_import_skips_duplicate_cards_on_rerun():
             mcq_answer_index=1,
         ),
     ]
-    db = RecordingDB(system_admin=_system_admin(org_id=uuid4()), existing_deck=existing_deck, existing_cards=existing_cards)
+    db = RecordingDB(
+        system_admin=_system_admin(org_id=uuid4()),
+        existing_deck=existing_deck,
+        existing_cards=existing_cards,
+    )
     payload = bulk_import.BulkImportDeckPayload(
         grade_no=6,
         chapter_no=3,

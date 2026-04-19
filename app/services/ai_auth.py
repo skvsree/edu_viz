@@ -71,11 +71,20 @@ def is_env_ai_available(provider: str = "openai") -> bool:
 
 def has_scope_credential(db: Session, scope_type: str, scope_id) -> bool:
     """Check if a scope (user/org) has any AI credential stored."""
-    return db.query(AICredentialScope).filter_by(scope_type=scope_type, scope_id=str(scope_id)).first() is not None
+    if not hasattr(db, "query"):
+        return False
+    return (
+        db.query(AICredentialScope)
+        .filter_by(scope_type=scope_type, scope_id=str(scope_id))
+        .first()
+        is not None
+    )
 
 
 def get_scope_provider(db: Session, scope_type: str, scope_id, default: str = "openai") -> str | None:
     """Return the provider name for a scope's stored credential, or default if env-based."""
+    if not hasattr(db, "query"):
+        return default if is_env_ai_available() else None
     cred = db.query(AICredentialScope).filter_by(scope_type=scope_type, scope_id=str(scope_id)).first()
     if cred:
         return cred.provider

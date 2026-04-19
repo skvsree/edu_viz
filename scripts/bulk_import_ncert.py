@@ -10,10 +10,13 @@ from collections import defaultdict
 from pathlib import Path
 from urllib import error, request
 
-
 DEFAULT_ANKI_ROOT = Path("/root/.openclaw/workspace/ncert-books-science/anki_all_books")
-DEFAULT_MCQ_ROOT = Path("/root/.openclaw/workspace/ncert-books-science/grounded_mcq_pipeline/work/chapters")
-DEFAULT_MCQ_OUTPUT_ROOT = Path("/root/.openclaw/workspace/ncert-books-science/grounded_mcq_pipeline/outputs")
+DEFAULT_MCQ_ROOT = Path(
+    "/root/.openclaw/workspace/ncert-books-science/grounded_mcq_pipeline/work/chapters"
+)
+DEFAULT_MCQ_OUTPUT_ROOT = Path(
+    "/root/.openclaw/workspace/ncert-books-science/grounded_mcq_pipeline/outputs"
+)
 API_PATH = "/api/v1/import/deck"
 
 
@@ -22,17 +25,54 @@ class ImportErrorRuntime(RuntimeError):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Import NCERT Anki + MCQ chapter decks into edu_viz via API")
-    parser.add_argument("--base-url", required=True, help="Base URL, e.g. https://qa.edu.selviz.in or https://edu.selviz.in")
+    parser = argparse.ArgumentParser(
+        description="Import NCERT Anki + MCQ chapter decks into edu_viz via API"
+    )
+    parser.add_argument(
+        "--base-url",
+        required=True,
+        help="Base URL, e.g. https://qa.edu.selviz.in or https://edu.selviz.in",
+    )
     parser.add_argument("--api-key", required=True, help="Bulk import API key")
     parser.add_argument("--anki-root", default=str(DEFAULT_ANKI_ROOT))
-    parser.add_argument("--mcq-root", default=str(DEFAULT_MCQ_ROOT), help="Preferred MCQ discovery root; work/chapters accepted, final MCQ JSONs auto-resolved when available")
-    parser.add_argument("--mcq-output-root", default=str(DEFAULT_MCQ_OUTPUT_ROOT), help="Final MCQ JSON output root")
-    parser.add_argument("--extra-tag", action="append", default=[], help="Additional deck tag; can be repeated")
-    parser.add_argument("--include-full-grade-decks", action="store_true", help="Also create combined per-grade full decks")
-    parser.add_argument("--grade", type=int, action="append", help="Limit import to one or more grades")
-    parser.add_argument("--chapter", type=int, action="append", help="Limit import to one or more chapter numbers")
-    parser.add_argument("--dry-run", action="store_true", help="Build payloads and print summary without POSTing")
+    parser.add_argument(
+        "--mcq-root",
+        default=str(DEFAULT_MCQ_ROOT),
+        help=(
+            "Preferred MCQ discovery root; work/chapters accepted, "
+            "final MCQ JSONs auto-resolved when available"
+        ),
+    )
+    parser.add_argument(
+        "--mcq-output-root",
+        default=str(DEFAULT_MCQ_OUTPUT_ROOT),
+        help="Final MCQ JSON output root",
+    )
+    parser.add_argument(
+        "--extra-tag",
+        action="append",
+        default=[],
+        help="Additional deck tag; can be repeated",
+    )
+    parser.add_argument(
+        "--include-full-grade-decks",
+        action="store_true",
+        help="Also create combined per-grade full decks",
+    )
+    parser.add_argument(
+        "--grade", type=int, action="append", help="Limit import to one or more grades"
+    )
+    parser.add_argument(
+        "--chapter",
+        type=int,
+        action="append",
+        help="Limit import to one or more chapter numbers",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build payloads and print summary without POSTing",
+    )
     return parser.parse_args()
 
 
@@ -77,7 +117,9 @@ def load_anki_by_deck(anki_root: Path) -> dict[tuple[int, int], list[dict]]:
     return decks
 
 
-def load_mcqs_by_deck(mcq_root: Path, mcq_output_root: Path) -> dict[tuple[int, int], list[dict]]:
+def load_mcqs_by_deck(
+    mcq_root: Path, mcq_output_root: Path
+) -> dict[tuple[int, int], list[dict]]:
     decks: dict[tuple[int, int], list[dict]] = defaultdict(list)
     candidate_roots: list[Path] = []
     if mcq_root.exists():
@@ -211,8 +253,9 @@ def main() -> int:
 
     print(f"Prepared {len(payloads)} deck payload(s)")
     for payload in payloads[:10]:
+        deck_slug = payload.get("slug") or payload.get("name") or "unknown-deck"
         print(
-            f"- {'grade_%s_science_full' % payload['grade_no'] if payload['chapter_no'] is None else 'grade_%s_science_chapter_%s' % (payload['grade_no'], payload['chapter_no'])}: "
+            f"- {deck_slug}: "
             f"{len(payload['flashcards'])} flashcards, {len(payload['mcqs'])} mcqs"
         )
     if len(payloads) > 10:

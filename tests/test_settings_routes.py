@@ -35,7 +35,13 @@ class SettingsDB(FakeDB):
 
 
 def test_settings_home_visible_for_admin():
-    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=uuid4(), email="admin@example.com", identity_sub="admin-sub")
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_ADMIN,
+        organization_id=uuid4(),
+        email="admin@example.com",
+        identity_sub="admin-sub",
+    )
     db = SettingsDB(users=[SimpleNamespace(id=uuid4())])
 
     response = pages.settings_home(make_request(path="/settings"), user=user, db=db)
@@ -48,11 +54,24 @@ def test_settings_home_visible_for_admin():
 
 
 def test_organizations_page_visible_for_system_admin():
-    org = SimpleNamespace(id=uuid4(), name="Northwind", is_ai_enabled=True, users=[SimpleNamespace(id=uuid4())])
-    user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=None, email="root@example.com", identity_sub="root-sub")
+    org = SimpleNamespace(
+        id=uuid4(),
+        name="Northwind",
+        is_ai_enabled=True,
+        users=[SimpleNamespace(id=uuid4())],
+    )
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="root@example.com",
+        identity_sub="root-sub",
+    )
     db = SettingsDB(organizations=[org])
 
-    response = pages.organizations_page(make_request(path="/settings/organizations"), user=user, db=db)
+    response = pages.organizations_page(
+        make_request(path="/settings/organizations"), user=user, db=db
+    )
 
     body = render_body(response)
     assert response.status_code == 200
@@ -60,8 +79,11 @@ def test_organizations_page_visible_for_system_admin():
     assert "Add organization" in body
     assert "Northwind" in body
     assert 'data-organization-name="Northwind"' in body
-    assert f'data-organization-update-action="/settings/organizations/{org.id}/update"' in body
-    assert 'const supportsModalDialog =' in body
+    assert (
+        f'data-organization-update-action="/settings/organizations/{org.id}/update"'
+        in body
+    )
+    assert "const supportsModalDialog =" in body
 
 
 def test_users_page_shows_org_assignment_for_system_admin():
@@ -75,7 +97,13 @@ def test_users_page_shows_org_assignment_for_system_admin():
         organization=org,
         is_test_enabled=True,
     )
-    user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=None, email="root@example.com", identity_sub="root-sub")
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="root@example.com",
+        identity_sub="root-sub",
+    )
     db = SettingsDB(organizations=[org], users=[member], objects={member.id: member})
 
     response = pages.users_page(make_request(path="/settings/users"), user=user, db=db)

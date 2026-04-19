@@ -53,7 +53,8 @@ def build_prompt(text: str) -> str:
         "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
         "Generate a comprehensive, high-value study pack from this source text. "
         "Include as many useful flashcards and MCQs as the material naturally supports without padding or repetition. "
-        "Cover key definitions, mechanisms, cause-effect links, comparisons, classifications, formulas, and exam-relevant traps. "
+        "Cover key definitions, mechanisms, cause-effect links, "
+        "comparisons, classifications, formulas, and exam-relevant traps. "
         "Make the MCQs NEET-style, concept-focused, and not trivial.\n\n"
         f"{text}"
     )

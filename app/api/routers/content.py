@@ -440,7 +440,6 @@ def _require_mcq_json_access(user: User) -> None:
         raise HTTPException(status_code=403, detail="You do not have permission to import MCQ JSON.")
 
 
-
 @router.get("/decks/{deck_id}/ai-import/status")
 def ai_import_deck_content_status(
     deck_id: str,
@@ -937,7 +936,10 @@ def bulk_delete_mcqs(
             status_code=303,
         )
 
-    deleted_ai_generated = any((card.source_label or "").startswith("ai-mcq") for card in cards)
+    deleted_ai_generated = any(
+        (getattr(card, "source_label", "") or "").startswith("ai-mcq")
+        for card in cards
+    )
 
     _delete_cards_with_test_dependencies(db, card_ids=unique_ids)
 

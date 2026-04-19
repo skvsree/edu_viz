@@ -113,13 +113,22 @@ def _derive_best_title(lines: list[str], filename: str) -> str:
             re.IGNORECASE,
         )
         if match:
-            chapter_number = match.group(1).upper() if re.fullmatch(r"[ivxlcdm]+", match.group(1), re.IGNORECASE) else match.group(1)
+            chapter_number = (
+                match.group(1).upper()
+                if re.fullmatch(r"[ivxlcdm]+", match.group(1), re.IGNORECASE)
+                else match.group(1)
+            )
             chapter_title_part = _clean_title_line(match.group(2))
             chapter_line = line
             break
         match = re.match(r"^chapter\s+([0-9]+|[ivxlcdm]+)\b$", line, re.IGNORECASE)
         if match:
-            chapter_number = match.group(1).upper() if re.fullmatch(r"[ivxlcdm]+", match.group(1), re.IGNORECASE) else match.group(1)
+            chapter_match = match.group(1)
+            chapter_number = (
+                chapter_match.upper()
+                if re.fullmatch(r"[ivxlcdm]+", chapter_match, re.IGNORECASE)
+                else chapter_match
+            )
             chapter_line = line
             continue
         if chapter_number and not chapter_title_part and line.lower() != chapter_line.lower():
@@ -162,8 +171,9 @@ def _is_retryable_529_error(exc: Exception) -> bool:
     return bool(re.search(r"\b529\b", message) and "overloaded" in message.lower())
 
 
-
-def _generate_text_with_retry(provider_client, prompt: str, credential, *, log_prefix: str) -> str:
+def _generate_text_with_retry(
+    provider_client, prompt: str, credential, *, log_prefix: str
+) -> str:
     attempt = 0
     while True:
         attempt += 1
@@ -185,8 +195,9 @@ def _generate_text_with_retry(provider_client, prompt: str, credential, *, log_p
             raise
 
 
-
-def _generate_pack_with_retry(provider_client, prompt: str, credential, *, log_prefix: str):
+def _generate_pack_with_retry(
+    provider_client, prompt: str, credential, *, log_prefix: str
+):
     attempt = 0
     while True:
         attempt += 1
@@ -208,8 +219,9 @@ def _generate_pack_with_retry(provider_client, prompt: str, credential, *, log_p
             raise
 
 
-
-def _resolve_ai_provider_and_credential(db: Session, user: User):
+def _resolve_ai_provider_and_credential(
+    db: Session, user: User
+):
     from app.models import Organization
 
     provider = get_scope_provider(db, "user", user.id) if user.id else None

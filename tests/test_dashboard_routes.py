@@ -12,7 +12,11 @@ from app.services.access import ROLE_ADMIN, ROLE_SYSTEM_ADMIN, ROLE_USER
 
 
 class FakeDB:
-    def __init__(self, objects: dict[object, object] | None = None, execute_results: list[object] | None = None):
+    def __init__(
+        self,
+        objects: dict[object, object] | None = None,
+        execute_results: list[object] | None = None,
+    ):
         self.objects = objects or {}
         self.execute_results = execute_results or []
         self.added: list[object] = []
@@ -98,8 +102,12 @@ def test_dashboard_shows_deck_actions_for_manageable_deck():
             last_reviewed=None,
         )
     ]
-    with patch.object(pages, "list_accessible_deck_stats", lambda db, *, user: deck_stats):
-        response = pages.dashboard(make_request(), user=user, db=FakeDB({deck.id: deck}))
+    with patch.object(
+        pages, "list_accessible_deck_stats", lambda db, *, user: deck_stats
+    ):
+        response = pages.dashboard(
+            make_request(), user=user, db=FakeDB({deck.id: deck})
+        )
 
     body = render_body(response)
     assert "Add deck" in body
@@ -133,7 +141,7 @@ def test_create_deck_validation_error_reopens_create_modal():
     assert "Deck name is required." in body
     assert 'id="create-deck-modal"' in body
     assert 'data-open-on-load="true"' in body
-    assert 'Create a new study space' in body
+    assert "Create a new study space" in body
 
 
 def test_update_deck_validation_error_reopens_edit_modal():
@@ -222,7 +230,15 @@ def test_dashboard_hides_management_actions_for_regular_user():
     with patch.object(
         pages,
         "list_accessible_deck_stats",
-        lambda db, *, user: [SimpleNamespace(deck=deck, cards_reviewed=0, cards_due=0, accuracy=None, last_reviewed=None)],
+        lambda db, *, user: [
+            SimpleNamespace(
+                deck=deck,
+                cards_reviewed=0,
+                cards_due=0,
+                accuracy=None,
+                last_reviewed=None,
+            )
+        ],
     ):
         response = pages.dashboard(make_request(), user=user, db=FakeDB())
 
@@ -244,7 +260,13 @@ def test_deck_overview_links_to_split_management_pages():
         name="Biology",
         description="Cells and tissues",
     )
-    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=False)
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_ADMIN,
+        organization_id=org_id,
+        organization=SimpleNamespace(is_ai_enabled=True),
+        is_test_enabled=False,
+    )
     cards = [
         SimpleNamespace(card_type="basic"),
         SimpleNamespace(card_type="basic"),
@@ -279,15 +301,26 @@ def test_flashcards_page_keeps_flashcard_management_together():
         name="Biology",
         description=None,
     )
-    flashcard = SimpleNamespace(id=uuid4(), card_type="basic", front="Front", back="Back")
-    mcq = SimpleNamespace(id=uuid4(), card_type="mcq", front="Question", back="Answer", mcq_options=["A", "B", "C", "D"], mcq_answer_index=1)
+    flashcard = SimpleNamespace(
+        id=uuid4(), card_type="basic", front="Front", back="Back"
+    )
+    mcq = SimpleNamespace(
+        id=uuid4(),
+        card_type="mcq",
+        front="Question",
+        back="Answer",
+        mcq_options=["A", "B", "C", "D"],
+        mcq_answer_index=1,
+    )
     user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id)
 
     response = pages.deck_flashcards(
         make_request(path=f"/decks/{deck.id}/flashcards"),
         deck_id=str(deck.id),
         user=user,
-        db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[flashcard, mcq]),
+        db=FakeDB(
+            {str(deck.id): deck, deck.id: deck}, execute_results=[flashcard, mcq]
+        ),
     )
 
     body = render_body(response)
@@ -309,15 +342,32 @@ def test_mcqs_page_keeps_admin_features_and_mcq_list():
         name="Biology",
         description=None,
     )
-    flashcard = SimpleNamespace(id=uuid4(), card_type="basic", front="Front", back="Back")
-    mcq = SimpleNamespace(id=uuid4(), card_type="mcq", front="Question", back="Answer", mcq_options=["A", "B", "C", "D"], mcq_answer_index=1)
-    user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=True)
+    flashcard = SimpleNamespace(
+        id=uuid4(), card_type="basic", front="Front", back="Back"
+    )
+    mcq = SimpleNamespace(
+        id=uuid4(),
+        card_type="mcq",
+        front="Question",
+        back="Answer",
+        mcq_options=["A", "B", "C", "D"],
+        mcq_answer_index=1,
+    )
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_ADMIN,
+        organization_id=org_id,
+        organization=SimpleNamespace(is_ai_enabled=True),
+        is_test_enabled=True,
+    )
 
     response = pages.deck_mcqs(
         make_request(path=f"/decks/{deck.id}/mcqs"),
         deck_id=str(deck.id),
         user=user,
-        db=FakeDB({str(deck.id): deck, deck.id: deck}, execute_results=[flashcard, mcq]),
+        db=FakeDB(
+            {str(deck.id): deck, deck.id: deck}, execute_results=[flashcard, mcq]
+        ),
     )
 
     body = render_body(response)
@@ -331,15 +381,26 @@ def test_mcqs_page_keeps_admin_features_and_mcq_list():
 
 def test_create_card_redirects_to_flashcards_page():
     org_id = uuid4()
-    deck = SimpleNamespace(id=uuid4(), is_deleted=False, is_global=False, organization_id=org_id, user_id=uuid4())
+    deck = SimpleNamespace(
+        id=uuid4(),
+        is_deleted=False,
+        is_global=False,
+        organization_id=org_id,
+        user_id=uuid4(),
+    )
     user = SimpleNamespace(id=uuid4(), role=ROLE_ADMIN, organization_id=org_id)
     db = FakeDB({str(deck.id): deck, deck.id: deck})
 
-    response = pages.create_card(deck_id=str(deck.id), front="Question", back="Answer", user=user, db=db)
+    response = pages.create_card(
+        deck_id=str(deck.id), front="Question", back="Answer", user=user, db=db
+    )
 
     assert isinstance(response, RedirectResponse)
     assert response.status_code == 303
-    assert response.headers["location"] == f"/decks/{deck.id}/flashcards?import_success=Flashcard+added"
+    assert (
+        response.headers["location"]
+        == f"/decks/{deck.id}/flashcards?import_success=Flashcard+added"
+    )
     assert db.committed is True
 
 
@@ -432,7 +493,13 @@ def test_deck_overview_edit_form_shows_global_toggle_for_system_admin():
         name="Biology",
         description="Cells and tissues",
     )
-    user = SimpleNamespace(id=uuid4(), role=ROLE_SYSTEM_ADMIN, organization_id=None, organization=SimpleNamespace(is_ai_enabled=True), is_test_enabled=False)
+    user = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        organization=SimpleNamespace(is_ai_enabled=True),
+        is_test_enabled=False,
+    )
 
     response = pages.deck_overview(
         make_request(path=f"/decks/{deck.id}"),

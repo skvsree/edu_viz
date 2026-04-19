@@ -321,7 +321,10 @@ def start_single_deck_ai_upload(
         .order_by(Job.created_at.desc())
         .limit(1)
     ).scalars().first()
-    wants_json = "application/json" in (request.headers.get("accept") or "") or request.headers.get("x-requested-with") == "fetch"
+    wants_json = (
+        "application/json" in (request.headers.get("accept") or "")
+        or request.headers.get("x-requested-with") == "fetch"
+    )
 
     if existing_pending_job:
         payload = {
@@ -332,7 +335,10 @@ def start_single_deck_ai_upload(
         if wants_json:
             return JSONResponse(payload)
         return RedirectResponse(
-            url=f"/settings/jobs?submitted=bulk-ai-upload&job={existing_pending_job.id}&notice=Bulk+upload+already+running",
+            url=(
+                f"/settings/jobs?submitted=bulk-ai-upload&job={existing_pending_job.id}"
+                "&notice=Bulk+upload+already+running"
+            ),
             status_code=303,
         )
 

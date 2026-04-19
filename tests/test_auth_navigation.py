@@ -65,7 +65,11 @@ def test_login_starts_oauth_for_anonymous_user():
 
     oauth.microsoft.authorize_redirect = fake_authorize_redirect
 
-    with patch.object(auth, "load_identity_config", return_value=SimpleNamespace(redirect_uri="https://callback.example.test")):
+    with patch.object(
+        auth,
+        "load_identity_config",
+        return_value=SimpleNamespace(redirect_uri="https://callback.example.test"),
+    ):
         with patch.object(auth, "build_oauth", return_value=oauth):
             response = asyncio.run(auth.login(make_request(path="/login"), user=None))
 
@@ -73,7 +77,11 @@ def test_login_starts_oauth_for_anonymous_user():
 
 
 def test_new_oidc_user_gets_tests_enabled_by_default():
-    db = SimpleNamespace(execute=lambda stmt: SimpleNamespace(scalars=lambda: SimpleNamespace(first=lambda: None)))
+    db = SimpleNamespace(
+        execute=lambda stmt: SimpleNamespace(
+            scalars=lambda: SimpleNamespace(first=lambda: None)
+        )
+    )
     added: list[User] = []
 
     def add(obj):
@@ -104,7 +112,9 @@ def test_build_oauth_uses_split_authorize_url():
         redirect_uri="https://callback.example.test",
     )
 
-    with patch("app.services.microsoft_identity.load_identity_config", return_value=cfg):
+    with patch(
+        "app.services.microsoft_identity.load_identity_config", return_value=cfg
+    ):
         oauth = build_oauth()
 
     client = oauth.create_client("microsoft")
@@ -120,9 +130,16 @@ def test_load_identity_config_derives_separate_authorize_url():
             microsoft_entra_external_id_client_secret="client-secret",
             microsoft_entra_external_id_redirect_uri="https://callback.example.test",
             microsoft_entra_external_id_scopes="openid profile email",
-            microsoft_entra_external_id_authority="https://contoso.ciamlogin.com/contoso.onmicrosoft.com",
-            microsoft_entra_external_id_authorize_authority="https://login.contoso.com/custom-authority",
-            microsoft_entra_external_id_metadata_url="https://contoso.ciamlogin.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration",
+            microsoft_entra_external_id_authority=(
+                "https://contoso.ciamlogin.com/contoso.onmicrosoft.com"
+            ),
+            microsoft_entra_external_id_authorize_authority=(
+                "https://login.contoso.com/custom-authority"
+            ),
+            microsoft_entra_external_id_metadata_url=(
+                "https://contoso.ciamlogin.com/contoso.onmicrosoft.com/"
+                "v2.0/.well-known/openid-configuration"
+            ),
             azure_b2c_client_id=None,
             azure_b2c_client_secret=None,
             azure_b2c_redirect_uri=None,
@@ -133,8 +150,14 @@ def test_load_identity_config_derives_separate_authorize_url():
     ):
         cfg = load_identity_config()
 
-    assert cfg.metadata_url == "https://contoso.ciamlogin.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration"
-    assert cfg.authorize_url == "https://login.contoso.com/custom-authority/oauth2/v2.0/authorize"
+    assert (
+        cfg.metadata_url
+        == "https://contoso.ciamlogin.com/contoso.onmicrosoft.com/v2.0/.well-known/openid-configuration"
+    )
+    assert (
+        cfg.authorize_url
+        == "https://login.contoso.com/custom-authority/oauth2/v2.0/authorize"
+    )
 
 
 def test_load_identity_config_ignores_broad_authorize_authority_when_metadata_is_tenant_scoped():
@@ -146,8 +169,13 @@ def test_load_identity_config_ignores_broad_authorize_authority_when_metadata_is
             microsoft_entra_external_id_redirect_uri="https://callback.example.test",
             microsoft_entra_external_id_scopes="openid profile email",
             microsoft_entra_external_id_authority=None,
-            microsoft_entra_external_id_authorize_authority="https://login.microsoftonline.com/organizations",
-            microsoft_entra_external_id_metadata_url="https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration",
+            microsoft_entra_external_id_authorize_authority=(
+                "https://login.microsoftonline.com/organizations"
+            ),
+            microsoft_entra_external_id_metadata_url=(
+                "https://login.microsoftonline.com/tenant-id/"
+                "v2.0/.well-known/openid-configuration"
+            ),
             azure_b2c_client_id=None,
             azure_b2c_client_secret=None,
             azure_b2c_redirect_uri=None,
@@ -158,7 +186,10 @@ def test_load_identity_config_ignores_broad_authorize_authority_when_metadata_is
     ):
         cfg = load_identity_config()
 
-    assert cfg.metadata_url == "https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration"
+    assert (
+        cfg.metadata_url
+        == "https://login.microsoftonline.com/tenant-id/v2.0/.well-known/openid-configuration"
+    )
     assert cfg.authorize_url is None
 
 
@@ -183,12 +214,20 @@ def test_load_identity_config_keeps_common_authority_aligned_for_authorize_and_m
     ):
         cfg = load_identity_config()
 
-    assert cfg.metadata_url == "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
-    assert cfg.authorize_url == "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    assert (
+        cfg.metadata_url
+        == "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration"
+    )
+    assert (
+        cfg.authorize_url
+        == "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    )
 
 
 def test_build_claims_options_skips_literal_issuer_check_for_common_metadata():
-    assert build_claims_options("https://login.microsoftonline.com/{tenantid}/v2.0") == {}
+    assert (
+        build_claims_options("https://login.microsoftonline.com/{tenantid}/v2.0") == {}
+    )
 
 
 def test_validate_userinfo_issuer_accepts_common_metadata_template_with_tid():

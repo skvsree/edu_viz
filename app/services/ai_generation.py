@@ -322,7 +322,6 @@ def build_title_generation_prompt(text: str, filename: str) -> str:
     )
 
 
-
 def parse_title_generation_json(raw: str) -> tuple[str | None, str | None]:
     raw = (raw or "").strip()
     candidates = [raw]
@@ -351,7 +350,6 @@ def parse_title_generation_json(raw: str) -> tuple[str | None, str | None]:
     title = str(data.get("title", "") or "").strip() or None
     description = str(data.get("description", "") or "").strip() or None
     return title, description
-
 
 
 def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
