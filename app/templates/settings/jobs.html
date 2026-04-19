@@ -83,7 +83,7 @@
                 </tr>
                 {% if bulks.get(job.reference_id) %}
                   {% set bulk = bulks[job.reference_id] %}
-                  {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and job.status in ["failed", "completed"] and bulk.status in ["failed", "stopped"] %}
+                  {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and bulk.status in ["failed", "stopped"] and bulk.error_message != "Queued upload file missing" %}
                   <tr class="jobs-table-bulk-row">
                     <td colspan="6">
                       <div class="jobs-bulk-row">
@@ -161,7 +161,7 @@
 
               {% if bulks.get(job.reference_id) %}
                 {% set bulk = bulks[job.reference_id] %}
-                {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and job.status in ["failed", "completed"] and bulk.status in ["failed", "stopped"] %}
+                {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and bulk.status in ["failed", "stopped"] and bulk.error_message != "Queued upload file missing" %}
                 <div class="jobs-mobile-bulk">
                   <p class="jobs-mobile-label">Bulk upload</p>
                   <p>{{ bulk.filename }}</p>
@@ -175,7 +175,7 @@
                     <div class="jobs-bulk-actions jobs-bulk-actions--mobile">
                       {% if can_retry_bulk %}
                         <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
-                          <button type="submit" class="btn btn-sm">Retry</button>
+                          <button type="submit" class="jobs-retry-button">Retry</button>
                         </form>
                       {% endif %}
                       <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>

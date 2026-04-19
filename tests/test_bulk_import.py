@@ -314,3 +314,59 @@ def test_bulk_import_batch_sums_results():
     assert response.total_mcqs_imported == 1
     assert response.total_cards_imported == 2
     assert len(response.imported_decks) == 2
+
+
+def test_resume_bulk_ai_upload_rejects_missing_storage():
+    from uuid import uuid4
+    from unittest.mock import patch
+
+    from fastapi import HTTPException
+
+    from app.api.routers import bulk_ai_upload
+    from app.models import BulkAIUploadStatus
+
+    user = SimpleNamespace(id=uuid4(), organization_id=None)
+    bulk_id = uuid4()
+    bulk = SimpleNamespace(
+        id=bulk_id,
+        filename="batch.zip",
+        total_files=1,
+        status=BulkAIUploadStatus.FAILED.value,
+        deck_id=None,
+    )
+    file_row = SimpleNamespace(
+        bulk_upload_id=bulk_id,
+        original_filename="a.pdf",
+        storage_key="bulk-ai-upload/missing/a.pdf",
+        status="failed",
+    )
+
+    class ResumeDB:
+        def __init__(self):
+            self.added = []
+            self.commits = 0
+
+        def get(self, model, value):
+            return bulk if value == str(bulk_id) or value == bulk_id else None
+
+        def execute(self, stmt):
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [file_row]))
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def commit(self):
+            self.commits += 1
+
+    db = ResumeDB()
+    storage = SimpleNamespace(open_bytes=lambda key: (_ for _ in ()).throw(FileNotFoundError(key)))
+
+    with patch.object(bulk_ai_upload, "get_storage", return_value=storage):
+        try:
+            bulk_ai_upload.resume_bulk_ai_upload(str(bulk_id), user=user, db=db)
+            assert False, "expected HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 409
+            assert "original upload files are missing" in exc.detail
+
+    assert db.added == []

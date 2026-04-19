@@ -623,12 +623,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     job.completed_at = datetime.utcnow()
     db.commit()
 
-    for file_record in file_records:
-        if file_record.storage_key and storage is not None:
-            try:
-                storage.delete_prefix(prefix=file_record.storage_key)
-            except Exception:
-                pass
+    # Keep original uploaded source files in object storage so failed jobs can be retried.
 
 
 def _mark_job_active(job_id: uuid.UUID) -> bool:

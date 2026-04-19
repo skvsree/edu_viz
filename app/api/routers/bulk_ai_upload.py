@@ -474,6 +474,30 @@ def resume_bulk_ai_upload(
     if bulk.status not in {BulkAIUploadStatus.STOPPED.value, BulkAIUploadStatus.FAILED.value}:
         raise HTTPException(status_code=400, detail="Bulk upload cannot be resumed")
 
+    file_records = db.execute(
+        select(BulkAIUploadFile).where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+    ).scalars().all()
+    missing_storage_keys = []
+    storage = get_storage()
+    for file_record in file_records:
+        if not file_record.storage_key:
+            missing_storage_keys.append(file_record.original_filename)
+            continue
+        try:
+            storage.open_bytes(key=file_record.storage_key)
+        except Exception:
+            missing_storage_keys.append(file_record.original_filename)
+
+    if missing_storage_keys:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Cannot retry because original upload files are missing from storage: "
+                + ", ".join(missing_storage_keys[:5])
+                + ("..." if len(missing_storage_keys) > 5 else "")
+            ),
+        )
+
     deck = _ensure_bulk_upload_deck(db, user, bulk.filename, None, existing_deck_id=bulk.deck_id)
     bulk.deck_id = deck.id
     _clear_deck_generated_content(db, deck.id)
