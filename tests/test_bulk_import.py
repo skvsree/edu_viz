@@ -7,7 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api import deps
-from app.api.routers import bulk_import
+from app.api.routers import bulk_ai_upload, bulk_import
 from app.services.access import ROLE_SYSTEM_ADMIN
 
 
@@ -316,13 +316,21 @@ def test_bulk_import_batch_sums_results():
     assert len(response.imported_decks) == 2
 
 
+def test_should_queue_archive_member_skips_macos_noise():
+    assert bulk_ai_upload._should_queue_archive_member("chapter1.pdf") is True
+    assert bulk_ai_upload._should_queue_archive_member("nested/chapter2.pdf") is True
+    assert bulk_ai_upload._should_queue_archive_member("__MACOSX/chapter1.pdf") is False
+    assert bulk_ai_upload._should_queue_archive_member("nested/._chapter1.pdf") is False
+    assert bulk_ai_upload._should_queue_archive_member("._chapter1.pdf") is False
+    assert bulk_ai_upload._should_queue_archive_member("notes.txt") is False
+
+
 def test_resume_bulk_ai_upload_rejects_missing_storage():
     from uuid import uuid4
     from unittest.mock import patch
 
     from fastapi import HTTPException
 
-    from app.api.routers import bulk_ai_upload
     from app.models import BulkAIUploadStatus
 
     user = SimpleNamespace(id=uuid4(), organization_id=None)

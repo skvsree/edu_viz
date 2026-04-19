@@ -34,6 +34,22 @@ from app.services.storage import StorageError, get_storage, guess_content_type
 router = APIRouter(prefix="/api/v1", tags=["bulk-ai-upload"])
 
 
+IGNORED_ZIP_PREFIXES = ("__MACOSX/",)
+IGNORED_ZIP_NAME_PREFIXES = ("._",)
+
+
+def _should_queue_archive_member(name: str) -> bool:
+    normalized = name.replace("\\", "/")
+    basename = Path(normalized).name
+    if not basename:
+        return False
+    if any(normalized.startswith(prefix) for prefix in IGNORED_ZIP_PREFIXES):
+        return False
+    if any(basename.startswith(prefix) for prefix in IGNORED_ZIP_NAME_PREFIXES):
+        return False
+    return normalized.lower().endswith(".pdf")
+
+
 def enqueue_ai_upload_job(
     db: Session,
     *,
@@ -70,7 +86,7 @@ def enqueue_ai_upload_job(
                 for info in archive.infolist():
                     if info.is_dir():
                         continue
-                    if not info.filename.lower().endswith(".pdf"):
+                    if not _should_queue_archive_member(info.filename):
                         continue
                     with archive.open(info) as file_obj:
                         files_to_queue.append((Path(info.filename).name, file_obj.read()))
