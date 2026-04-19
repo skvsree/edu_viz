@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -30,11 +30,8 @@ from app.models import (
     Tag,
     Test,
     TestAttempt,
-    TestAttemptAnswer,
-    TestQuestion,
     User,
     UserDeckFavorite,
-    deck_tags,
 )
 from app.models.analytics import AnalyticsEvent
 from app.models.card_state import CardState
@@ -1884,7 +1881,6 @@ def update_deck(
     cleaned_description = description.strip()
 
     redirect_target = next_url.strip() if isinstance(next_url, str) else ""
-    validation_error_target = f"/decks/{deck.id}"
 
     if not redirect_target.startswith("/"):
         redirect_target = "/dashboard"
