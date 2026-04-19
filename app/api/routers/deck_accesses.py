@@ -8,10 +8,33 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
 from app.core.db import get_db
-from app.models import Deck, DeckAccess, User
-from app.services.access import ACCESS_LEVELS, ACCESS_NONE, can_set_deck_access
+from app.models import Card, Deck, DeckAccess, User
+from app.services.access import ACCESS_LEVELS, ACCESS_NONE, can_manage_deck, can_set_deck_access
 
 router = APIRouter(prefix="/api/v1/decks", tags=["deck-access"])
+
+
+def _cleanup_deck_media(deck_id: uuid.UUID, db: Session) -> None:
+    media_keys = set()
+    for media_files in db.execute(
+        select(Card.media_files).where(Card.deck_id == deck_id, Card.media_files.is_not(None))
+    ).scalars():
+        if not media_files:
+            continue
+        for media_key in media_files:
+            if media_key:
+                media_keys.add(media_key)
+    if not media_keys:
+        return
+
+    from app.services.storage import get_storage
+
+    storage = get_storage()
+    for media_key in media_keys:
+        try:
+            storage.delete_prefix(prefix=media_key)
+        except Exception:
+            continue
 
 
 class DeckAccessGrant(BaseModel):
@@ -202,6 +225,23 @@ def revoke_deck_access(
 
 class DeckAccessLevelUpdate(BaseModel):
     access_level: str
+
+
+@router.delete("/{deck_id}", status_code=204)
+def delete_deck_api(
+    deck_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    deck = db.get(Deck, deck_id)
+    if not deck or deck.is_deleted:
+        raise HTTPException(status_code=404, detail="Deck not found")
+    if not can_manage_deck(user, deck):
+        raise HTTPException(status_code=404, detail="Deck not found")
+
+    _cleanup_deck_media(deck.id, db)
+    deck.is_deleted = True
+    db.commit()
 
 
 @router.put("/{deck_id}/access-level", response_model=dict)
