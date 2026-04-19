@@ -409,9 +409,19 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     f"[job-worker] ai title failed job={job.id} file={pdf_name} err={str(title_exc)[:200]}",
                     flush=True,
                 )
-                raise
+
             if not title:
-                raise AIGenerationError('AI provider did not return a usable title.')
+                fallback_title, fallback_description = extract_title_from_text(text, pdf_name)
+                title = fallback_title[:250] if fallback_title else None
+                if fallback_description and not description:
+                    description = fallback_description[:5000]
+                print(
+                    f"[job-worker] title fallback job={job.id} file={pdf_name} title={title!r}",
+                    flush=True,
+                )
+
+            if not title:
+                raise AIGenerationError('Unable to derive a usable title from document content.')
             print(
                 f"[job-worker] extracted title job={job.id} file={pdf_name} "
                 f"title={title!r} text_len={len(text or '')}",

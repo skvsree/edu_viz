@@ -201,3 +201,40 @@ def test_jobs_page_hides_retry_for_running_bulk_job():
     body = render_body(response)
     assert response.status_code == 200
     assert f"/api/v1/bulk-ai-upload/{bulk_id}/resume" not in body
+
+
+def test_jobs_page_shows_bulk_error_message():
+    admin = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="root@example.com",
+        identity_sub="root-sub",
+    )
+    bulk_id = uuid4()
+    job = SimpleNamespace(
+        id=uuid4(),
+        job_type="bulk_ai_upload",
+        status="failed",
+        processed_items=0,
+        total_items=1,
+        failed_items=1,
+        created_at=None,
+        completed_at=None,
+        reference_id=bulk_id,
+    )
+    bulk = SimpleNamespace(
+        id=bulk_id,
+        filename="bad.pdf",
+        total_files=1,
+        status="failed",
+        error_message="Queued upload file missing",
+        deck_id=None,
+    )
+    db = JobsSettingsDB([[job], [bulk], [], []])
+
+    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+
+    body = render_body(response)
+    assert response.status_code == 200
+    assert "Queued upload file missing" in body

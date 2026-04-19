@@ -98,7 +98,7 @@
                         <div class="jobs-bulk-actions">
                           {% if can_retry_bulk %}
                             <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
-                              <button type="submit" class="btn btn-sm">Retry</button>
+                              <button type="submit" class="jobs-retry-button">Retry</button>
                             </form>
                           {% endif %}
                           <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
@@ -171,7 +171,7 @@
                     {% endfor %}
                   </div>
                   <div class="jobs-mobile-bulk__meta">
-                    <span>{{ bulk.total_files }} files</span>
+                    <span>{{ bulk.total_files }} files{% if bulk.error_message %} • {{ bulk.error_message }}{% endif %}</span>
                     <div class="jobs-bulk-actions jobs-bulk-actions--mobile">
                       {% if can_retry_bulk %}
                         <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
@@ -336,6 +336,31 @@
 
   .jobs-retry-form {
     margin: 0;
+  }
+
+  .jobs-retry-button {
+    appearance: none;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--accent-color);
+    border-radius: 999px;
+    padding: 0.38rem 0.8rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+
+  .jobs-retry-button:hover {
+    background: rgba(37, 99, 235, 0.16);
+    border-color: rgba(37, 99, 235, 0.34);
+    transform: translateY(-1px);
+  }
+
+  .jobs-retry-button:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.35);
+    outline-offset: 2px;
   }
 
   .jobs-bulk-row a,
