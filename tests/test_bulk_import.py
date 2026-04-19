@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from fastapi import HTTPException
 
 from app.api import deps
 from app.api.routers import bulk_ai_upload, bulk_import
+from app.services.storage import StorageError
 from app.services.access import ROLE_SYSTEM_ADMIN
 
 
@@ -323,6 +325,56 @@ def test_should_queue_archive_member_skips_macos_noise():
     assert bulk_ai_upload._should_queue_archive_member("nested/._chapter1.pdf") is False
     assert bulk_ai_upload._should_queue_archive_member("._chapter1.pdf") is False
     assert bulk_ai_upload._should_queue_archive_member("notes.txt") is False
+
+
+def test_enqueue_ai_upload_job_requires_storage_success():
+    from uuid import uuid4
+    from unittest.mock import patch
+
+    from fastapi import HTTPException
+
+    user = SimpleNamespace(id=uuid4(), organization_id=None)
+
+    class EnqueueDB:
+        def __init__(self):
+            self.added = []
+            self.flushes = 0
+
+        def add(self, obj):
+            self.added.append(obj)
+
+        def flush(self):
+            self.flushes += 1
+            for obj in self.added:
+                if getattr(obj, "id", None) is None:
+                    obj.id = uuid4()
+
+        def commit(self):
+            assert False, "commit should not be reached"
+
+        def refresh(self, obj):
+            return None
+
+    db = EnqueueDB()
+    deck = SimpleNamespace(id=uuid4())
+    storage = SimpleNamespace(save_bytes=lambda **kwargs: (_ for _ in ()).throw(StorageError("boom")))
+
+    with patch.object(bulk_ai_upload, "get_storage", return_value=storage), patch.object(
+        bulk_ai_upload, "_ensure_bulk_upload_deck", return_value=deck
+    ):
+        try:
+            bulk_ai_upload.enqueue_ai_upload_job(
+                db=db,
+                user=user,
+                source_file=SimpleNamespace(
+                    filename="chapter.pdf",
+                    file=io.BytesIO(b"%PDF-1.4 sample"),
+                ),
+            )
+            assert False, "expected HTTPException"
+        except HTTPException as exc:
+            assert exc.status_code == 503
+            assert "Failed to store upload file" in exc.detail
 
 
 def test_resume_bulk_ai_upload_rejects_missing_storage():

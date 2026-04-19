@@ -133,13 +133,13 @@ def enqueue_ai_upload_job(
                 content_type=guess_content_type(queued_name),
             )
             storage_key = stored.key
-        except StorageError:
-            storage_key = None
+        except StorageError as exc:
+            raise HTTPException(status_code=503, detail=f"Failed to store upload file: {queued_name}") from exc
 
         file_row = BulkAIUploadFile(
             bulk_upload_id=bulk.id,
             original_filename=queued_name,
-            content_text=None if storage_key else queued_bytes.decode("latin1"),
+            content_text=None,
             storage_key=storage_key,
             status=BulkAIUploadFileStatus.PENDING.value,
             created_deck_id=deck.id,
