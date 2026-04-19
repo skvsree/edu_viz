@@ -239,6 +239,7 @@
     <dialog
       id="create-deck-modal"
       class="modal"
+      {% if active_modal == "create" %}data-open-on-load="true"{% endif %}
     >
       <div class="modal__surface" role="document">
         <div class="section-heading">

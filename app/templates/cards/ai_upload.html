@@ -111,7 +111,7 @@
 {% block content %}
 <section class="stack-lg">
   <div class="back-to-overview">
-    <a href="/decks/{{ deck.id }}" class="button button-secondary button-small">&larr; Back to Overview</a>
+    <a href="/dashboard" class="button button-secondary button-small">&larr; Back to Dashboard</a>
   </div>
 
   <section class="card section-heading-card">
@@ -121,6 +121,13 @@
       <p class="muted section-copy">Upload a PDF or DOCX to generate a full study pack for this deck. The app now creates as much useful flashcard and MCQ content as the material supports.</p>
     </div>
   </section>
+
+  <nav class="segmented-control" aria-label="Deck sections">
+    <a href="/decks/{{ deck.id }}" class="segmented-control__item">Overview</a>
+    <a href="/decks/{{ deck.id }}/flashcards" class="segmented-control__item">Flashcards</a>
+    <a href="/decks/{{ deck.id }}/mcqs" class="segmented-control__item">MCQs</a>
+    <a href="/decks/{{ deck.id }}/ai-upload" class="segmented-control__item segmented-control__item--active">AI Upload</a>
+  </nav>
 
   {% if import_error %}<section class="status-banner status-banner--error"><strong>Import failed.</strong><span>{{ import_error }}</span></section>{% endif %}
   {% if import_success %}<section class="status-banner status-banner--success"><strong>Import complete.</strong><span>{{ import_success }}</span></section>{% endif %}

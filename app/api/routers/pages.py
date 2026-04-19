@@ -4,8 +4,10 @@ import re
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
+from datetime import datetime
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlsplit, urlunsplit
 from uuid import UUID
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -95,7 +97,9 @@ TEMPLATES_DIR = APP_DIR / "templates"
 STATIC_DIR = APP_DIR / "static"
 COMPONENTS_DIR = APP_DIR / "components"
 COMPONENT_TEMPLATES_DIR = COMPONENTS_DIR / "multiselect" / "templates"
-templates = Jinja2Templates(directory=[str(TEMPLATES_DIR), str(COMPONENT_TEMPLATES_DIR)])
+templates = Jinja2Templates(
+    directory=[str(TEMPLATES_DIR), str(COMPONENT_TEMPLATES_DIR)]
+)
 
 
 def _sanitize_html(text: str | None) -> str:
@@ -105,11 +109,14 @@ def _sanitize_html(text: str | None) -> str:
     # For MVP: strip all HTML, keep only text
     # This prevents XSS while supporting basic content
     import re
+
     # Remove script, style, and event handlers
-    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r'on\w+\s*=', '', text, flags=re.IGNORECASE)
-    text = re.sub(r'javascript:', '', text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"<script[^>]*>.*?</script>", "", text, flags=re.IGNORECASE | re.DOTALL
+    )
+    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"on\w+\s*=", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"javascript:", "", text, flags=re.IGNORECASE)
     return text
 
 
@@ -156,7 +163,13 @@ def _can_manage_tags(user: User, deck: Deck) -> bool:
 
 
 def _default_organization(db: Session) -> Organization:
-    organization = db.execute(select(Organization).where(Organization.name == "Default Organization")).scalars().first()
+    organization = (
+        db.execute(
+            select(Organization).where(Organization.name == "Default Organization")
+        )
+        .scalars()
+        .first()
+    )
     if organization is None:
         organization = Organization(name="Default Organization", is_ai_enabled=False)
         db.add(organization)
@@ -186,26 +199,37 @@ def _deck_has_published_tests(db: Session, deck_id: UUID) -> bool:
             select(Test.id)
             .where(Test.deck_id == deck_id, Test.is_published.is_(True))
             .limit(1)
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
 
 
 def _user_test_attempt_count(db: Session, *, deck_id: UUID, user_id: UUID) -> int:
-    return db.execute(
-        select(TestAttempt.id)
-        .join(Test, TestAttempt.test_id == Test.id)
-        .where(Test.deck_id == deck_id, TestAttempt.user_id == user_id)
-    ).scalars().all().__len__()
+    return (
+        db.execute(
+            select(TestAttempt.id)
+            .join(Test, TestAttempt.test_id == Test.id)
+            .where(Test.deck_id == deck_id, TestAttempt.user_id == user_id)
+        )
+        .scalars()
+        .all()
+        .__len__()
+    )
 
 
 def _require_settings_access(user: User) -> None:
     if user.role not in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}:
-        raise HTTPException(status_code=403, detail="You do not have access to settings.")
+        raise HTTPException(
+            status_code=403, detail="You do not have access to settings."
+        )
 
 
 def _require_system_admin(user: User) -> None:
     if user.role != ROLE_SYSTEM_ADMIN:
-        raise HTTPException(status_code=403, detail="Only system admins can access this page.")
+        raise HTTPException(
+            status_code=403, detail="Only system admins can access this page."
+        )
 
 
 def _visible_users_stmt(user: User, org_id: str | None = None):
@@ -284,19 +308,18 @@ def _organizations_response(
     edit_form: dict[str, str | bool] | None = None,
 ):
     _require_system_admin(user)
-    organizations = db.execute(
-        select(Organization).order_by(Organization.name.asc())
-    ).scalars().all()
+    organizations = (
+        db.execute(select(Organization).order_by(Organization.name.asc()))
+        .scalars()
+        .all()
+    )
     requested_org_id = request.query_params.get("edit_org")
     if modal_organization is None and requested_org_id:
         modal_organization = db.get(Organization, requested_org_id)
         if modal_organization and active_modal is None:
             active_modal = "edit"
 
-    org_user_counts = {
-        str(org.id): len(org.users or [])
-        for org in organizations
-    }
+    org_user_counts = {str(org.id): len(org.users or []) for org in organizations}
 
     # AI credential state per org
     org_ai_has_cred = {
@@ -350,7 +373,9 @@ def _organizations_response(
             "edit_form": edit_form
             or {
                 "name": modal_organization.name if modal_organization else "",
-                "is_ai_enabled": modal_organization.is_ai_enabled if modal_organization else False,
+                "is_ai_enabled": (
+                    modal_organization.is_ai_enabled if modal_organization else False
+                ),
             },
             "test_global_limit": settings.test_daily_limit,
             "title": "Organizations | edu selviz",
@@ -381,9 +406,11 @@ def _users_response(
     users = db.execute(_visible_users_stmt(user, org_id)).scalars().all()
     organizations = []
     if user.role == ROLE_SYSTEM_ADMIN:
-        organizations = db.execute(
-            select(Organization).order_by(Organization.name.asc())
-        ).scalars().all()
+        organizations = (
+            db.execute(select(Organization).order_by(Organization.name.asc()))
+            .scalars()
+            .all()
+        )
 
     filtered_org_name = None
     if org_id:
@@ -394,11 +421,20 @@ def _users_response(
     editable_roles = {str(item.id): _allowed_role_options(user, item) for item in users}
 
     # AI credential state per user
-    user_org_ai_enabled = {
-        str(u.id): (db.get(Organization, u.organization_id).is_ai_enabled if u.organization_id else False)
-        for u in users
+    user_org_ai_enabled = {}
+    for u in users:
+        if not u.organization_id:
+            user_org_ai_enabled[str(u.id)] = False
+            continue
+        org = getattr(u, "organization", None) or db.get(
+            Organization, u.organization_id
+        )
+        user_org_ai_enabled[str(u.id)] = bool(
+            org and getattr(org, "is_ai_enabled", False)
+        )
+    user_ai_has_cred = {
+        str(u.id): has_scope_credential(db, "user", u.id) for u in users
     }
-    user_ai_has_cred = {str(u.id): has_scope_credential(db, "user", u.id) for u in users}
     user_ai_provider = {str(u.id): get_scope_provider(db, "user", u.id) for u in users}
 
     return templates.TemplateResponse(
@@ -413,8 +449,16 @@ def _users_response(
             "user_ai_has_cred": user_ai_has_cred,
             "user_ai_provider": user_ai_provider,
             "filtered_org_name": filtered_org_name,
-            "user_error": user_error if user_error is not None else request.query_params.get("error"),
-            "user_success": user_success if user_success is not None else request.query_params.get("success"),
+            "user_error": (
+                user_error
+                if user_error is not None
+                else request.query_params.get("error")
+            ),
+            "user_success": (
+                user_success
+                if user_success is not None
+                else request.query_params.get("success")
+            ),
             "title": "Users | edu selviz",
         },
         status_code=status_code,
@@ -431,19 +475,21 @@ def _jobs_response(
     _require_system_admin(user)
 
     # Get recent jobs with bulk uploads
-    jobs = db.execute(
-        select(Job)
-        .order_by(Job.created_at.desc())
-        .limit(50)
-    ).scalars().all()
+    jobs = (
+        db.execute(select(Job).order_by(Job.created_at.desc()).limit(50))
+        .scalars()
+        .all()
+    )
 
     # Get associated bulk uploads
     bulk_ids = {j.reference_id for j in jobs if j.reference_id}
     bulks = {}
     if bulk_ids:
-        bulk_results = db.execute(
-            select(BulkAIUpload).where(BulkAIUpload.id.in_(bulk_ids))
-        ).scalars().all()
+        bulk_results = (
+            db.execute(select(BulkAIUpload).where(BulkAIUpload.id.in_(bulk_ids)))
+            .scalars()
+            .all()
+        )
         bulks = {b.id: b for b in bulk_results}
 
     deck_ids = {b.deck_id for b in bulks.values() if getattr(b, "deck_id", None)}
@@ -470,9 +516,9 @@ def _jobs_response(
 
     decks = {}
     if deck_ids:
-        deck_results = db.execute(
-            select(Deck).where(Deck.id.in_(deck_ids))
-        ).scalars().all()
+        deck_results = (
+            db.execute(select(Deck).where(Deck.id.in_(deck_ids))).scalars().all()
+        )
         decks = {d.id: d for d in deck_results}
 
     return templates.TemplateResponse(
@@ -500,7 +546,12 @@ def jobs_page(
 
 
 def _tag_form_context(deck: Deck) -> dict[str, str]:
-    return {"tag_names": ", ".join(tag.name for tag in sorted(deck.tags, key=lambda item: item.name.lower()))}
+    tags = getattr(deck, "tags", []) or []
+    return {
+        "tag_names": ", ".join(
+            tag.name for tag in sorted(tags, key=lambda item: item.name.lower())
+        )
+    }
 
 
 def _deck_content_response(
@@ -546,9 +597,7 @@ def _deck_content_response(
             "mcq_count": len(mcqs),
             "can_edit": can_edit,
             "can_manage_tags": can_manage_tags,
-            "can_use_ai_generation": (
-                can_use_ai_generation(user) and can_edit
-            ),
+            "can_use_ai_generation": (can_use_ai_generation(user) and can_edit),
             "tests_available": tests_available,
             "has_test_content": has_test_content,
             "has_published_tests": has_published_tests,
@@ -588,10 +637,13 @@ def _dashboard_response(
     deck_stats = list_accessible_deck_stats(db, user=user)
 
     # Compute user's favorite deck IDs
-    fav_rows = db.execute(
-        select(UserDeckFavorite.deck_id)
-        .where(UserDeckFavorite.user_id == user.id)
-    ).scalars().all()
+    fav_rows = (
+        db.execute(
+            select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
+        )
+        .scalars()
+        .all()
+    )
     favorite_deck_ids = {str(f) for f in fav_rows}
 
     def _folder_path_label(folder_id: UUID | None) -> str:
@@ -607,14 +659,19 @@ def _dashboard_response(
             current_id = node.parent_id
         return " / ".join(parts) if parts else "Root"
 
-    # Filter deck_stats to only favorites (for display on dashboard)
+    # If favorites exist, show those on dashboard. Otherwise fall back to all accessible decks
+    displayed_stats = deck_stats
+    if favorite_deck_ids:
+        displayed_stats = [
+            item for item in deck_stats if str(item.deck.id) in favorite_deck_ids
+        ]
+
     favorite_deck_stats = [
         {
             "deck": item.deck,
             "folder_path": _folder_path_label(getattr(item.deck, "folder_id", None)),
         }
-        for item in deck_stats
-        if str(item.deck.id) in favorite_deck_ids
+        for item in displayed_stats
     ]
 
     # Folder context
@@ -640,35 +697,52 @@ def _dashboard_response(
             breadcrumb = [(str(f.id), f.name) for f in path_ids]
 
             # Subfolders of current folder
-            folder_rows = db.execute(
-                select(Folder)
-                .where(Folder.parent_id == folder_id)
-                .order_by(Folder.name.asc())
-            ).scalars().all()
+            folder_rows = (
+                db.execute(
+                    select(Folder)
+                    .where(Folder.parent_id == folder_id)
+                    .order_by(Folder.name.asc())
+                )
+                .scalars()
+                .all()
+            )
 
-            from app.api.routers.folders import _count_decks_in_folder, _count_subfolders
+            from app.api.routers.folders import (
+                _count_decks_in_folder,
+                _count_subfolders,
+            )
 
             for f in folder_rows:
-                folders.append({
-                    "id": str(f.id),
-                    "name": f.name,
-                    "deck_count": _count_decks_in_folder(db, f.id),
-                    "subfolder_count": _count_subfolders(db, f.id),
-                })
+                folders.append(
+                    {
+                        "id": str(f.id),
+                        "name": f.name,
+                        "deck_count": _count_decks_in_folder(db, f.id),
+                        "subfolder_count": _count_subfolders(db, f.id),
+                    }
+                )
 
             # Decks in this folder
-            folder_decks = db.execute(
-                select(Deck)
-                .where(Deck.folder_id == folder_id, Deck.is_deleted.is_(False))
-                .order_by(Deck.name.asc())
-            ).scalars().all()
+            folder_decks = (
+                db.execute(
+                    select(Deck)
+                    .where(Deck.folder_id == folder_id, Deck.is_deleted.is_(False))
+                    .order_by(Deck.name.asc())
+                )
+                .scalars()
+                .all()
+            )
     else:
         # Root level — load root folders
-        folder_rows = db.execute(
-            select(Folder)
-            .where(Folder.parent_id.is_(None), Folder.user_id == user.id)
-            .order_by(Folder.name.asc())
-        ).scalars().all()
+        folder_rows = (
+            db.execute(
+                select(Folder)
+                .where(Folder.parent_id.is_(None), Folder.user_id == user.id)
+                .order_by(Folder.name.asc())
+            )
+            .scalars()
+            .all()
+        )
 
         from app.api.routers.folders import _count_decks_in_folder, _count_subfolders
 
@@ -703,14 +777,33 @@ def _dashboard_response(
             ),
             "active_modal": active_modal,  # Don't use query params - prevents unwanted modal on reload
             "modal_deck": modal_deck,
-            "create_form": create_form or {"name": "", "description": "", "access_level": "user"},
+            "create_form": create_form
+            or {"name": "", "description": "", "access_level": "user"},
             "edit_form": edit_form
             or {
                 "name": modal_deck.name if modal_deck else "",
                 "description": (modal_deck.description or "") if modal_deck else "",
-                "access_level": modal_deck.access_level if modal_deck else "user",
+                "access_level": (
+                    (
+                        getattr(modal_deck, "access_level", None)
+                        or (
+                            "global"
+                            if modal_deck and getattr(modal_deck, "is_global", False)
+                            else (
+                                "org"
+                                if modal_deck
+                                and getattr(modal_deck, "organization_id", None)
+                                else "user"
+                            )
+                        )
+                    )
+                    if modal_deck
+                    else "user"
+                ),
             },
-            "tag_form": _tag_form_context(modal_deck) if modal_deck else {"tag_names": ""},
+            "tag_form": (
+                _tag_form_context(modal_deck) if modal_deck else {"tag_names": ""}
+            ),
             "title": "Workspace | edu selviz",
             # Folder context
             "folders": folders,
@@ -741,7 +834,9 @@ def home(request: Request, user: User | None = Depends(optional_current_user)):
 
 
 @router.get("/login/providers", response_class=HTMLResponse)
-def login_providers(request: Request, user: User | None = Depends(optional_current_user)):
+def login_providers(
+    request: Request, user: User | None = Depends(optional_current_user)
+):
     if user is not None:
         return RedirectResponse(url="/dashboard", status_code=303)
 
@@ -776,7 +871,9 @@ def dashboard(
     folder_tree = get_folder_tree(user=user, db=db)
 
     return _dashboard_response(
-        request, user=user, db=db,
+        request,
+        user=user,
+        db=db,
         folder_id=parsed_folder_id,
         folder_tree=folder_tree,
     )
@@ -814,7 +911,9 @@ def create_folder(
     if not _FOLDER_NAME_RE.match(name):
         folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
-            request, user=user, db=db,
+            request,
+            user=user,
+            db=db,
             folder_id=parent_uuid,
             folder_tree=folder_tree,
             folder_error="Folder name can only contain letters, numbers, and underscores.",
@@ -827,13 +926,23 @@ def create_folder(
             return RedirectResponse("/dashboard", status_code=303)
 
     # Check duplicate sibling name
-    existing = db.execute(
-        select(Folder).where(Folder.parent_id == parent_uuid, Folder.user_id == user.id, Folder.name == name)
-    ).scalars().first()
+    existing = (
+        db.execute(
+            select(Folder).where(
+                Folder.parent_id == parent_uuid,
+                Folder.user_id == user.id,
+                Folder.name == name,
+            )
+        )
+        .scalars()
+        .first()
+    )
     if existing:
         folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
-            request, user=user, db=db,
+            request,
+            user=user,
+            db=db,
             folder_id=parent_uuid,
             folder_tree=folder_tree,
             folder_error="A folder with this name already exists here.",
@@ -869,25 +978,33 @@ def rename_folder(
     if not name or len(name) > 255 or not _FOLDER_NAME_RE.match(name):
         folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
-            request, user=user, db=db,
+            request,
+            user=user,
+            db=db,
             folder_id=folder.parent_id,
             folder_tree=folder_tree,
             folder_error="Folder name can only contain letters, numbers, and underscores.",
         )
 
     # Check duplicate sibling name
-    existing = db.execute(
-        select(Folder).where(
-            Folder.parent_id == folder.parent_id,
-            Folder.user_id == user.id,
-            Folder.name == name,
-            Folder.id != folder_id,
+    existing = (
+        db.execute(
+            select(Folder).where(
+                Folder.parent_id == folder.parent_id,
+                Folder.user_id == user.id,
+                Folder.name == name,
+                Folder.id != folder_id,
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if existing:
         folder_tree = get_folder_tree(user=user, db=db)
         return _dashboard_response(
-            request, user=user, db=db,
+            request,
+            user=user,
+            db=db,
             folder_id=folder.parent_id,
             folder_tree=folder_tree,
             folder_error="A folder with this name already exists here.",
@@ -918,14 +1035,21 @@ def delete_folder(
     parent_id = folder.parent_id
 
     # Move child decks to parent
-    for deck in db.execute(select(Deck).where(Deck.folder_id == folder_id)).scalars().all():
+    for deck in (
+        db.execute(select(Deck).where(Deck.folder_id == folder_id)).scalars().all()
+    ):
         deck.folder_id = parent_id
 
     db.delete(folder)
     db.commit()
 
     return RedirectResponse(
-        "/decks/browse" + (f"?folder={parent_id}&success=Folder+deleted" if parent_id else "?success=Folder+deleted"),
+        "/decks/browse"
+        + (
+            f"?folder={parent_id}&success=Folder+deleted"
+            if parent_id
+            else "?success=Folder+deleted"
+        ),
         status_code=303,
     )
 
@@ -940,7 +1064,11 @@ def browse_decks(
     db: Session = Depends(get_db),
 ):
     from app.models import Folder
-    from app.api.routers.folders import get_folder_tree, _count_decks_in_folder, _count_subfolders
+    from app.api.routers.folders import (
+        get_folder_tree,
+        _count_decks_in_folder,
+        _count_subfolders,
+    )
 
     q = request.query_params.get("q", "").strip()
     folder_param = request.query_params.get("folder", "")
@@ -1024,21 +1152,33 @@ def browse_decks(
 
     # Subfolders in current folder
     subfolders = []
-    for f in db.execute(
-        select(Folder).where(
-            Folder.parent_id == folder_id,
-        ).order_by(Folder.name.asc())
-    ).scalars().all():
+    for f in (
+        db.execute(
+            select(Folder)
+            .where(
+                Folder.parent_id == folder_id,
+            )
+            .order_by(Folder.name.asc())
+        )
+        .scalars()
+        .all()
+    ):
         if _can_view_folder_local(f):
             subfolders.append(_folder_payload(f))
 
     # Root folders (for sidebar or root-level display)
     root_folders = []
-    for f in db.execute(
-        select(Folder).where(
-            Folder.parent_id.is_(None),
-        ).order_by(Folder.name.asc())
-    ).scalars().all():
+    for f in (
+        db.execute(
+            select(Folder)
+            .where(
+                Folder.parent_id.is_(None),
+            )
+            .order_by(Folder.name.asc())
+        )
+        .scalars()
+        .all()
+    ):
         if _can_view_folder_local(f):
             root_folders.append(_folder_payload(f))
 
@@ -1047,7 +1187,9 @@ def browse_decks(
     if apply_tab_filter:
         deck_filter = browse_filter_clause(user, tab_param)
     else:
-        deck_filter = browse_accessible_deck_clause(user)  # include explicit shares in folder/search views
+        deck_filter = browse_accessible_deck_clause(
+            user
+        )  # include explicit shares in folder/search views
 
     base_q = load_browse_deck_query(user).where(deck_filter).group_by(Deck.id)
 
@@ -1059,14 +1201,19 @@ def browse_decks(
     if q:
         from app.services.access import normalize_deck_name
         from sqlalchemy import or_
+
         normalized_q = normalize_deck_name(q)
         if normalized_q:
-            base_q = base_q.outerjoin(Deck.tags).where(
-                or_(
-                    Deck.normalized_name.ilike(f"%{normalized_q}%"),
-                    Tag.normalized_name.ilike(f"%{normalized_q}%")
+            base_q = (
+                base_q.outerjoin(Deck.tags)
+                .where(
+                    or_(
+                        Deck.normalized_name.ilike(f"%{normalized_q}%"),
+                        Tag.normalized_name.ilike(f"%{normalized_q}%"),
+                    )
                 )
-            ).group_by(Deck.id)
+                .group_by(Deck.id)
+            )
 
     # Pagination only for search results
     page = request.query_params.get("page", "1")
@@ -1085,8 +1232,11 @@ def browse_decks(
     decks = (
         db.execute(
             base_q.order_by(Deck.access_level.desc(), Deck.created_at.desc())
-            .limit(BROWSE_PAGE_SIZE).offset(offset)
-        ).scalars().all()
+            .limit(BROWSE_PAGE_SIZE)
+            .offset(offset)
+        )
+        .scalars()
+        .all()
     )
 
     # Root-level decks only (no folder, for root view)
@@ -1102,15 +1252,23 @@ def browse_decks(
         root_decks = db.execute(root_q).scalars().all()
 
     # Favorite IDs
-    fav_rows = db.execute(
-        select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
-    ).scalars().all()
+    fav_rows = (
+        db.execute(
+            select(UserDeckFavorite.deck_id).where(UserDeckFavorite.user_id == user.id)
+        )
+        .scalars()
+        .all()
+    )
     favorite_deck_ids = {str(f) for f in fav_rows}
 
     # Browse permissions for per-deck actions
     visible_decks = {str(d.id): d for d in [*decks, *root_decks]}
-    writable_deck_ids = {deck_id for deck_id, d in visible_decks.items() if _cwd(user, d)}
-    deletable_deck_ids = {deck_id for deck_id, d in visible_decks.items() if _cdd(user, d)}
+    writable_deck_ids = {
+        deck_id for deck_id, d in visible_decks.items() if _cwd(user, d)
+    }
+    deletable_deck_ids = {
+        deck_id for deck_id, d in visible_decks.items() if _cdd(user, d)
+    }
     access_manageable_deck_ids = {
         deck_id for deck_id, d in visible_decks.items() if _csda(user, d)
     }
@@ -1125,7 +1283,11 @@ def browse_decks(
             "writable_deck_ids": writable_deck_ids,
             "deletable_deck_ids": deletable_deck_ids,
             "access_manageable_deck_ids": access_manageable_deck_ids,
-            "access_level_options": [("global", "Global"), ("org", "Org"), ("user", "Mine")],
+            "access_level_options": [
+                ("global", "Global"),
+                ("org", "Org"),
+                ("user", "Mine"),
+            ],
             "q": q,
             "page": page,
             "total_pages": total_pages,
@@ -1147,7 +1309,9 @@ def browse_decks(
             "show_tabs": show_tabs,
             "show_action_bar": show_action_bar,
             # Bulk AI upload: decks user can write to
-            "writeable_decks_list": [d for d in visible_decks.values() if _cwd(user, d)],
+            "writeable_decks_list": [
+                d for d in visible_decks.values() if _cwd(user, d)
+            ],
         },
     )
 
@@ -1159,11 +1323,15 @@ def analytics_home(
     db: Session = Depends(get_db),
 ):
     if user.role not in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}:
-        raise HTTPException(status_code=403, detail="You do not have access to analytics")
+        raise HTTPException(
+            status_code=403, detail="You do not have access to analytics"
+        )
 
     selected_user_id = request.query_params.get("user_id", "")
     # Get deck_id(s) from query param (handles both single and multiselect)
-    selected_deck_id = request.query_params.get("deck_id", "") or request.query_params.get("deck_ids", "")
+    selected_deck_id = request.query_params.get(
+        "deck_id", ""
+    ) or request.query_params.get("deck_ids", "")
     selected_deck_ids = (
         [d.strip() for d in selected_deck_id.split(",") if d.strip()]
         if selected_deck_id
@@ -1175,7 +1343,9 @@ def analytics_home(
 
     # Always load filter options for dropdowns
     if user.role == ROLE_SYSTEM_ADMIN:
-        visible_users = db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
+        visible_users = (
+            db.execute(select(User).order_by(User.created_at.desc())).scalars().all()
+        )
     else:
         visible_users = (
             db.execute(
@@ -1209,7 +1379,9 @@ def analytics_home(
             completed_reviews = stats.cards_reviewed
             percent_complete = 0
             if total_cards > 0:
-                percent_complete = round(min(completed_reviews / total_cards * 100, 100))
+                percent_complete = round(
+                    min(completed_reviews / total_cards * 100, 100)
+                )
 
             tests_taken_query = (
                 select(func.count(TestAttempt.id))
@@ -1217,7 +1389,9 @@ def analytics_home(
                 .where(Test.deck_id == deck.id)
             )
             if selected_user_id:
-                tests_taken_query = tests_taken_query.where(TestAttempt.user_id == selected_user_id)
+                tests_taken_query = tests_taken_query.where(
+                    TestAttempt.user_id == selected_user_id
+                )
             tests_taken = db.execute(tests_taken_query).scalar_one()
 
             completion_stats.append(
@@ -1242,14 +1416,21 @@ def analytics_home(
             cards_reviewed_query = (
                 select(func.count(Review.id))
                 .join(Card, Card.id == Review.card_id)
-                .where(Card.deck.has(Deck.organization_id == target_user.organization_id) | Deck.is_global.is_(True))
+                .where(
+                    Card.deck.has(Deck.organization_id == target_user.organization_id)
+                    | Deck.is_global.is_(True)
+                )
                 .where(Review.card.has(Card.deck.has()))
             )
             if selected_deck_ids:
-                cards_reviewed_query = cards_reviewed_query.where(Card.deck_id.in_(selected_deck_ids))
+                cards_reviewed_query = cards_reviewed_query.where(
+                    Card.deck_id.in_(selected_deck_ids)
+                )
             cards_reviewed = db.execute(cards_reviewed_query).scalar() or 0
 
-            tests_taken_query = select(func.count(TestAttempt.id)).where(TestAttempt.user_id == target_user.id)
+            tests_taken_query = select(func.count(TestAttempt.id)).where(
+                TestAttempt.user_id == target_user.id
+            )
             if selected_deck_ids:
                 tests_taken_query = tests_taken_query.join(
                     Test,
@@ -1262,11 +1443,15 @@ def analytics_home(
             user_summaries.append(summary)
 
     # Get recent analytics events (limited to last 50)
-    recent_events = db.execute(
-        select(AnalyticsEvent)
-        .order_by(AnalyticsEvent.event_timestamp.desc())
-        .limit(50)
-    ).scalars().all()
+    recent_events = (
+        db.execute(
+            select(AnalyticsEvent)
+            .order_by(AnalyticsEvent.event_timestamp.desc())
+            .limit(50)
+        )
+        .scalars()
+        .all()
+    )
 
     return templates.TemplateResponse(
         "analytics/index.html",
@@ -1380,7 +1565,9 @@ def create_organization(
             },
         )
 
-    return RedirectResponse(url="/settings/organizations?success=Organization+created", status_code=303)
+    return RedirectResponse(
+        url="/settings/organizations?success=Organization+created", status_code=303
+    )
 
 
 @router.post("/settings/organizations/{organization_id}/update")
@@ -1413,7 +1600,11 @@ def update_organization(
             organization_error="Organization name is required.",
             active_modal="edit",
             modal_organization=organization,
-            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled, "is_test_enabled": is_test_enabled},
+            edit_form={
+                "name": cleaned_name,
+                "is_ai_enabled": is_ai_enabled,
+                "is_test_enabled": is_test_enabled,
+            },
         )
 
     organization.name = cleaned_name
@@ -1433,7 +1624,10 @@ def update_organization(
     elif is_ai_enabled and not ai_override_global:
         # Clear any existing org-level credential so it falls back to env
         from app.models import AICredentialScope
-        db.query(AICredentialScope).filter_by(scope_type="organization", scope_id=organization.id).delete()
+
+        db.query(AICredentialScope).filter_by(
+            scope_type="organization", scope_id=organization.id
+        ).delete()
 
     try:
         db.commit()
@@ -1447,10 +1641,16 @@ def update_organization(
             organization_error="Unable to update this organization right now.",
             active_modal="edit",
             modal_organization=organization,
-            edit_form={"name": cleaned_name, "is_ai_enabled": is_ai_enabled, "is_test_enabled": is_test_enabled},
+            edit_form={
+                "name": cleaned_name,
+                "is_ai_enabled": is_ai_enabled,
+                "is_test_enabled": is_test_enabled,
+            },
         )
 
-    return RedirectResponse(url="/settings/organizations?success=Organization+updated", status_code=303)
+    return RedirectResponse(
+        url="/settings/organizations?success=Organization+updated", status_code=303
+    )
 
 
 @router.get("/settings/users", response_class=HTMLResponse)
@@ -1505,11 +1705,20 @@ def update_user_settings(
 
     # Handle AI credential: only save if AI is on, override is on, and secret is provided
     if ai_enabled and ai_override_org and ai_secret.strip():
-        save_ai_credential(db, scope_type="user", scope_id=target.id, provider=provider, secret=ai_secret.strip())
+        save_ai_credential(
+            db,
+            scope_type="user",
+            scope_id=target.id,
+            provider=provider,
+            secret=ai_secret.strip(),
+        )
     else:
         # Clear any existing user AI credential when AI is disabled or override is removed
         from app.models import AICredentialScope
-        db.query(AICredentialScope).filter_by(scope_type="user", scope_id=target.id).delete()
+
+        db.query(AICredentialScope).filter_by(
+            scope_type="user", scope_id=target.id
+        ).delete()
 
     db.commit()
     return RedirectResponse(url="/settings/users?success=User+updated", status_code=303)
@@ -1521,6 +1730,7 @@ def create_deck(
     name: str = Form(...),
     description: str = Form(default=""),
     access_level: str = Form(default="user"),
+    is_global: bool = Form(default=False),
     folder_id: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -1528,8 +1738,11 @@ def create_deck(
     from app.models import Folder  # noqa: F401
 
     if not can_manage_decks(user):
-        raise HTTPException(status_code=403, detail="You do not have permission to create decks.")
+        raise HTTPException(
+            status_code=403, detail="You do not have permission to create decks."
+        )
 
+    original_name = name
     cleaned_name = name.strip()
     cleaned_description = description.strip()
     if not cleaned_name:
@@ -1539,8 +1752,9 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name is required.",
+            active_modal="create",
             create_form={
-                "name": cleaned_name,
+                "name": original_name,
                 "description": cleaned_description,
                 "access_level": access_level,
             },
@@ -1553,19 +1767,24 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Deck name must include letters or numbers.",
+            active_modal="create",
             create_form={
-                "name": cleaned_name,
+                "name": original_name,
                 "description": cleaned_description,
                 "access_level": access_level,
             },
         )
 
     valid_levels = {"global", "org", "user"}
-    if access_level not in valid_levels:
+    if is_global:
+        access_level = "global"
+    elif access_level not in valid_levels:
         access_level = "user"
 
     if access_level == "global" and not is_system_admin(user):
-        raise HTTPException(status_code=403, detail="Only system admins can create global decks.")
+        raise HTTPException(
+            status_code=403, detail="Only system admins can create global decks."
+        )
     if access_level == "org" and not is_org_admin(user):
         return _dashboard_response(
             request,
@@ -1573,8 +1792,9 @@ def create_deck(
             db=db,
             status_code=400,
             dashboard_error="Assign this admin to an organization before creating organization decks.",
+            active_modal="create",
             create_form={
-                "name": cleaned_name,
+                "name": original_name,
                 "description": cleaned_description,
                 "access_level": access_level,
             },
@@ -1622,15 +1842,18 @@ def create_deck(
             dashboard_error=(
                 "An active deck with that normalized name already exists in this scope."
             ),
+            active_modal="create",
             create_form={
-                "name": cleaned_name,
+                "name": original_name,
                 "description": cleaned_description,
                 "access_level": access_level,
             },
         )
 
     success_message = quote_plus("Deck created")
-    return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
+    return RedirectResponse(
+        url=f"/dashboard?success={success_message}", status_code=303
+    )
 
 
 @router.post("/decks/{deck_id}/update")
@@ -1640,6 +1863,7 @@ def update_deck(
     name: str = Form(...),
     description: str = Form(default=""),
     access_level: str = Form(default="user"),
+    is_global: bool = Form(default=False),
     next_url: str = Form(default=""),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
@@ -1648,22 +1872,35 @@ def update_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    cards = (
+        db.execute(
+            select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    original_name = name
     cleaned_name = name.strip()
     cleaned_description = description.strip()
 
     redirect_target = next_url.strip() if isinstance(next_url, str) else ""
+    validation_error_target = f"/decks/{deck.id}"
+
     if not redirect_target.startswith("/"):
         redirect_target = "/dashboard"
+
+    should_render_inline_errors = not (isinstance(next_url, str) and next_url.strip())
 
     def _append_message_param(url: str, key: str, message: str) -> str:
         parts = urlsplit(url)
         query = dict(parse_qsl(parts.query, keep_blank_values=True))
         query[key] = message
-        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment)
+        )
 
     def _deck_update_error_response(message: str):
-        if redirect_target.startswith(f"/decks/{deck.id}"):
+        if should_render_inline_errors:
             flashcards = [card for card in cards if card.card_type == "basic"]
             mcqs = [card for card in cards if card.card_type == "mcq"]
             can_edit = can_manage_deck(user, deck)
@@ -1680,21 +1917,32 @@ def update_deck(
                 if tests_available
                 else 0
             )
+            deck_view = SimpleNamespace(**getattr(deck, "__dict__", {}))
+            deck_view.name = original_name
+            deck_view.description = cleaned_description
+            deck_view.access_level = "global" if is_global else access_level
+            deck_view.is_global = is_global or access_level == "global"
             return templates.TemplateResponse(
                 "decks/overview.html",
                 {
                     "request": request,
                     "user": user,
-                    "deck": deck,
+                    "deck": deck_view,
                     "flashcard_count": len(flashcards),
                     "mcq_count": len(mcqs),
                     "can_edit": can_edit,
-                    "can_use_ai_generation": (
-                        can_use_ai_generation(user) and can_edit
-                    ),
+                    "can_use_ai_generation": (can_use_ai_generation(user) and can_edit),
                     "tests_available": tests_available,
                     "test_count": test_count,
+                    "default_test_count": 10,
                     "update_error": message,
+                    "is_favorited": False,
+                    "tag_form": _tag_form_context(deck),
+                    "edit_form": {
+                        "name": original_name,
+                        "description": cleaned_description,
+                        "access_level": ("global" if is_global else access_level),
+                    },
                     "title": f"{deck.name} | edu selviz",
                 },
                 status_code=400,
@@ -1711,13 +1959,24 @@ def update_deck(
         return _deck_update_error_response("Deck name must include letters or numbers.")
 
     valid_levels = {"global", "org", "user"}
-    if access_level not in valid_levels:
-        access_level = deck.access_level  # keep current if invalid
+    current_access_level = getattr(deck, "access_level", None) or (
+        "global"
+        if getattr(deck, "is_global", False)
+        else "org" if getattr(deck, "organization_id", None) else "user"
+    )
+    if is_global:
+        access_level = "global"
+    elif access_level not in valid_levels:
+        access_level = current_access_level  # keep current if invalid
 
     if access_level == "global" and not is_system_admin(user):
-        raise HTTPException(status_code=403, detail="Only system admins can make a deck global.")
+        raise HTTPException(
+            status_code=403, detail="Only system admins can make a deck global."
+        )
     if access_level == "org" and not is_org_admin(user):
-        return _deck_update_error_response("Assign this admin to an organization before saving organization decks.")
+        return _deck_update_error_response(
+            "Assign this admin to an organization before saving organization decks."
+        )
 
     organization_id = user.organization_id if access_level == "org" else None
 
@@ -1725,7 +1984,7 @@ def update_deck(
     deck.normalized_name = normalized_name
     deck.description = cleaned_description or None
     deck.access_level = access_level
-    deck.is_global = (access_level == "global")
+    deck.is_global = access_level == "global"
     deck.organization_id = organization_id
 
     try:
@@ -1767,7 +2026,10 @@ def update_deck_tags(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
     if not _can_manage_tags(user, deck):
-        raise HTTPException(status_code=403, detail="You do not have permission to manage tags for this deck.")
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to manage tags for this deck.",
+        )
 
     redirect_target = next_url.strip() if isinstance(next_url, str) else ""
     if not redirect_target.startswith("/"):
@@ -1791,7 +2053,9 @@ def update_deck_tags(
 
     existing_tags = {
         tag.normalized_name: tag
-        for tag in db.execute(select(Tag).where(Tag.organization_id == organization_id)).scalars().all()
+        for tag in db.execute(select(Tag).where(Tag.organization_id == organization_id))
+        .scalars()
+        .all()
     }
 
     updated_tags: list[Tag] = []
@@ -1813,7 +2077,9 @@ def update_deck_tags(
     db.commit()
 
     message = "Tags updated" if updated_tags else "Tags cleared"
-    return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus(message)}", status_code=303)
+    return RedirectResponse(
+        url=f"{redirect_target}?tag_success={quote_plus(message)}", status_code=303
+    )
 
 
 @router.post("/decks/{deck_id}/tags/{tag_id}/delete")
@@ -1828,7 +2094,10 @@ def remove_deck_tag(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
     if not _can_manage_tags(user, deck):
-        raise HTTPException(status_code=403, detail="You do not have permission to manage tags for this deck.")
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have permission to manage tags for this deck.",
+        )
 
     tag = db.get(Tag, tag_id)
     if not tag:
@@ -1841,7 +2110,10 @@ def remove_deck_tag(
     redirect_target = next_url.strip() if isinstance(next_url, str) else ""
     if not redirect_target.startswith("/"):
         redirect_target = f"/decks/{deck.id}"
-    return RedirectResponse(url=f"{redirect_target}?tag_success={quote_plus('Tag removed')}", status_code=303)
+    return RedirectResponse(
+        url=f"{redirect_target}?tag_success={quote_plus('Tag removed')}",
+        status_code=303,
+    )
 
 
 @router.post("/decks/{deck_id}/delete")
@@ -1854,44 +2126,14 @@ def delete_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    # Hard-delete deck and dependent content (NEET import pipeline behavior)
-    card_ids = db.execute(select(Card.id).where(Card.deck_id == deck.id)).scalars().all()
-    card_id_list = list(card_ids)
-
-    # Delete card/test dependencies first
-    if card_id_list:
-        affected_test_ids = db.execute(
-            select(TestQuestion.test_id).where(TestQuestion.card_id.in_(card_id_list)).distinct()
-        ).scalars().all()
-
-        if affected_test_ids:
-            db.execute(
-                delete(TestAttemptAnswer).where(
-                    TestAttemptAnswer.attempt_id.in_(
-                        select(TestAttempt.id).where(TestAttempt.test_id.in_(affected_test_ids))
-                    )
-                )
-            )
-            db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(affected_test_ids)))
-            db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
-            db.execute(
-                delete(Test).where(Test.id.in_(affected_test_ids))
-            )
-
-        db.execute(delete(CardState).where(CardState.card_id.in_(card_id_list)))
-        db.execute(delete(Review).where(Review.card_id.in_(card_id_list)))
-        db.execute(delete(Card).where(Card.id.in_(card_id_list)))
-
-    # Delete deck_tags before deleting deck (foreign key constraint)
-    db.execute(delete(deck_tags).where(deck_tags.c.deck_id == deck.id))
-    db.execute(delete(Deck).where(Deck.id == deck.id))
+    deck.is_deleted = True
+    deck.deleted_at = datetime.utcnow()
     db.commit()
 
-    # Cleanup media files for this deck (if any)
-    _cleanup_deck_media(str(deck.id))
-
     success_message = quote_plus("Deck deleted")
-    return RedirectResponse(url=f"/dashboard?success={success_message}", status_code=303)
+    return RedirectResponse(
+        url=f"/dashboard?success={success_message}", status_code=303
+    )
 
 
 def _cleanup_deck_media(deck_id: str) -> None:
@@ -1913,7 +2155,13 @@ def deck_overview(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    cards = (
+        db.execute(
+            select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     has_published_tests = _deck_has_published_tests(db, deck.id)
     flashcards = [card for card in cards if card.card_type == "basic"]
     mcqs = [card for card in cards if card.card_type == "mcq"]
@@ -1926,38 +2174,49 @@ def deck_overview(
         has_test_content=has_test_content,
         has_published_tests=has_published_tests,
     )
-    test_count = _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id) if tests_available else 0
+    test_count = (
+        _user_test_attempt_count(db, deck_id=deck.id, user_id=user.id)
+        if tests_available
+        else 0
+    )
 
-    is_favorited = db.execute(
-        select(UserDeckFavorite)
-        .where(UserDeckFavorite.user_id == user.id, UserDeckFavorite.deck_id == deck.id)
-    ).scalars().first() is not None
+    favorite_scalars = db.execute(
+        select(UserDeckFavorite).where(
+            UserDeckFavorite.user_id == user.id, UserDeckFavorite.deck_id == deck.id
+        )
+    ).scalars()
+    favorite_first = (
+        favorite_scalars.first()
+        if hasattr(favorite_scalars, "first")
+        else next(iter(favorite_scalars.all()), None)
+    )
+    is_favorited = favorite_first is not None
 
-    return _html_no_store(templates.TemplateResponse(
-        "decks/overview.html",
-        {
-            "request": request,
-            "user": user,
-            "deck": deck,
-            "is_favorited": is_favorited,
-            "flashcard_count": len(flashcards),
-            "mcq_count": len(mcqs),
-            "can_edit": can_edit,
-            "can_manage_tags": can_manage_tags,
-            "can_use_ai_generation": (
-                can_use_ai_generation(user) and can_edit
-            ),
-            "tests_available": tests_available,
-            "test_count": test_count,
-            "default_test_count": settings.default_test_count,
-            "import_success": request.query_params.get("import_success"),
-            "update_success": request.query_params.get("update_success"),
-            "tag_error": request.query_params.get("tag_error"),
-            "tag_success": request.query_params.get("tag_success"),
-            "tag_form": _tag_form_context(deck),
-            "title": f"{deck.name} | edu selviz",
-        },
-    ))
+    return _html_no_store(
+        templates.TemplateResponse(
+            "decks/overview.html",
+            {
+                "request": request,
+                "user": user,
+                "deck": deck,
+                "is_favorited": is_favorited,
+                "flashcard_count": len(flashcards),
+                "mcq_count": len(mcqs),
+                "can_edit": can_edit,
+                "can_manage_tags": can_manage_tags,
+                "can_use_ai_generation": (can_use_ai_generation(user) and can_edit),
+                "tests_available": tests_available,
+                "test_count": test_count,
+                "default_test_count": settings.default_test_count,
+                "import_success": request.query_params.get("import_success"),
+                "update_success": request.query_params.get("update_success"),
+                "tag_error": request.query_params.get("tag_error"),
+                "tag_success": request.query_params.get("tag_success"),
+                "tag_form": _tag_form_context(deck),
+                "title": f"{deck.name} | edu selviz",
+            },
+        )
+    )
 
 
 @router.get("/decks/{deck_id}/flashcards", response_class=HTMLResponse)
@@ -1971,7 +2230,13 @@ def deck_flashcards(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    cards = (
+        db.execute(
+            select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
@@ -2003,7 +2268,13 @@ def deck_mcqs(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    cards = (
+        db.execute(
+            select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
@@ -2037,7 +2308,13 @@ def deck_ai_upload(
     if not can_use_ai_generation(user) or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    cards = (
+        db.execute(
+            select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
@@ -2099,7 +2376,13 @@ def import_cards_csv(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    cards = db.execute(select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())).scalars().all()
+    cards = (
+        db.execute(
+            select(Card).where(Card.deck_id == deck.id).order_by(Card.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
 
     filename = (csv_file.filename or "").strip()
     if not filename.lower().endswith(".csv"):
@@ -2132,7 +2415,9 @@ def import_cards_csv(
     finally:
         csv_file.file.close()
 
-    new_cards = [Card(deck_id=deck.id, front=row.front, back=row.back) for row in imported_rows]
+    new_cards = [
+        Card(deck_id=deck.id, front=row.front, back=row.back) for row in imported_rows
+    ]
     db.add_all(new_cards)
     db.flush()
     db.add_all([CardState(card_id=card.id) for card in new_cards])
@@ -2150,6 +2435,7 @@ def import_cards_csv(
 # Anki Import
 # =============================================================================
 
+
 @router.get("/decks/{deck_id}/anki-import", response_class=HTMLResponse)
 def anki_import_page(
     request: Request,
@@ -2161,7 +2447,9 @@ def anki_import_page(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
     if not can_manage_deck(user, deck):
-        raise HTTPException(status_code=403, detail="You do not have permission to import to this deck")
+        raise HTTPException(
+            status_code=403, detail="You do not have permission to import to this deck"
+        )
 
     return templates.TemplateResponse(
         "cards/anki_import.html",
@@ -2188,10 +2476,12 @@ def anki_import_upload(
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
     if not can_manage_deck(user, deck):
-        raise HTTPException(status_code=403, detail="You do not have permission to import to this deck")
+        raise HTTPException(
+            status_code=403, detail="You do not have permission to import to this deck"
+        )
 
     # Validate file
-    if not file.filename or not file.filename.endswith('.apkg'):
+    if not file.filename or not file.filename.endswith(".apkg"):
         return JSONResponse(
             {"success": False, "error": "File must be a .apkg file"},
             status_code=400,
@@ -2214,18 +2504,22 @@ def anki_import_upload(
             status_code=500,
         )
 
-    return JSONResponse({
-        "success": True,
-        "cards_imported": result.cards_imported,
-        "media_files": result.media_files,
-        "duplicates_skipped": result.duplicates_skipped,
-        "errors": result.errors,
-        "redirect_url": f"/decks/{deck.id}?import_success={quote_plus(f'Imported {result.cards_imported} cards')}",
-    })
+    return JSONResponse(
+        {
+            "success": True,
+            "cards_imported": result.cards_imported,
+            "media_files": result.media_files,
+            "duplicates_skipped": result.duplicates_skipped,
+            "errors": result.errors,
+            "redirect_url": f"/decks/{deck.id}?import_success={quote_plus(f'Imported {result.cards_imported} cards')}",
+        }
+    )
 
 
 @router.get("/review", response_class=HTMLResponse)
-def review_page(request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def review_page(
+    request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)
+):
     deck_id = request.query_params.get("deck_id")
     deck = None
     if deck_id:
@@ -2265,7 +2559,12 @@ def _review_next_inner(request, user, db, deck_id=None, remaining=None):
     if remaining == 0:
         return templates.TemplateResponse(
             "review/empty.html",
-            {"request": request, "user": user, "review_deck": deck, "review_complete": True},
+            {
+                "request": request,
+                "user": user,
+                "review_deck": deck,
+                "review_complete": True,
+            },
         )
 
     card = svc.next_due_card(db, user=user, deck_id=deck.id if deck else None)
@@ -2293,7 +2592,13 @@ def _review_next_inner(request, user, db, deck_id=None, remaining=None):
 
     return templates.TemplateResponse(
         "review/card.html",
-        {"request": request, "user": user, "card": cleaned_card, "review_deck": deck, "remaining": remaining},
+        {
+            "request": request,
+            "user": user,
+            "card": cleaned_card,
+            "review_deck": deck,
+            "remaining": remaining,
+        },
     )
 
 
@@ -2339,4 +2644,6 @@ def review_rate(
 
     next_remaining = None if remaining is None else max(remaining - 1, 0)
     effective_deck_id = deck_id or (str(deck.id) if deck else None)
-    return _review_next_inner(request, user, db, deck_id=effective_deck_id, remaining=next_remaining)
+    return _review_next_inner(
+        request, user, db, deck_id=effective_deck_id, remaining=next_remaining
+    )

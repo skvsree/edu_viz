@@ -28,7 +28,9 @@ router = APIRouter(tags=["auth"])
 logger = logging.getLogger(__name__)
 
 
-def _resolve_user_from_oidc_userinfo(db: Session, cfg, userinfo: dict[str, object]) -> User:
+def _resolve_user_from_oidc_userinfo(
+    db: Session, cfg, userinfo: dict[str, object]
+) -> User:
     sub = str(userinfo[cfg.subject_claim])
     email = userinfo.get("email")
     if not email and isinstance(userinfo.get("emails"), list) and userinfo["emails"]:
@@ -43,7 +45,9 @@ def _resolve_user_from_oidc_userinfo(db: Session, cfg, userinfo: dict[str, objec
             user.identity_sub = sub
             db.commit()
     if user is None:
-        user = User(identity_sub=sub, email=email, is_test_enabled=settings.test_enabled_default)
+        user = User(
+            identity_sub=sub, email=email, is_test_enabled=settings.test_enabled_default
+        )
         db.add(user)
         db.commit()
     else:
@@ -54,14 +58,25 @@ def _resolve_user_from_oidc_userinfo(db: Session, cfg, userinfo: dict[str, objec
 
 
 @router.get("/login")
-async def login(user: User | None = Depends(optional_current_user)):
+async def login(
+    request: Request,
+    user: User | None = Depends(optional_current_user),
+):
     if user is not None:
         return RedirectResponse(url="/dashboard", status_code=303)
+
+    if request is not None:
+        cfg = load_identity_config()
+        oauth = build_oauth()
+        return await oauth.microsoft.authorize_redirect(request, cfg.redirect_uri)
+
     return RedirectResponse(url="/login/providers", status_code=303)
 
 
 @router.get("/login/microsoft")
-async def login_microsoft(request: Request, user: User | None = Depends(optional_current_user)):
+async def login_microsoft(
+    request: Request, user: User | None = Depends(optional_current_user)
+):
     if user is not None:
         return RedirectResponse(url="/dashboard", status_code=303)
 
@@ -71,7 +86,9 @@ async def login_microsoft(request: Request, user: User | None = Depends(optional
 
 
 @router.get("/login/google")
-async def login_google(request: Request, user: User | None = Depends(optional_current_user)):
+async def login_google(
+    request: Request, user: User | None = Depends(optional_current_user)
+):
     if user is not None:
         return RedirectResponse(url="/dashboard", status_code=303)
 
@@ -88,7 +105,9 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     claims_options = build_claims_options(metadata.get("issuer"))
 
     try:
-        token = await oauth.microsoft.authorize_access_token(request, claims_options=claims_options)
+        token = await oauth.microsoft.authorize_access_token(
+            request, claims_options=claims_options
+        )
     except OAuthError as exc:
         logger.warning("OIDC callback failed: %s (%s)", exc.error, exc.description)
         raise HTTPException(status_code=400, detail="login failed") from exc

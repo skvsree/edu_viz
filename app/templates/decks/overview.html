@@ -35,15 +35,15 @@
           <span class="overview-nav__icon" aria-hidden="true">&#8962;</span>
           <span class="overview-nav__text">Home</span>
         </a>
-        <a href="/decks/{{ deck.id }}/mcqs" class="overview-nav__item">
-          <span class="overview-nav__icon" aria-hidden="true">&#9776;</span>
-          <span class="overview-nav__text">MCQs</span>
-          <span class="overview-nav__count" data-mcq-count>{{ mcq_count }}</span>
-        </a>
         <a href="/decks/{{ deck.id }}/flashcards" class="overview-nav__item">
           <span class="overview-nav__icon" aria-hidden="true">&#128220;</span>
           <span class="overview-nav__text">Flash Cards</span>
           <span class="overview-nav__count" data-flashcard-count>{{ flashcard_count }}</span>
+        </a>
+        <a href="/decks/{{ deck.id }}/mcqs" class="overview-nav__item">
+          <span class="overview-nav__icon" aria-hidden="true">&#9776;</span>
+          <span class="overview-nav__text">MCQs</span>
+          <span class="overview-nav__count" data-mcq-count>{{ mcq_count }}</span>
         </a>
         {% if tests_available %}
         <a href="/decks/{{ deck.id }}/tests" class="overview-nav__item">
@@ -88,24 +88,34 @@
           <h2 class="section-subtitle">Update deck details</h2>
         </div>
       </div>
-      <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md">
+      <form method="post" action="/decks/{{ deck.id }}/update" class="stack-md" id="edit-deck-modal" {% if update_error %}data-open-on-load="true"{% endif %}>
         <input type="hidden" name="next_url" value="/decks/{{ deck.id }}" />
+        {% set edit_name = edit_form.name if edit_form is defined and edit_form.name is defined else deck.name %}
+        {% set edit_description = edit_form.description if edit_form is defined and edit_form.description is defined else (deck.description or '') %}
+        {% set current_access_level = edit_form.access_level if edit_form is defined and edit_form.access_level is defined else (deck.access_level if deck.access_level is defined and deck.access_level else ('global' if deck.is_global else ('org' if deck.organization_id else 'user'))) %}
         <div>
           <label for="edit-deck-name-inline">Deck name</label>
-          <input id="edit-deck-name-inline" name="name" value="{{ deck.name }}" maxlength="255" required />
+          <input id="edit-deck-name-inline" name="name" value="{{ edit_name }}" maxlength="255" required />
         </div>
         <div>
           <label for="edit-deck-description-inline">Description</label>
-          <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ deck.description or '' }}</textarea>
+          <textarea id="edit-deck-description-inline" name="description" rows="4" placeholder="Short note about what this deck covers">{{ edit_description }}</textarea>
         </div>
+        {% if update_error %}
+          <p class="form-help form-help--error">{{ update_error }}</p>
+        {% endif %}
         {% if user.role == "system_admin" %}
           <div>
             <label for="access-level">Access level</label>
             <select id="access-level" name="access_level" style="width:100%; padding:0.5rem; border-radius:8px; border:1px solid var(--border-color); background:var(--input-bg); color:var(--text);">
-              <option value="user" {% if deck.access_level=='user' %}selected{% endif %}>Mine</option>
-              <option value="org" {% if deck.access_level=='org' %}selected{% endif %}>Org</option>
-              <option value="global" {% if deck.access_level=='global' %}selected{% endif %}>Global</option>
+              <option value="user" {% if current_access_level=='user' %}selected{% endif %}>Mine</option>
+              <option value="org" {% if current_access_level=='org' %}selected{% endif %}>Org</option>
+              <option value="global" {% if current_access_level=='global' %}selected{% endif %}>Global</option>
             </select>
+            <label class="checkbox-row" style="margin-top:0.5rem;">
+              <input type="checkbox" name="is_global" value="true" {% if current_access_level=='global' %}checked{% endif %} />
+              <span>Make this a global deck</span>
+            </label>
           </div>
         {% endif %}
         <div class="deck-card__actions">

@@ -48,6 +48,22 @@ def is_org_admin(user: Any) -> bool:
     return user.role == ROLE_ADMIN and user.organization_id is not None
 
 
+def _deck_scope(deck: Any) -> str:
+    """Backward-compatible deck scope resolver.
+
+    Older tests and some call sites still build lightweight deck stubs with only
+    `is_global` and `organization_id`. Newer code uses `access_level`.
+    """
+    raw_level = getattr(deck, "access_level", None)
+    if raw_level is not None:
+        return getattr(raw_level, "value", raw_level)
+    if getattr(deck, "is_global", False):
+        return SCOPE_GLOBAL
+    if getattr(deck, "organization_id", None) is not None:
+        return SCOPE_ORG
+    return SCOPE_USER
+
+
 def _has_explicit_access(user: Any, deck: Any, required: str) -> bool:
     """Check if user has explicit per-deck access >= required level."""
     # This is called from can_access_deck etc which receive loaded deck_accesses
@@ -74,15 +90,17 @@ def can_access_deck(user: Any, deck: Any) -> bool:
     if is_system_admin(user):
         return True
 
+    deck_user_id = getattr(deck, "user_id", None)
+
     # Owner always has access
-    if str(deck.user_id) == str(user.id):
+    if deck_user_id is not None and str(deck_user_id) == str(user.id):
         return True
 
     # Explicit grant can always expand visibility
     if _has_explicit_access(user, deck, ACCESS_READ):
         return True
 
-    access_level = getattr(deck.access_level, "value", deck.access_level)
+    access_level = _deck_scope(deck)
 
     # Global: anyone can read
     if access_level == SCOPE_GLOBAL:
@@ -105,11 +123,13 @@ def can_write_deck(user: Any, deck: Any) -> bool:
     if is_system_admin(user):
         return True
 
+    deck_user_id = getattr(deck, "user_id", None)
+
     # Owner always has write
-    if str(deck.user_id) == str(user.id):
+    if deck_user_id is not None and str(deck_user_id) == str(user.id):
         return True
 
-    access_level = getattr(deck.access_level, "value", deck.access_level)
+    access_level = _deck_scope(deck)
 
     # Org admin can write org-level decks
     if access_level == SCOPE_ORG and is_org_admin(user):
@@ -127,11 +147,13 @@ def can_delete_deck(user: Any, deck: Any) -> bool:
     if is_system_admin(user):
         return True
 
+    deck_user_id = getattr(deck, "user_id", None)
+
     # Owner can delete own decks
-    if str(deck.user_id) == str(user.id):
+    if deck_user_id is not None and str(deck_user_id) == str(user.id):
         return True
 
-    access_level = getattr(deck.access_level, "value", deck.access_level)
+    access_level = _deck_scope(deck)
 
     # Org admin can delete org-level decks
     if access_level == SCOPE_ORG and is_org_admin(user):
@@ -148,7 +170,7 @@ def can_manage_deck(user: Any, deck: Any) -> bool:
 
 
 def can_manage_decks(user: Any) -> bool:
-    return user.role in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN, ROLE_USER}
+    return user.role in {ROLE_ADMIN, ROLE_SYSTEM_ADMIN}
 
 
 def can_set_deck_access(user: Any, deck: Any) -> bool:
@@ -159,7 +181,7 @@ def can_set_deck_access(user: Any, deck: Any) -> bool:
     if str(deck.user_id) == str(user.id):
         return True
     # Org admin can grant access on org-level decks
-    if deck.access_level == SCOPE_ORG and is_org_admin(user):
+    if _deck_scope(deck) == SCOPE_ORG and is_org_admin(user):
         if user.organization_id and deck.organization_id:
             return str(user.organization_id) == str(deck.organization_id)
     return False
@@ -187,7 +209,11 @@ def can_use_ai_generation(user: Any) -> bool:
     if user.role != ROLE_ADMIN:
         return False
     organization = getattr(user, "organization", None)
-    return bool(user.organization_id and organization and getattr(organization, "is_ai_enabled", False))
+    return bool(
+        user.organization_id
+        and organization
+        and getattr(organization, "is_ai_enabled", False)
+    )
 
 
 def can_import_mcq_json(user: Any) -> bool:
@@ -266,9 +292,7 @@ def accessible_deck_clause(user: "User") -> "ColumnElement[bool]":
 
     visibility = [Deck.user_id == user.id]  # owner
     if user.organization_id:
-        visibility.append(
-            Deck.organization_id == user.organization_id
-        )  # org member
+        visibility.append(Deck.organization_id == user.organization_id)  # org member
     visibility.append(Deck.access_level == DeckAccessScope.GLOBAL)  # global
 
     clauses.append(or_(*visibility))
@@ -286,11 +310,13 @@ def browse_accessible_deck_clause(user: "User") -> "ColumnElement[bool]":
     visibility = [
         Deck.user_id == user.id,
         Deck.access_level == DeckAccessScope.GLOBAL,
-        (DeckAccess.user_id == user.id) & (DeckAccess.access_level != DeckAccessLevel.NONE),
+        (DeckAccess.user_id == user.id)
+        & (DeckAccess.access_level != DeckAccessLevel.NONE),
     ]
     if user.organization_id:
         visibility.append(
-            (Deck.access_level == DeckAccessScope.ORG) & (Deck.organization_id == user.organization_id)
+            (Deck.access_level == DeckAccessScope.ORG)
+            & (Deck.organization_id == user.organization_id)
         )
 
     return Deck.is_deleted.is_(False) & or_(*visibility)
@@ -369,11 +395,19 @@ def browse_filter_clause(user: "User", tab: str) -> "ColumnElement[bool]":
         return base & (Deck.access_level == DeckAccessScope.GLOBAL)
     if tab == TAB_ORG:
         if user.organization_id:
-            return base & (Deck.access_level == DeckAccessScope.ORG) & (Deck.organization_id == user.organization_id)
+            return (
+                base
+                & (Deck.access_level == DeckAccessScope.ORG)
+                & (Deck.organization_id == user.organization_id)
+            )
         return base & (Deck.access_level == DeckAccessScope.ORG)
     if tab == TAB_USER:
         # Personal decks: access_level=user AND owner is current user
-        return base & (Deck.access_level == DeckAccessScope.USER) & (Deck.user_id == user.id)
+        return (
+            base
+            & (Deck.access_level == DeckAccessScope.USER)
+            & (Deck.user_id == user.id)
+        )
     return base
 
 
@@ -391,6 +425,7 @@ def can_write_tab(user: "User", tab: str) -> bool:
 
 
 # ── Test throttle ─────────────────────────────────────────────────────────────
+
 
 @dataclass(slots=True)
 class DashboardDeckStats:
@@ -420,21 +455,34 @@ def check_test_throttle(user: Any, deck: Any, db: "Session") -> tuple[bool, str]
     if settings.test_cooldown_seconds > 0:
         from app.models import TestAttempt, Test
 
-        cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.test_cooldown_seconds)
-        last_attempt = db.execute(
-            select(TestAttempt)
-            .join(Test)
-            .where(TestAttempt.user_id == user_id, Test.deck_id == deck.id, TestAttempt.started_at >= cutoff)
-            .order_by(TestAttempt.started_at.desc())
-            .limit(1)
-        ).scalars().first()
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.test_cooldown_seconds
+        )
+        last_attempt = (
+            db.execute(
+                select(TestAttempt)
+                .join(Test)
+                .where(
+                    TestAttempt.user_id == user_id,
+                    Test.deck_id == deck.id,
+                    TestAttempt.started_at >= cutoff,
+                )
+                .order_by(TestAttempt.started_at.desc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
 
         if last_attempt:
             remaining = settings.test_cooldown_seconds - int(
                 (datetime.now(timezone.utc) - last_attempt.started_at).total_seconds()
             )
             if remaining > 0:
-                return False, f"Please wait {remaining} seconds before taking another test on this deck."
+                return (
+                    False,
+                    f"Please wait {remaining} seconds before taking another test on this deck.",
+                )
 
     # Check daily limit (org-specific, capped by env max)
     daily_limit = settings.test_daily_limit
@@ -447,13 +495,23 @@ def check_test_throttle(user: Any, deck: Any, db: "Session") -> tuple[bool, str]
         if daily_limit > 0:
             from app.models import TestAttempt
 
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            count = db.execute(
-                select(func.count(TestAttempt.id))
-                .where(TestAttempt.user_id == user_id, TestAttempt.started_at >= today_start)
-            ).scalar() or 0
+            today_start = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            count = (
+                db.execute(
+                    select(func.count(TestAttempt.id)).where(
+                        TestAttempt.user_id == user_id,
+                        TestAttempt.started_at >= today_start,
+                    )
+                ).scalar()
+                or 0
+            )
 
             if count >= daily_limit:
-                return False, f"Daily test limit reached ({daily_limit} per day). Try again tomorrow."
+                return (
+                    False,
+                    f"Daily test limit reached ({daily_limit} per day). Try again tomorrow.",
+                )
 
     return True, ""
