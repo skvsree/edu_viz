@@ -60,12 +60,18 @@
       {% if show_action_bar %}
       <div class="browse-action-bar" id="browse-action-bar">
         <div class="browse-action-bar__actions">
+          <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" id="select-all-btn" aria-label="Select all" title="Select all">Select all</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-new" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-rename" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-move" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-delete" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
           <button type="button" class="browse-btn browse-btn--sm" id="bulk-ai-upload-btn" aria-label="AI Bulk Upload" title="AI Bulk Upload">◈ Upload</button>
         </div>
+        {% if total_pages > 1 %}
+        <div class="browse-action-bar__meta">
+          <span class="browse-action-bar__meta-text">Page {{ page }} / {{ total_pages }}</span>
+        </div>
+        {% endif %}
       </div>
       {% endif %}
     </div>
@@ -1353,6 +1359,7 @@ dialog.modal::backdrop {
   const folderTreeData = normalizeTreeData(rawFolderTreeData);
   const moveBtn = document.getElementById("move-btn");
   const deleteBtn = document.getElementById("delete-btn");
+  const selectAllBtn = document.getElementById("select-all-btn");
   const actionBar = document.getElementById("browse-action-bar");
   const showBrowseInfo = (title, body) => {
     const safeTitle = title || "Info";
@@ -1422,8 +1429,14 @@ dialog.modal::backdrop {
       .filter(cb => cb.checked && cb.closest("[data-can-write='true']"))
       .map(cb => ({ type: cb.dataset.type, id: cb.dataset.id }));
     const n = selected.length;
+    const allCheckboxes = getAllCheckboxes().filter(cb => cb.closest("[data-can-write='true']"));
     if (moveBtn) moveBtn.disabled = n === 0;
     if (deleteBtn) deleteBtn.disabled = n === 0;
+    if (selectAllBtn) {
+      const allSelected = allCheckboxes.length > 0 && allCheckboxes.every(cb => cb.checked);
+      selectAllBtn.textContent = allSelected ? "Clear all" : "Select all";
+      selectAllBtn.disabled = allCheckboxes.length === 0;
+    }
     const renameBtn = document.getElementById("rename-btn");
     if (renameBtn) renameBtn.disabled = n !== 1;
     if (actionBar) actionBar.classList.toggle("has-selection", n > 0);
@@ -1434,6 +1447,16 @@ dialog.modal::backdrop {
   }
 
   getAllCheckboxes().forEach(cb => cb.addEventListener("change", syncSelected));
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener("click", () => {
+      const allCheckboxes = getAllCheckboxes().filter(cb => cb.closest("[data-can-write='true']"));
+      const shouldSelectAll = allCheckboxes.some(cb => !cb.checked);
+      allCheckboxes.forEach(cb => {
+        cb.checked = shouldSelectAll;
+      });
+      syncSelected();
+    });
+  }
 
   // Move
   if (moveBtn) {

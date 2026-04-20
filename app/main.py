@@ -4,6 +4,7 @@ from pathlib import Path
 import threading
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
@@ -104,6 +105,27 @@ def serve_media_file(object_key: str):
         content=payload,
         media_type=content_type or "application/octet-stream",
         headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@app.get("/debug/storage", include_in_schema=False)
+def debug_storage():
+    test_key = f"debug/storage/{threading.get_ident()}.txt"
+    storage = get_storage()
+    payload = b"edu_viz storage debug"
+    storage.save_bytes(key=test_key, data=payload, content_type="text/plain")
+    read_back, content_type = storage.open_bytes(key=test_key)
+    return JSONResponse(
+        {
+            "ok": True,
+            "backend": settings.storage_backend,
+            "bucket": settings.storage_s3_bucket,
+            "endpoint": settings.storage_s3_endpoint_url,
+            "key": test_key,
+            "size": len(read_back),
+            "content_type": content_type,
+            "matches": read_back == payload,
+        }
     )
 
 
