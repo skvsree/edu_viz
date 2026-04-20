@@ -14,12 +14,9 @@
     <meta name="theme-color" content="#07111f" id="theme-meta" />
     <link rel="icon" type="image/jpeg" href="{{ static_asset_url('brand/logo.jpg') }}" />
     <link rel="apple-touch-icon" href="{{ static_asset_url('brand/logo.jpg') }}" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link rel="preload" as="image" href="{{ static_asset_url('brand/logo.jpg') }}" fetchpriority="high" />
+    <link rel="preload" as="font" href="{{ static_asset_url('fonts/atkinson-hyperlegible-next-400-800-latin.woff2') }}" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="{{ static_asset_url('fonts/atkinson-hyperlegible-next.css') }}" />
     {# Apply saved theme before paint to avoid flash #}
     <script>
       (function () {
@@ -54,6 +51,10 @@
               src="{{ static_asset_url('brand/logo.jpg') }}"
               alt="edu selviz logo"
               class="brand-mark__image"
+              width="58"
+              height="58"
+              decoding="async"
+              fetchpriority="high"
             />
           </span>
           <span class="brand-mark__copy">

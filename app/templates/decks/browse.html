@@ -103,7 +103,7 @@
         {% if total_pages > 1 %}
           <div class="browse-pagination">
             {% if page > 1 %}<a href="?q={{ q }}&page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>{% endif %}
-            <span style="font-size:0.8rem; color:var(--muted-color);">{{ total }} results</span>
+            <span class="browse-pagination__meta">Page {{ page }} / {{ total_pages }} · {{ total }} results</span>
             {% if page < total_pages %}<a href="?q={{ q }}&page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>{% endif %}
           </div>
         {% endif %}
@@ -113,6 +113,17 @@
 
     {% elif current_folder %}
       {# Folder view: subfolders + decks #}
+      {% if total > 0 %}
+      <div class="browse-pagination browse-pagination--top">
+        {% if page > 1 %}
+          <a href="?folder={{ current_folder.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}&page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>
+        {% endif %}
+        <span class="browse-pagination__meta">Page {{ page }} / {{ total_pages }} · {{ total }} decks</span>
+        {% if page < total_pages %}
+          <a href="?folder={{ current_folder.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}&page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>
+        {% endif %}
+      </div>
+      {% endif %}
       <div class="browse-table-wrap">
         <div class="browse-table" role="table" aria-label="Folder contents">
           <div class="browse-table__head" role="rowgroup">
@@ -165,12 +176,34 @@
           </div>
         </div>
       </div>
+      {% if total_pages > 1 and total > 0 %}
+      <div class="browse-pagination">
+        {% if page > 1 %}
+          <a href="?folder={{ current_folder.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}&page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>
+        {% endif %}
+        <span class="browse-pagination__meta">Page {{ page }} / {{ total_pages }} · {{ total }} decks</span>
+        {% if page < total_pages %}
+          <a href="?folder={{ current_folder.id }}{% if active_tab %}&tab={{ active_tab }}{% endif %}&page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>
+        {% endif %}
+      </div>
+      {% endif %}
       {% if not subfolders and not decks %}
         <div class="browse-empty"><h3>This folder is empty</h3></div>
       {% endif %}
 
     {% else %}
       {# Root view: root folders + root decks #}
+      {% if total > 0 %}
+      <div class="browse-pagination browse-pagination--top">
+        {% if page > 1 %}
+          <a href="?{% if active_tab %}tab={{ active_tab }}&{% endif %}page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>
+        {% endif %}
+        <span class="browse-pagination__meta">Page {{ page }} / {{ total_pages }} · {{ total }} decks</span>
+        {% if page < total_pages %}
+          <a href="?{% if active_tab %}tab={{ active_tab }}&{% endif %}page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>
+        {% endif %}
+      </div>
+      {% endif %}
       <div class="browse-table-wrap">
         <div class="browse-table" role="table" aria-label="Root items">
           <div class="browse-table__head" role="rowgroup">
@@ -221,6 +254,17 @@
           </div>
         </div>
       </div>
+      {% if total_pages > 1 and total > 0 %}
+      <div class="browse-pagination">
+        {% if page > 1 %}
+          <a href="?{% if active_tab %}tab={{ active_tab }}&{% endif %}page={{ page-1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">← Prev</a>
+        {% endif %}
+        <span class="browse-pagination__meta">Page {{ page }} / {{ total_pages }} · {{ total }} decks</span>
+        {% if page < total_pages %}
+          <a href="?{% if active_tab %}tab={{ active_tab }}&{% endif %}page={{ page+1 }}" class="browse-btn browse-btn--sm browse-btn--ghost">Next →</a>
+        {% endif %}
+      </div>
+      {% endif %}
       {% if not root_folders and not root_decks %}
         <div class="browse-empty">
           <h3>No decks yet</h3>
@@ -424,8 +468,8 @@
     inset: 0;
     z-index: 1000;
     padding: 1rem;
-    background: rgba(2, 6, 23, 0.7);
-    backdrop-filter: blur(4px);
+    background: transparent;
+    backdrop-filter: none;
   }
 
   .ai-upload-progress-dialog {
@@ -521,7 +565,7 @@
 
   [data-theme="light"] .ai-upload-progress-modal,
   :root:not([data-theme="dark"]) .ai-upload-progress-modal {
-    background: rgba(15, 23, 42, 0.18);
+    background: transparent;
   }
 
   [data-theme="light"] .ai-upload-progress-error,
@@ -545,12 +589,11 @@
   display:flex;
   flex-direction:column;
   min-height:0;
-  max-height:calc(100vh - 8rem);
+  max-height:none;
   padding-left:0;
 }
 .browse-top-sticky {
-  position:sticky;
-  top:0;
+  position:static;
   z-index:6;
   background:var(--bg, var(--background-color));
   padding:0 0 0.2rem;
@@ -560,8 +603,7 @@
   flex:1 1 auto;
   min-height:0;
   width:100%;
-  overflow-y:auto;
-  overflow-x:visible;
+  overflow:visible;
   padding:0 0.2rem 0.2rem;
 }
 .browse-title { font-size:1.25rem; font-weight:700; margin:0; line-height:1.1; }
@@ -669,9 +711,6 @@
 .browse-table__row--head {
   background:color-mix(in srgb, var(--card-bg) 88%, var(--accent) 12%);
   border-bottom:1px solid var(--border-color);
-  position:sticky;
-  top:0;
-  z-index:2;
 }
 .browse-table__body .browse-table__row {
   border-bottom:1px solid var(--border-color);
@@ -711,11 +750,10 @@
 }
 @media (max-width: 720px) {
   .browse-main {
-    max-height:calc(100vh - 7rem);
+    max-height:none;
     padding-left:0;
   }
   .browse-top-sticky {
-    top:0;
     padding-bottom:0.15rem;
   }
   .browse-header {
@@ -1144,7 +1182,9 @@
 .deck-item-card__actions { display:none; }
 
 /* ── Pagination / Empty ─────────────────────────────────────────────── */
-.browse-pagination { display:flex; align-items:center; gap:0.5rem; margin-top:1rem; }
+.browse-pagination { display:flex; align-items:center; justify-content:center; gap:0.5rem; margin-top:1rem; flex-wrap:wrap; }
+.browse-pagination--top { margin-top:0; margin-bottom:0.9rem; justify-content:flex-end; }
+.browse-pagination__meta { font-size:0.8rem; color:var(--muted-color); }
 .browse-empty { text-align:center; padding:2.5rem; color:var(--muted-color); }
 .browse-empty h3 { margin:0 0 0.25rem; font-size:1rem; }
 
@@ -1166,7 +1206,7 @@
 /* ── Responsive ─────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .browse-main {
-    max-height:calc(100vh - 6.5rem);
+    max-height:none;
   }
   .browse-top-sticky {
     padding-bottom:0.12rem;
@@ -1291,8 +1331,7 @@ dialog.modal {
   color: var(--text);
 }
 dialog.modal::backdrop {
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0);
 }
 .modal__surface {
   width: min(92vw, 32rem);
@@ -1343,7 +1382,7 @@ dialog.modal::backdrop {
 }
 :root[data-theme="dark"] dialog.modal::backdrop,
 [data-theme="dark"] dialog.modal::backdrop {
-  background: rgba(2, 6, 23, 0.78);
+  background: rgba(15, 23, 42, 0);
 }
 </style>
 
