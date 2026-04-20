@@ -1212,7 +1212,7 @@ def browse_decks(
                 .group_by(Deck.id)
             )
 
-    # Pagination only for search results
+    # Pagination for browse/search views
     page = request.query_params.get("page", "1")
     try:
         page = max(1, int(page))
@@ -1222,6 +1222,7 @@ def browse_decks(
     count_q = select(func.count()).select_from(base_q.subquery())
     total = db.execute(count_q).scalar_one()
     total_pages = (total + BROWSE_PAGE_SIZE - 1) // BROWSE_PAGE_SIZE if total > 0 else 1
+    page = min(page, total_pages)
     start_page = max(1, page - 2)
     end_page = min(total_pages, page + 2)
 
