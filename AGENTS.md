@@ -126,8 +126,9 @@
 - Bulk AI upload queuing lives in `app/api/routers/bulk_ai_upload.py` via `enqueue_ai_upload_job(...)`.
 - Uploads store source PDFs in SeaweedFS through `app/services/storage.py` when storage is available; file rows fall back to inline text only if storage save fails.
 - Single-PDF AI import can target an existing deck; ZIP uploads must create/reuse per-file decks and cannot target one existing deck.
-- UX intent: bulk upload popup should show loading only until submission, then redirect to `/settings/jobs` with a notice instead of showing long in-modal progress.
-- `/settings/jobs` is the place to monitor background bulk upload progress and should stay mobile-friendly.
+- UX intent: bulk upload popup should stay in the same modal during file submission and show only a simple upload progress bar/status before redirecting to `/settings/jobs`.
+- While upload submission is active, modal cancel/close actions should abort the in-flight upload request instead of silently dismissing the dialog.
+- `/settings/jobs` is the place to monitor background bulk upload progress after submission and should stay mobile-friendly.
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
 - New users created during first OIDC sign-in inherit `settings.test_enabled_default`; current intended default is enabled so tests are on for brand-new users unless later overridden.
 

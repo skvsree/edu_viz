@@ -82,6 +82,28 @@
     margin-top: 0.9rem;
   }
 
+  .ai-upload-progress-upload-row {
+    margin-top: 0.95rem;
+  }
+
+  .ai-upload-progress-upload-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .ai-upload-progress-upload-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  .ai-upload-progress-upload-value {
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
   [data-theme="light"] .ai-upload-progress-modal {
     background: transparent;
   }
@@ -163,8 +185,14 @@
     <div class="ai-upload-progress-body">
       <p id="ai-upload-progress-status">Initializing...</p>
       <p id="ai-upload-progress-error" class="ai-upload-progress-error" hidden></p>
-      <div class="progress-bar-container" aria-hidden="true">
-        <div id="ai-upload-progress-bar" class="progress-bar" style="width: 0%"></div>
+      <div class="ai-upload-progress-upload-row">
+        <div class="ai-upload-progress-upload-head">
+          <span class="ai-upload-progress-upload-label">Upload progress</span>
+          <span id="ai-upload-upload-value" class="ai-upload-progress-upload-value">0%</span>
+        </div>
+        <div class="progress-bar-container" aria-hidden="true">
+          <div id="ai-upload-progress-bar" class="progress-bar" style="width: 0%"></div>
+        </div>
       </div>
       <div class="ai-upload-progress-metrics">
         <div class="ai-upload-progress-metric muted">
@@ -189,49 +217,137 @@
     var form = document.getElementById("ai-upload-form");
     var fileInput = document.getElementById("ai-upload-file");
     var submitBtn = document.getElementById("ai-upload-submit");
+    var progressModal = document.getElementById("ai-upload-progress-modal");
+    var progressStatus = document.getElementById("ai-upload-progress-status");
+    var progressError = document.getElementById("ai-upload-progress-error");
+    var progressBar = document.getElementById("ai-upload-progress-bar");
+    var uploadValue = document.getElementById("ai-upload-upload-value");
+    var processedEl = document.getElementById("ai-upload-processed");
+    var totalEl = document.getElementById("ai-upload-total");
+    var flashcardsEl = document.getElementById("ai-upload-flashcards");
+    var mcqsEl = document.getElementById("ai-upload-mcqs");
 
     if (!form || !fileInput || !submitBtn) return;
 
-    form.addEventListener("submit", async function (event) {
+    function showProgressModal() {
+      if (progressModal) {
+        progressModal.setAttribute("aria-hidden", "false");
+      }
+    }
+
+    function hideProgressError() {
+      if (progressError) {
+        progressError.hidden = true;
+        progressError.textContent = "";
+      }
+    }
+
+    function setUploadProgress(percent, statusText) {
+      var safePercent = Math.max(0, Math.min(100, Math.round(percent || 0)));
+      if (progressBar) {
+        progressBar.style.width = safePercent + "%";
+      }
+      if (uploadValue) {
+        uploadValue.textContent = safePercent + "%";
+      }
+      if (progressStatus && statusText) {
+        progressStatus.textContent = statusText;
+      }
+    }
+
+    function resetProgressUi() {
+      hideProgressError();
+      setUploadProgress(0, "Uploading file...");
+      if (processedEl) processedEl.textContent = "0";
+      if (totalEl) totalEl.textContent = fileInput.files && fileInput.files[0] ? "1" : "0";
+      if (flashcardsEl) flashcardsEl.textContent = "0";
+      if (mcqsEl) mcqsEl.textContent = "0";
+    }
+
+    form.addEventListener("submit", function (event) {
       if (!fileInput.files || !fileInput.files[0]) {
         return;
       }
 
       event.preventDefault();
       submitBtn.disabled = true;
-      submitBtn.textContent = "Submitting...";
+      submitBtn.textContent = "Uploading...";
+      showProgressModal();
+      resetProgressUi();
 
-      try {
-        var formData = new FormData(form);
-        var response = await fetch(form.action, {
-          method: "POST",
-          body: formData,
-          headers: { "Accept": "application/json" },
-        });
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", form.action, true);
+      xhr.responseType = "json";
+      xhr.setRequestHeader("Accept", "application/json");
 
-        var data = null;
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          data = null;
+      xhr.upload.addEventListener("progress", function (event) {
+        if (!event.lengthComputable) {
+          setUploadProgress(15, "Uploading file...");
+          return;
+        }
+        var percent = (event.loaded / event.total) * 100;
+        setUploadProgress(percent, percent >= 100 ? "Upload complete. Starting job..." : "Uploading file...");
+      });
+
+      xhr.addEventListener("load", function () {
+        var data = xhr.response;
+        if (!data && xhr.responseText) {
+          try {
+            data = JSON.parse(xhr.responseText);
+          } catch (parseError) {
+            data = null;
+          }
         }
 
-        if (!response.ok) {
-          var message = (data && (data.message || data.detail)) || "Upload failed";
-          throw new Error(message + " (" + response.status + ")");
+        if (xhr.status < 200 || xhr.status >= 300) {
+          var errorMessage = (data && (data.message || data.detail)) || "Upload failed";
+          if (progressError) {
+            progressError.hidden = false;
+            progressError.textContent = errorMessage + " (" + xhr.status + ")";
+          }
+          if (progressStatus) {
+            progressStatus.textContent = "Upload failed";
+          }
+          submitBtn.disabled = false;
+          submitBtn.textContent = "Generate study pack";
+          return;
         }
 
+        setUploadProgress(100, "Upload complete. Redirecting to Jobs...");
+        if (processedEl) processedEl.textContent = "1";
         var jobId = data && data.job_id;
         var notice = encodeURIComponent((data && data.message) || "Submitted. Redirecting to Jobs.");
         var target = jobId
           ? "/settings/jobs?submitted=bulk-ai-upload&job=" + encodeURIComponent(jobId) + "&notice=" + notice
           : "/settings/jobs?submitted=bulk-ai-upload&notice=" + notice;
         window.location.href = target;
-      } catch (error) {
+      });
+
+      xhr.addEventListener("error", function () {
+        if (progressError) {
+          progressError.hidden = false;
+          progressError.textContent = "Network error while uploading file";
+        }
+        if (progressStatus) {
+          progressStatus.textContent = "Upload failed";
+        }
         submitBtn.disabled = false;
         submitBtn.textContent = "Generate study pack";
-        window.alert((error && error.message) || "Upload failed");
-      }
+      });
+
+      xhr.addEventListener("abort", function () {
+        if (progressError) {
+          progressError.hidden = false;
+          progressError.textContent = "Upload canceled";
+        }
+        if (progressStatus) {
+          progressStatus.textContent = "Upload canceled";
+        }
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Generate study pack";
+      });
+
+      xhr.send(new FormData(form));
     });
   })();
 </script>
