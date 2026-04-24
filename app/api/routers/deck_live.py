@@ -262,6 +262,16 @@ async def job_stream(
                                     "original_filename": f.original_filename,
                                 }
                             )
+                    file_details = [
+                        {
+                            "id": str(f.id),
+                            "original_filename": f.original_filename,
+                            "status": f.status,
+                            "error_message": f.error_message,
+                        }
+                        for f in files
+                        if f.status in {"processing", "completed", "failed"}
+                    ]
                     payload["bulk"] = {
                         "id": str(live_bulk.id) if live_bulk else None,
                         "status": live_bulk.status if live_bulk else None,
@@ -271,6 +281,7 @@ async def job_stream(
                         "mcqs_generated": int(live_bulk.mcqs_generated or 0) if live_bulk else 0,
                         "failed_files": int(live_bulk.failed_files or 0) if live_bulk else 0,
                         "created_decks": created_decks,
+                        "file_details": file_details,
                     }
 
                 yield f"data: {json.dumps(payload)}\n\n"

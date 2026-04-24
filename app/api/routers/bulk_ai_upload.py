@@ -479,23 +479,50 @@ def stop_bulk_ai_upload(
 @router.post("/bulk-ai-upload/{bulk_id}/resume")
 def resume_bulk_ai_upload(
     bulk_id: str,
+    file_id: str | None = None,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Resume a stopped bulk AI upload."""
+    """Resume a stopped or failed bulk AI upload, optionally for one failed file only."""
     bulk = db.get(BulkAIUpload, bulk_id)
     if not bulk:
         raise HTTPException(status_code=404, detail="Bulk upload not found")
 
-    if bulk.status not in {BulkAIUploadStatus.STOPPED.value, BulkAIUploadStatus.FAILED.value}:
+    resumable_statuses = {
+        BulkAIUploadStatus.STOPPED.value,
+        BulkAIUploadStatus.FAILED.value,
+        BulkAIUploadStatus.COMPLETED.value,
+    }
+    if file_id:
+        resumable_statuses.add(BulkAIUploadStatus.PENDING.value)
+        resumable_statuses.add(BulkAIUploadStatus.PROCESSING.value)
+    if bulk.status not in resumable_statuses:
         raise HTTPException(status_code=400, detail="Bulk upload cannot be resumed")
 
     file_records = db.execute(
-        select(BulkAIUploadFile).where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+        .order_by(BulkAIUploadFile.created_at.asc())
     ).scalars().all()
+    if not file_records:
+        raise HTTPException(status_code=404, detail="Bulk upload files not found")
+
+    target_file_records = file_records
+    if file_id:
+        target_file_records = [f for f in file_records if str(f.id) == file_id]
+        if not target_file_records:
+            raise HTTPException(status_code=404, detail="Bulk upload file not found")
+        target_file = target_file_records[0]
+        if target_file.status not in {
+            BulkAIUploadFileStatus.FAILED.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+        }:
+            raise HTTPException(status_code=400, detail="Only failed or stuck files can be retried individually")
+
+
     missing_storage_keys = []
     storage = get_storage()
-    for file_record in file_records:
+    for file_record in target_file_records:
         if not file_record.storage_key:
             missing_storage_keys.append(file_record.original_filename)
             continue
@@ -516,45 +543,66 @@ def resume_bulk_ai_upload(
 
     deck = _ensure_bulk_upload_deck(db, user, bulk.filename, None, existing_deck_id=bulk.deck_id)
     bulk.deck_id = deck.id
-    _clear_deck_generated_content(db, deck.id)
 
-    # Reset all file records for full regeneration into the same deck
-    db.execute(
-        update(BulkAIUploadFile)
-        .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
-        .values(
-            status=BulkAIUploadFileStatus.PENDING.value,
-            created_deck_id=deck.id,
-            flashcards_generated=0,
-            mcqs_generated=0,
-            duplicate_count=0,
-            error_message=None,
-            started_at=None,
-            completed_at=None,
+    if file_id:
+        target_file = target_file_records[0]
+        if target_file.created_deck_id:
+            _clear_deck_generated_content(db, target_file.created_deck_id)
+        target_file.status = BulkAIUploadFileStatus.PENDING.value
+        target_file.created_deck_id = target_file.created_deck_id or deck.id
+        target_file.flashcards_generated = 0
+        target_file.mcqs_generated = 0
+        target_file.duplicate_count = 0
+        target_file.error_message = None
+        target_file.started_at = None
+        target_file.completed_at = None
+        bulk.failed_files = max((bulk.failed_files or 0) - 1, 0)
+        bulk.status = BulkAIUploadStatus.PENDING.value
+        bulk.is_auto_stop = False
+        bulk.error_message = None
+        total_items = 1
+    else:
+        _clear_deck_generated_content(db, deck.id)
+        db.execute(
+            update(BulkAIUploadFile)
+            .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+            .values(
+                status=BulkAIUploadFileStatus.PENDING.value,
+                created_deck_id=deck.id,
+                flashcards_generated=0,
+                mcqs_generated=0,
+                duplicate_count=0,
+                error_message=None,
+                started_at=None,
+                completed_at=None,
+            )
         )
-    )
-
-    bulk.status = BulkAIUploadStatus.PENDING.value
-    bulk.is_auto_stop = False
-    bulk.error_message = None
-    bulk.processed_files = 0
-    bulk.failed_files = 0
-    bulk.skipped_files = 0
-    bulk.flashcards_generated = 0
-    bulk.mcqs_generated = 0
+        bulk.status = BulkAIUploadStatus.PENDING.value
+        bulk.is_auto_stop = False
+        bulk.error_message = None
+        bulk.processed_files = 0
+        bulk.failed_files = 0
+        bulk.skipped_files = 0
+        bulk.flashcards_generated = 0
+        bulk.mcqs_generated = 0
+        total_items = bulk.total_files
     db.commit()
 
-    # Create new job
     job = Job(
         job_type="bulk_ai_upload",
         reference_id=bulk.id,
         status=JobStatus.PENDING.value,
-        total_items=bulk.total_files,
+        total_items=total_items,
     )
     db.add(job)
     db.commit()
 
-    return {"id": str(bulk.id), "job_id": str(job.id), "status": bulk.status}
+    return {
+        "id": str(bulk.id),
+        "job_id": str(job.id),
+        "status": bulk.status,
+        "retried_file_id": file_id,
+    }
 
 
 @router.get("/jobs")

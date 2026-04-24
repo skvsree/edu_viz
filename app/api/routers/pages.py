@@ -22,6 +22,7 @@ from app.core.db import get_db
 from app.models import (
     BulkAIUpload,
     BulkAIUploadFile,
+    BulkAIUploadFileStatus,
     Card,
     Deck,
     Job,
@@ -491,25 +492,52 @@ def _jobs_response(
 
     deck_ids = {b.deck_id for b in bulks.values() if getattr(b, "deck_id", None)}
     bulk_output_decks: dict = {}
+    bulk_failed_files: dict = {}
+    bulk_file_rows: dict = {}
+    bulk_file_counts: dict = {}
     if bulk_ids:
-        output_rows = db.execute(
-            select(BulkAIUploadFile.bulk_upload_id, Deck)
-            .join(Deck, Deck.id == BulkAIUploadFile.created_deck_id)
+        file_rows_result = db.execute(
+            select(BulkAIUploadFile)
             .where(BulkAIUploadFile.bulk_upload_id.in_(bulk_ids))
-            .where(BulkAIUploadFile.created_deck_id.is_not(None))
-            .where(Deck.is_deleted.is_(False))
             .order_by(BulkAIUploadFile.created_at.asc())
-        ).all()
+        )
+        if hasattr(file_rows_result, "scalars"):
+            file_rows = file_rows_result.scalars().all()
+        else:
+            file_rows = file_rows_result.all()
+        if file_rows and isinstance(file_rows[0], tuple):
+            file_rows = []
         seen_bulk_decks: dict = {}
-        for bulk_upload_id, deck in output_rows:
-            if not deck or not getattr(deck, "id", None):
+        for file_row in file_rows:
+            bulk_upload_id = file_row.bulk_upload_id
+            bulk_file_rows.setdefault(bulk_upload_id, []).append(file_row)
+            if file_row.created_deck_id:
+                deck_ids.add(file_row.created_deck_id)
+                seen = seen_bulk_decks.setdefault(bulk_upload_id, set())
+                if file_row.created_deck_id not in seen:
+                    seen.add(file_row.created_deck_id)
+                    bulk_output_decks.setdefault(bulk_upload_id, []).append(file_row.created_deck_id)
+            if file_row.status == BulkAIUploadFileStatus.FAILED.value:
+                bulk_failed_files.setdefault(bulk_upload_id, []).append(file_row)
+
+        for bulk_id, file_list in bulk_file_rows.items():
+            counts = {"completed": 0, "processing": 0, "failed": 0, "pending": 0}
+            for file_row in file_list:
+                status = (file_row.status or "").lower()
+                if status in counts:
+                    counts[status] += 1
+                else:
+                    counts["pending"] += 1
+            bulk_file_counts[bulk_id] = counts
+
+            if bulk_failed_files.get(bulk_id):
                 continue
-            seen = seen_bulk_decks.setdefault(bulk_upload_id, set())
-            if deck.id in seen:
-                continue
-            seen.add(deck.id)
-            bulk_output_decks.setdefault(bulk_upload_id, []).append(deck)
-            deck_ids.add(deck.id)
+            processing_rows = [
+                file_row for file_row in file_list
+                if file_row.status == BulkAIUploadFileStatus.PROCESSING.value
+            ]
+            if processing_rows:
+                bulk_failed_files[bulk_id] = processing_rows
 
     decks = {}
     if deck_ids:
@@ -517,6 +545,12 @@ def _jobs_response(
             db.execute(select(Deck).where(Deck.id.in_(deck_ids))).scalars().all()
         )
         decks = {d.id: d for d in deck_results}
+
+    if bulk_ids:
+        bulk_output_decks = {
+            bulk_id: [decks[deck_id] for deck_id in deck_id_list if deck_id in decks]
+            for bulk_id, deck_id_list in bulk_output_decks.items()
+        }
 
     return templates.TemplateResponse(
         "settings/jobs.html",
@@ -527,6 +561,8 @@ def _jobs_response(
             "bulks": bulks,
             "decks": decks,
             "bulk_output_decks": bulk_output_decks,
+            "bulk_failed_files": bulk_failed_files,
+            "bulk_file_counts": bulk_file_counts,
             "title": "Jobs | edu selviz",
         },
         status_code=status_code,

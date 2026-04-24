@@ -300,11 +300,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     bulk.started_at = datetime.utcnow()
     db.commit()
 
-    file_records = db.execute(
+    file_query = (
         select(BulkAIUploadFile)
         .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
         .order_by(BulkAIUploadFile.created_at)
-    ).scalars().all()
+    )
+    if job.total_items == 1:
+        file_query = file_query.where(BulkAIUploadFile.status == BulkAIUploadFileStatus.PENDING.value)
+    file_records = db.execute(file_query).scalars().all()
     if not file_records:
         bulk.status = BulkAIUploadStatus.FAILED.value
         bulk.error_message = "Missing queued upload files"
