@@ -69,9 +69,9 @@
                     <td colspan="6">
                       <div class="jobs-bulk-row">
                         <div>
-                          <div>Bulk: {{ bulk.filename }} ({{ bulk.total_files }} files)</div>
                           {% set output_decks = bulk_output_decks.get(job.reference_id, []) %}
                           {% set file_counts = bulk_file_counts.get(job.reference_id, {'completed': 0, 'processing': 0, 'failed': 0, 'pending': 0}) %}
+                          <div>Bulk: {{ bulk.filename }} ({{ file_counts.completed + file_counts.processing + file_counts.failed + file_counts.pending }} files)</div>
                           <div class="jobs-bulk-summary-links">
                             <button type="button" class="jobs-summary-chip" data-toggle-target="decks-{{ job.id }}">
                               Decks <span class="jobs-count jobs-count--deck">{{ output_decks|length }}</span>
@@ -1368,7 +1368,20 @@
 
     if (liveStatus) liveStatus.innerHTML = statusHtml(job.status);
     if (liveProgress) liveProgress.textContent = `${job.processed_items || 0} / ${job.total_items || 0}${job.failed_items ? ` (${job.failed_items} failed)` : ""}`;
-    if (liveFiles) liveFiles.textContent = `${bulk.processed_files || 0} / ${bulk.total_files || 0}`;
+    if (liveFiles) {
+      const fileDetails = bulk.file_details || [];
+      const counts = { completed: 0, processing: 0, failed: 0, pending: 0 };
+      fileDetails.forEach((file) => {
+        const status = String(file.status || '').toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(counts, status)) {
+          counts[status] += 1;
+        } else {
+          counts.pending += 1;
+        }
+      });
+      const totalFiles = fileDetails.length;
+      liveFiles.textContent = `✓${counts.completed} ⟳${counts.processing} !${counts.failed} ○${counts.pending} / ${totalFiles}`;
+    }
     if (liveCards) liveCards.textContent = `${bulk.flashcards_generated || 0} flashcards, ${bulk.mcqs_generated || 0} MCQs`;
     if (liveError) {
       if (job.error_message) {
