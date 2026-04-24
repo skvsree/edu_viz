@@ -480,6 +480,7 @@ def stop_bulk_ai_upload(
 def resume_bulk_ai_upload(
     bulk_id: str,
     file_id: str | None = None,
+    force: bool = False,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
@@ -513,11 +514,15 @@ def resume_bulk_ai_upload(
         if not target_file_records:
             raise HTTPException(status_code=404, detail="Bulk upload file not found")
         target_file = target_file_records[0]
-        if target_file.status not in {
+        retryable_statuses = {
             BulkAIUploadFileStatus.FAILED.value,
             BulkAIUploadFileStatus.PROCESSING.value,
-        }:
-            raise HTTPException(status_code=400, detail="Only failed or stuck files can be retried individually")
+        }
+        if force:
+            retryable_statuses.add(BulkAIUploadFileStatus.PENDING.value)
+            retryable_statuses.add(BulkAIUploadFileStatus.COMPLETED.value)
+        if target_file.status not in retryable_statuses:
+            raise HTTPException(status_code=400, detail="Only failed or stuck files can be retried individually unless force retry is enabled")
 
 
     missing_storage_keys = []
@@ -548,6 +553,11 @@ def resume_bulk_ai_upload(
         target_file = target_file_records[0]
         if target_file.created_deck_id:
             _clear_deck_generated_content(db, target_file.created_deck_id)
+        previous_status = (target_file.status or "").lower()
+        if previous_status == BulkAIUploadFileStatus.FAILED.value:
+            bulk.failed_files = max((bulk.failed_files or 0) - 1, 0)
+        elif previous_status == BulkAIUploadFileStatus.COMPLETED.value:
+            bulk.processed_files = max((bulk.processed_files or 0) - 1, 0)
         target_file.status = BulkAIUploadFileStatus.PENDING.value
         target_file.created_deck_id = target_file.created_deck_id or deck.id
         target_file.flashcards_generated = 0
@@ -556,10 +566,10 @@ def resume_bulk_ai_upload(
         target_file.error_message = None
         target_file.started_at = None
         target_file.completed_at = None
-        bulk.failed_files = max((bulk.failed_files or 0) - 1, 0)
         bulk.status = BulkAIUploadStatus.PENDING.value
         bulk.is_auto_stop = False
         bulk.error_message = None
+        bulk.completed_at = None
         total_items = 1
     else:
         _clear_deck_generated_content(db, deck.id)

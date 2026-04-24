@@ -106,6 +106,7 @@
                         </div>
                       </div>
                       {% set failed_files = bulk_failed_files.get(job.reference_id, []) %}
+                      {% set bulk_retry_active = job.reference_id in bulk_has_active_retry %}
                       <div id="files-{{ job.id }}" class="jobs-collapsible-panel" hidden>
                         <div class="jobs-failed-files">
                           <p class="jobs-mobile-label">Files</p>
@@ -127,9 +128,21 @@
                                       <div class="jobs-failed-file-error">{{ failed_file.error_message }}</div>
                                     {% endif %}
                                   </div>
-                                  <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form">
-                                    <button type="submit" class="jobs-retry-button">Retry file</button>
-                                  </form>
+                                  {% if bulk_retry_active %}
+                                    <div class="jobs-retry-form jobs-retry-form--disabled-block">
+                                      <label class="jobs-force-retry-toggle">
+                                        <input type="checkbox" form="force-retry-{{ failed_file.id }}" name="force" value="true">
+                                        <span>Force retry</span>
+                                      </label>
+                                      <form id="force-retry-{{ failed_file.id }}" method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form">
+                                        <button type="submit" class="jobs-retry-button" disabled>Retry file</button>
+                                      </form>
+                                    </div>
+                                  {% else %}
+                                    <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form">
+                                      <button type="submit" class="jobs-retry-button">Retry file</button>
+                                    </form>
+                                  {% endif %}
                                 </div>
                               {% endfor %}
                             {% else %}
@@ -224,6 +237,7 @@
                     </div>
                   </div>
                   {% set failed_files = bulk_failed_files.get(job.reference_id, []) %}
+                  {% set bulk_retry_active = job.reference_id in bulk_has_active_retry %}
                   <div id="mobile-files-{{ job.id }}" class="jobs-collapsible-panel" hidden>
                     <div class="jobs-failed-files jobs-failed-files--mobile jobs-failed-files--tight">
                       <div class="jobs-failed-file-list">
@@ -239,10 +253,23 @@
                                   <div class="jobs-failed-file-error">{{ failed_file.error_message }}</div>
                                 {% endif %}
                               </div>
-                              <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form jobs-retry-form--inline">
-                                <button type="submit" class="jobs-retry-button jobs-retry-button--compact">Retry</button>
-                                <span class="sr-only">Retry file</span>
-                              </form>
+                              {% if bulk_retry_active %}
+                                <div class="jobs-retry-form jobs-retry-form--disabled-block jobs-retry-form--mobile-stack">
+                                  <label class="jobs-force-retry-toggle">
+                                    <input type="checkbox" form="force-retry-mobile-{{ failed_file.id }}" name="force" value="true">
+                                    <span>Force retry</span>
+                                  </label>
+                                  <form id="force-retry-mobile-{{ failed_file.id }}" method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form jobs-retry-form--inline">
+                                    <button type="submit" class="jobs-retry-button jobs-retry-button--compact" disabled>Retry</button>
+                                    <span class="sr-only">Retry file</span>
+                                  </form>
+                                </div>
+                              {% else %}
+                                <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form jobs-retry-form--inline">
+                                  <button type="submit" class="jobs-retry-button jobs-retry-button--compact">Retry</button>
+                                  <span class="sr-only">Retry file</span>
+                                </form>
+                              {% endif %}
                             </div>
                           {% endfor %}
                         {% else %}
@@ -542,6 +569,28 @@
     display: inline-flex;
   }
 
+  .jobs-retry-form--disabled-block {
+    display: grid;
+    gap: 0.35rem;
+    justify-items: end;
+  }
+
+  .jobs-retry-form--mobile-stack {
+    justify-items: stretch;
+  }
+
+  .jobs-force-retry-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    color: var(--muted-text);
+  }
+
+  .jobs-force-retry-toggle input {
+    margin: 0;
+  }
+
   .jobs-retry-button--compact {
     padding: 0.24rem 0.55rem;
     font-size: 0.72rem;
@@ -555,7 +604,7 @@
 
   .jobs-retry-button[disabled] {
     opacity: 0.6;
-    cursor: wait;
+    cursor: not-allowed;
     transform: none;
   }
 
@@ -1116,6 +1165,20 @@
   <script>
 
 (() => {
+  document.querySelectorAll('.jobs-force-retry-toggle input[type="checkbox"]').forEach((checkbox) => {
+    const formId = checkbox.getAttribute('form');
+    if (!formId) return;
+    const form = document.getElementById(formId);
+    if (!form) return;
+    const button = form.querySelector('button[type="submit"]');
+    if (!button) return;
+    const sync = () => {
+      button.disabled = !checkbox.checked;
+    };
+    checkbox.addEventListener('change', sync);
+    sync();
+  });
+
   const params = new URLSearchParams(window.location.search);
   const submitted = params.get("submitted");
   const noticeText = params.get("notice");

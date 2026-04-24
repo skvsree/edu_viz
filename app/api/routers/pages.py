@@ -495,6 +495,7 @@ def _jobs_response(
     bulk_failed_files: dict = {}
     bulk_file_rows: dict = {}
     bulk_file_counts: dict = {}
+    bulk_has_active_retry: set = set()
     if bulk_ids:
         file_rows_result = db.execute(
             select(BulkAIUploadFile)
@@ -519,6 +520,11 @@ def _jobs_response(
                     bulk_output_decks.setdefault(bulk_upload_id, []).append(file_row.created_deck_id)
             if file_row.status == BulkAIUploadFileStatus.FAILED.value:
                 bulk_failed_files.setdefault(bulk_upload_id, []).append(file_row)
+            if file_row.status in {
+                BulkAIUploadFileStatus.PENDING.value,
+                BulkAIUploadFileStatus.PROCESSING.value,
+            }:
+                bulk_has_active_retry.add(bulk_upload_id)
 
         for bulk_id, file_list in bulk_file_rows.items():
             counts = {"completed": 0, "processing": 0, "failed": 0, "pending": 0}
@@ -563,6 +569,7 @@ def _jobs_response(
             "bulk_output_decks": bulk_output_decks,
             "bulk_failed_files": bulk_failed_files,
             "bulk_file_counts": bulk_file_counts,
+            "bulk_has_active_retry": bulk_has_active_retry,
             "title": "Jobs | edu selviz",
         },
         status_code=status_code,
@@ -605,6 +612,9 @@ def _deck_content_response(
     tag_error: str | None = None,
     tag_success: str | None = None,
     tag_form: dict[str, str] | None = None,
+    retry_file=None,
+    retry_bulk=None,
+    retry_filename: str | None = None,
 ):
     can_edit = can_manage_deck(user, deck)
     can_manage_tags = _can_manage_tags(user, deck)
@@ -643,6 +653,9 @@ def _deck_content_response(
             "tag_error": tag_error,
             "tag_success": tag_success,
             "tag_form": tag_form or _tag_form_context(deck),
+            "retry_file": retry_file,
+            "retry_bulk": retry_bulk,
+            "retry_filename": retry_filename,
         },
         status_code=status_code,
     )
@@ -2348,6 +2361,23 @@ def deck_ai_upload(
         .scalars()
         .all()
     )
+    retry_file_result = db.execute(
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.created_deck_id == deck.id)
+        .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.FAILED.value)
+        .order_by(BulkAIUploadFile.created_at.desc())
+        .limit(1)
+    )
+    if hasattr(retry_file_result, "scalar_one_or_none"):
+        retry_file = retry_file_result.scalar_one_or_none()
+    else:
+        retry_items = retry_file_result.scalars().all()
+        retry_file = retry_items[0] if retry_items else None
+    retry_bulk = None
+    retry_filename = None
+    if retry_file:
+        retry_bulk = db.get(BulkAIUpload, retry_file.bulk_upload_id)
+        retry_filename = retry_file.original_filename
     has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,
@@ -2365,6 +2395,9 @@ def deck_ai_upload(
         tag_success=request.query_params.get("tag_success"),
         tag_form=_tag_form_context(deck),
         has_published_tests=has_published_tests,
+        retry_file=retry_file,
+        retry_bulk=retry_bulk,
+        retry_filename=retry_filename,
     )
 
 
