@@ -30,6 +30,7 @@
 - For UI changes in deployed app code, rebuild and restart the `app` service with Docker Compose.
 - Code is baked into the image, not bind-mounted. Template/CSS changes require rebuild.
 - Run PEP 8 checks with `./scripts/lint_pep8.sh` after Python changes; flake8 config lives in `.flake8`.
+- Install tracked repo hooks with `./scripts/install_git_hooks.sh` so commits and pushes are blocked on PEP 8 failures.
 
 ## Deployment notes
 - Active deploy path: `/opt/edu_viz`

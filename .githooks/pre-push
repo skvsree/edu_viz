@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+if [ ! -x .venv/bin/python ]; then
+  echo "Missing repo venv at .venv/bin/python. Create it and install requirements first." >&2
+  exit 1
+fi
+
+echo "Running PEP8 checks before push..."
+.venv/bin/python -m flake8 app tests scripts *.py

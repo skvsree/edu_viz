@@ -158,6 +158,12 @@ Run PEP 8 checks:
 ./scripts/lint_pep8.sh
 ```
 
+Install tracked git hooks to block commits and pushes on PEP 8 failures:
+
+```bash
+./scripts/install_git_hooks.sh
+```
+
 Requires PostgreSQL 15+ running locally.
 
 ---

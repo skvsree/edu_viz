@@ -522,8 +522,13 @@ def resume_bulk_ai_upload(
             retryable_statuses.add(BulkAIUploadFileStatus.PENDING.value)
             retryable_statuses.add(BulkAIUploadFileStatus.COMPLETED.value)
         if target_file.status not in retryable_statuses:
-            raise HTTPException(status_code=400, detail="Only failed or stuck files can be retried individually unless force retry is enabled")
-
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Only failed or stuck files can be retried individually "
+                    "unless force retry is enabled"
+                ),
+            )
 
     missing_storage_keys = []
     storage = get_storage()
