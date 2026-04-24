@@ -1,301 +1,99 @@
 {% extends "base.html" %}
+
 {% block content %}
-<section class="stack-lg">
-  <section class="card jobs-page">
-    <div class="section-heading dashboard-decks__heading jobs-page__heading">
-      <div>
-        <p class="panel-label">System</p>
-        <h1 class="section-title">Jobs</h1>
-        <p class="muted section-copy">
-          Monitor background jobs and bulk AI uploads. Jobs run asynchronously using a worker pool.
-        </p>
-      </div>
-      <div class="dashboard-actions">
-        <a href="/settings" class="button button-secondary button-small">Back to settings</a>
-      </div>
+<section class="stack-lg jobs-page">
+  <section class="card stack-md jobs-page__card">
+    <div class="stack-xs">
+      <h1>Jobs</h1>
+      <p class="muted">Each uploaded ZIP shows its files. Open a file only when you need its retry history.</p>
     </div>
 
-    <div class="stack-md">
-      <div id="job-submitted-notice" class="card jobs-page__notice" style="display:none;">
+    {% if request.query_params.get("submitted") == "1" %}
+      <div class="jobs-page__notice" role="status">
         Bulk upload submitted. Check this Jobs page for progress.
       </div>
-      <div id="job-live-list"></div>
-      {% if not jobs %}
-        <p class="muted">No jobs yet. Upload a ZIP file from the browse page to create a bulk AI upload job.</p>
-      {% else %}
-        <div class="jobs-table-wrap">
-          <table class="jobs-table">
-            <thead>
-              <tr>
-                <th>Job ID</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Progress</th>
-                <th>Created</th>
-                <th>Completed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for job in jobs %}
-                <tr data-job-row data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
-                  <td><code class="jobs-code">{{ job.id }}</code></td>
-                  <td>{{ job.job_type }}</td>
-                  <td data-job-status-cell>
-                    {% if job.status == "pending" %}
-                      <span class="jobs-status jobs-status--pending">Pending</span>
-                    {% elif job.status == "running" %}
-                      <span class="jobs-status jobs-status--running">Running</span>
-                    {% elif job.status == "completed" %}
-                      <span class="jobs-status jobs-status--completed">Completed</span>
-                    {% elif job.status == "failed" %}
-                      <span class="jobs-status jobs-status--failed">Failed</span>
-                    {% else %}
-                      {{ job.status }}
-                    {% endif %}
-                  </td>
-                  <td data-job-progress-cell>
-                    {{ job.processed_items }} / {{ job.total_items }} items
-                    {% if job.failed_items > 0 %}
-                      <span class="jobs-failed-inline">({{ job.failed_items }} failed)</span>
-                    {% endif %}
-                  </td>
-                  <td class="jobs-time">{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '-' }}</td>
-                  <td class="jobs-time" data-job-completed-cell>{% if job.completed_at %}{{ job.completed_at.strftime('%Y-%m-%d %H:%M') }}{% else %}-{% endif %}</td>
-                </tr>
-                {% if bulks.get(job.reference_id) %}
-                  {% set bulk = bulks[job.reference_id] %}
-                  {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and bulk.status in ["failed", "stopped"] and bulk.error_message != "Queued upload file missing" %}
-                  <tr class="jobs-table-bulk-row">
-                    <td colspan="6">
-                      <div class="jobs-bulk-row">
-                        <div>
-                          {% set output_decks = bulk_output_decks.get(job.reference_id, []) %}
-                          {% set file_counts = bulk_file_counts.get(job.reference_id, {'completed': 0, 'processing': 0, 'failed': 0, 'pending': 0}) %}
-                          <div>Bulk: {{ bulk.filename }} ({{ file_counts.completed + file_counts.processing + file_counts.failed + file_counts.pending }} files)</div>
-                          <div class="jobs-bulk-summary-links">
-                            <button type="button" class="jobs-summary-chip" data-toggle-target="decks-{{ job.id }}">
-                              Decks <span class="jobs-count jobs-count--deck">{{ output_decks|length }}</span>
-                            </button>
-                            <button type="button" class="jobs-summary-chip" data-toggle-target="files-{{ job.id }}">
-                              Files
-                              <span class="jobs-count jobs-count--completed">✓ {{ file_counts.completed }}</span>
-                              <span class="jobs-count jobs-count--processing">⟳ {{ file_counts.processing }}</span>
-                              <span class="jobs-count jobs-count--failed">✕ {{ file_counts.failed }}</span>
-                              <span class="jobs-count jobs-count--pending">○ {{ file_counts.pending }}</span>
-                            </button>
-                          </div>
-                          <div id="decks-{{ job.id }}" class="jobs-collapsible-panel" hidden>
-                            <div class="jobs-bulk-links">
-                              {% if output_decks %}
-                                {% for deck in output_decks %}
-                                  <a href="/decks/{{ deck.id }}">{{ deck.name }}</a>
-                                {% endfor %}
-                              {% else %}
-                                <span class="muted">No decks created yet.</span>
-                              {% endif %}
-                            </div>
-                          </div>
-                        </div>
-                        <div class="jobs-bulk-actions">
-                          {% if can_retry_bulk %}
-                            <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
-                              <button type="submit" class="jobs-retry-button">Retry all</button>
-                            </form>
-                          {% endif %}
-                          <a href="/api/v1/bulk-ai-upload/{{ job.reference_id }}" target="_blank">API→</a>
-                        </div>
-                      </div>
-                      {% set failed_files = bulk_failed_files.get(job.reference_id, []) %}
-                      {% set bulk_retry_active = job.reference_id in bulk_has_active_retry %}
-                      <div id="files-{{ job.id }}" class="jobs-collapsible-panel" hidden>
-                        <div class="jobs-failed-files">
-                          <p class="jobs-mobile-label">Files</p>
-                          <div class="jobs-failed-file-list">
-                            {% if failed_files %}
-                              {% for failed_file in failed_files %}
-                                <div class="jobs-failed-file-item">
-                                  <div class="jobs-failed-file-copy">
-                                    <strong>{{ failed_file.original_filename }}</strong>
-                                    <div class="jobs-failed-file-meta">Status: {{ failed_file.status }}</div>
-                                    {% if failed_file.created_deck_id and failed_file.created_deck_id in decks %}
-                                      <div class="jobs-failed-file-meta">
-                                        Deck: <a href="/decks/{{ failed_file.created_deck_id }}">{{ decks[failed_file.created_deck_id].name }}</a>
-                                      </div>
-                                    {% endif %}
-                                    {% if failed_file.status == 'processing' and not failed_file.error_message %}
-                                      <div class="jobs-failed-file-error">Stuck while processing. Retry this file.</div>
-                                    {% elif failed_file.error_message %}
-                                      <div class="jobs-failed-file-error">{{ failed_file.error_message }}</div>
-                                    {% endif %}
-                                  </div>
-                                  {% if bulk_retry_active %}
-                                    <div class="jobs-retry-form jobs-retry-form--disabled-block">
-                                      <label class="jobs-force-retry-toggle">
-                                        <input type="checkbox" form="force-retry-{{ failed_file.id }}" name="force" value="true">
-                                        <span>Force retry</span>
-                                      </label>
-                                      <form id="force-retry-{{ failed_file.id }}" method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form">
-                                        <button type="submit" class="jobs-retry-button" disabled>Retry file</button>
-                                      </form>
-                                    </div>
-                                  {% else %}
-                                    <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form">
-                                      <button type="submit" class="jobs-retry-button">Retry file</button>
-                                    </form>
-                                  {% endif %}
-                                </div>
-                              {% endfor %}
-                            {% else %}
-                              <div class="jobs-failed-file-item">
-                                <div class="jobs-failed-file-copy">
-                                  <strong>No actionable file list</strong>
-                                  <div class="jobs-failed-file-meta">Only failed or stuck files are shown here.</div>
-                                </div>
-                              </div>
-                            {% endif %}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                {% endif %}
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+    {% endif %}
 
-        <div class="jobs-mobile-list jobs-mobile-list--stacked">
-          {% for job in jobs %}
-            <article class="jobs-mobile-card jobs-mobile-card--segregated" data-job-mobile-card data-job-id="{{ job.id }}" data-job-status="{{ job.status }}">
-              {% set bulk = bulks.get(job.reference_id) %}
-              <div class="jobs-mobile-card__top jobs-mobile-card__top--stackless">
-                <div class="jobs-mobile-line jobs-mobile-line--primary">
-                  <span class="jobs-mobile-upload-name">{{ bulk.filename if bulk else ('#' ~ (job.id|string|truncate(8, True, ''))) }}</span>
-                  <span data-job-mobile-status-cell>
-                    {% if job.status == "pending" %}
-                      <span class="jobs-status jobs-status--pending">Pending</span>
-                    {% elif job.status == "running" %}
-                      <span class="jobs-status jobs-status--running">Running</span>
-                    {% elif job.status == "completed" %}
-                      <span class="jobs-status jobs-status--completed">Completed</span>
-                    {% elif job.status == "failed" %}
-                      <span class="jobs-status jobs-status--failed">Failed</span>
-                    {% else %}
-                      <span class="jobs-status">{{ job.status }}</span>
-                    {% endif %}
-                  </span>
+    {% if not jobs %}
+      <p class="muted">No jobs yet. Upload a ZIP file from the browse page to create a bulk AI upload job.</p>
+    {% else %}
+      <div class="jobs-file-groups">
+        {% for job in jobs %}
+          {% set bulk = bulks.get(job.reference_id) %}
+          {% if bulk %}
+          {% set file_groups = bulk_jobs_by_file.get(job.reference_id, []) %}
+          {% set output_decks = bulk_output_decks.get(job.reference_id, []) %}
+          {% set file_counts = bulk_file_counts.get(job.reference_id, {'completed': 0, 'processing': 0, 'failed': 0, 'pending': 0}) %}
+          <article class="jobs-bulk-card">
+            <header class="jobs-bulk-card__header">
+              <div class="jobs-bulk-card__title-row jobs-bulk-card__title-row--compact">
+                <div class="jobs-bulk-card__title-main">
+                  <div class="jobs-bulk-card__filename">{{ bulk.filename or "Bulk upload" }}</div>
+                  <div class="jobs-bulk-card__date">{{ bulk.created_at.strftime('%Y-%m-%d %H:%M') if bulk.created_at else '—' }}</div>
                 </div>
-                <div class="jobs-mobile-line jobs-mobile-line--meta">
-                  <span>🕒 {{ job.created_at.strftime('%m-%d %H:%M') if job.created_at else '-' }}</span>
-                  <span>✓ <span data-job-mobile-completed-cell>{% if job.completed_at %}{{ job.completed_at.strftime('%m-%d %H:%M') }}{% else %}-{% endif %}</span></span>
-                </div>
-              </div>
-
-              <div class="jobs-mobile-grid jobs-mobile-grid--counts">
-                <div class="jobs-mobile-count-chip"><span class="jobs-mobile-count-chip__label">Done</span><span class="jobs-count jobs-count--completed">{{ job.processed_items }}</span></div>
-                <div class="jobs-mobile-count-chip"><span class="jobs-mobile-count-chip__label">Total</span><span class="jobs-count jobs-count--deck">{{ job.total_items }}</span></div>
-                <div class="jobs-mobile-count-chip"><span class="jobs-mobile-count-chip__label">Fail</span><span class="jobs-count jobs-count--failed">{{ job.failed_items }}</span></div>
-                {% if bulk %}
-                  {% set file_counts = bulk_file_counts.get(job.reference_id, {'completed': 0, 'processing': 0, 'failed': 0, 'pending': 0}) %}
-                  <button type="button" class="jobs-mobile-count-chip jobs-mobile-count-chip--button" data-toggle-target="mobile-files-{{ job.id }}">
-                    <span class="jobs-mobile-count-chip__label">Files</span>
-                    <span class="jobs-count jobs-count--completed">{{ file_counts.completed }}</span>
-                    <span class="jobs-count jobs-count--processing">{{ file_counts.processing }}</span>
-                    <span class="jobs-count jobs-count--failed">{{ file_counts.failed }}</span>
-                    <span class="jobs-count jobs-count--pending">{{ file_counts.pending }}</span>
-                  </button>
-                {% endif %}
-              </div>
-
-              {% if bulk %}
-                {% set can_retry_bulk = job.job_type == "bulk_ai_upload" and bulk.status in ["failed", "stopped"] and bulk.error_message != "Queued upload file missing" %}
-                <div class="jobs-mobile-bulk jobs-mobile-bulk--compact">
-                  {% set output_decks = bulk_output_decks.get(job.reference_id, []) %}
-                  <div class="jobs-mobile-bulk__summary jobs-mobile-bulk__summary--singleline">
-                    <button type="button" class="jobs-mobile-count-chip jobs-mobile-count-chip--button" data-toggle-target="mobile-decks-{{ job.id }}">
-                      <span class="jobs-mobile-count-chip__label">Decks</span>
-                      <span class="jobs-count jobs-count--deck">{{ output_decks|length }}</span>
-                    </button>
-                    {% if can_retry_bulk %}
-                      <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form jobs-retry-form--inline">
-                        <button type="submit" class="jobs-retry-button jobs-retry-button--compact">Retry</button>
-                      </form>
-                    {% endif %}
-                  </div>
-                  {% if bulk.error_message %}
-                    <div class="jobs-mobile-bulk__error">{{ bulk.error_message }}</div>
+                <span class="jobs-status {{ 'jobs-status--running' if bulk.status in ['pending', 'processing'] else 'jobs-status--completed' if bulk.status == 'completed' else 'jobs-status--failed' }}">
+                  {% if bulk.status in ['pending', 'processing'] %}
+                    Running
+                  {% elif bulk.status == 'completed' %}
+                    Completed
+                  {% elif bulk.status == 'failed' %}
+                    Failed
+                  {% else %}
+                    {{ bulk.status|capitalize }}
                   {% endif %}
-                  <div id="mobile-decks-{{ job.id }}" class="jobs-collapsible-panel" hidden>
-                    <div class="jobs-bulk-links jobs-bulk-links--mobile">
-                      {% if output_decks %}
-                        {% for deck in output_decks %}
-                          <a href="/decks/{{ deck.id }}">{{ deck.name }}</a>
-                        {% endfor %}
-                      {% else %}
-                        <span class="muted">No decks yet.</span>
-                      {% endif %}
-                    </div>
-                  </div>
-                  {% set failed_files = bulk_failed_files.get(job.reference_id, []) %}
-                  {% set bulk_retry_active = job.reference_id in bulk_has_active_retry %}
-                  <div id="mobile-files-{{ job.id }}" class="jobs-collapsible-panel" hidden>
-                    <div class="jobs-failed-files jobs-failed-files--mobile jobs-failed-files--tight">
-                      <div class="jobs-failed-file-list">
-                        {% if failed_files %}
-                          {% for failed_file in failed_files %}
-                            <div class="jobs-failed-file-item jobs-failed-file-item--mobile">
-                              <div class="jobs-failed-file-copy">
-                                <strong>{{ failed_file.original_filename }}</strong>
-                                <div class="jobs-failed-file-meta">{{ failed_file.status }}{% if failed_file.created_deck_id and failed_file.created_deck_id in decks %} • <a href="/decks/{{ failed_file.created_deck_id }}">{{ decks[failed_file.created_deck_id].name }}</a>{% endif %}</div>
-                                {% if failed_file.status == 'processing' and not failed_file.error_message %}
-                                  <div class="jobs-failed-file-error">Stuck while processing.</div>
-                                {% elif failed_file.error_message %}
-                                  <div class="jobs-failed-file-error">{{ failed_file.error_message }}</div>
-                                {% endif %}
-                              </div>
-                              {% if bulk_retry_active %}
-                                <div class="jobs-retry-form jobs-retry-form--disabled-block jobs-retry-form--mobile-stack">
-                                  <label class="jobs-force-retry-toggle">
-                                    <input type="checkbox" form="force-retry-mobile-{{ failed_file.id }}" name="force" value="true">
-                                    <span>Force retry</span>
-                                  </label>
-                                  <form id="force-retry-mobile-{{ failed_file.id }}" method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form jobs-retry-form--inline">
-                                    <button type="submit" class="jobs-retry-button jobs-retry-button--compact" disabled>Retry</button>
-                                    <span class="sr-only">Retry file</span>
-                                  </form>
-                                </div>
-                              {% else %}
-                                <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ failed_file.id }}" class="jobs-retry-form jobs-retry-form--inline">
-                                  <button type="submit" class="jobs-retry-button jobs-retry-button--compact">Retry</button>
-                                  <span class="sr-only">Retry file</span>
-                                </form>
-                              {% endif %}
+                </span>
+              </div>
+
+              <div class="jobs-bulk-second-line">
+                {% if output_decks %}
+                  {% for deck in output_decks %}
+                    <span class="jobs-deck-chip">
+                      <a class="jobs-link-chip" href="/decks/{{ deck.id }}">{{ deck.title or deck.name or bulk.filename or ('Deck ' ~ loop.index) }}</a>
+                      <span class="jobs-status jobs-status--completed">Completed</span>
+                    </span>
+                  {% endfor %}
+                {% elif not file_groups and bulk.status == 'failed' and not bulk.error_message %}
+                  <details class="jobs-inline-file jobs-inline-file--failed" open>
+                    <summary class="jobs-inline-file__summary">
+                      <span class="jobs-inline-file__name">{{ bulk.filename or 'Upload' }}</span>
+                      <span class="jobs-inline-file__action">Retry</span>
+                    </summary>
+                    <div class="jobs-inline-file__body">
+                      <div class="jobs-attempt-list">
+                        <div class="jobs-attempt-row">
+                          <div class="jobs-attempt-row__main">
+                            <div class="jobs-attempt-row__top">
+                              <span class="jobs-status jobs-status--failed">Failed</span>
                             </div>
-                          {% endfor %}
-                        {% else %}
-                          <div class="jobs-failed-file-item jobs-failed-file-item--mobile">
-                            <div class="jobs-failed-file-copy">
-                              <strong>No actionable files</strong>
+                            <div class="jobs-attempt-row__meta">
+                              <span>Failed before deck records were created.</span>
                             </div>
                           </div>
-                        {% endif %}
+                          <div class="jobs-attempt-row__actions">
+                            <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
+                              <button type="submit" class="jobs-retry-button">Retry</button>
+                            </form>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
-              {% endif %}
-            </article>
-          {% endfor %}
-        </div>
-      {% endif %}
-    </div>
+                  </details>
+                {% endif %}
+              </div>
+            </header>
+
+            {% if bulk.error_message %}
+              <div class="jobs-bulk-card__error">{{ bulk.error_message }}</div>
+            {% endif %}
+          </article>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
 
     <div class="stack-sm jobs-page__footer">
       <p class="muted jobs-page__footnote">
-        <strong>Job types:</strong> bulk_ai_upload - Process ZIP/PDF for flashcards and MCQs
-      </p>
-      <p class="muted jobs-page__footnote">
-        <strong>Status:</strong> Pending (queued), Running (in progress), Completed (success), Failed (error)
+        First line shows filename, date, and status. Second line shows only decks, with retry only when deck creation failed.
       </p>
     </div>
   </section>
@@ -309,196 +107,253 @@
     color: #1d4ed8;
   }
 
-  .jobs-live-list {
+  .jobs-page__card {
+    padding: 0.9rem;
+  }
+
+  .jobs-file-groups {
     display: grid;
-    gap: 0.9rem;
+    gap: 0.8rem;
   }
 
-  .jobs-live-card {
-    border: 1px solid color-mix(in srgb, #60a5fa 38%, var(--border-color));
-    border-left: 5px solid #2563eb;
-    border-radius: 20px;
-    background: linear-gradient(180deg, rgba(37, 99, 235, 0.06), rgba(37, 99, 235, 0.015));
-    box-shadow: 0 14px 36px rgba(37, 99, 235, 0.08);
+  .jobs-bulk-card {
+    border: 1px solid color-mix(in srgb, var(--border-color) 70%, #94a3b8 30%);
+    border-radius: 16px;
+    background: var(--card-bg);
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
   }
 
-  .jobs-live-card__header {
+  .jobs-bulk-card__header {
+    padding: 0.85rem;
+    background: color-mix(in srgb, #eff6ff 20%, var(--card-bg));
+  }
+
+  .jobs-bulk-card__title-row {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .jobs-live-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.9rem;
-    margin-bottom: 0.9rem;
-  }
-
-  .jobs-live-deck-link {
-    display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-  }
-
-  .jobs-live-deck-meta {
-    font-size: 0.8rem;
-    color: var(--muted-color, #6b7280);
-  }
-
-  .jobs-live-file-status-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    margin-top: 0.25rem;
-  }
-
-  .jobs-live-file-status-item {
-    display: flex;
-    align-items: flex-start;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.45rem 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
   }
 
-  .jobs-live-file-status-item:last-child {
-    border-bottom: 0;
+  .jobs-bulk-card__title-block {
+    min-width: 0;
   }
 
-  .jobs-live-file-status-copy {
+  .jobs-bulk-card__title-row h2 {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  .jobs-bulk-card__meta-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.16rem;
+    font-size: 0.76rem;
+    color: var(--muted);
+  }
+
+  .jobs-level-label {
+    display: inline-block;
+    margin-bottom: 0.18rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .jobs-bulk-summary-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.7rem;
+  }
+
+  .jobs-summary-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.24rem 0.56rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+    font-size: 0.72rem;
+    color: var(--muted-text);
+  }
+
+  .jobs-summary-chip--failed {
+    color: #b91c1c;
+  }
+
+  .jobs-bulk-card__title-row--compact {
+    align-items: flex-start;
+  }
+
+  .jobs-bulk-card__title-main {
     min-width: 0;
     flex: 1 1 auto;
   }
 
-  .jobs-live-file-status-name {
+  .jobs-bulk-card__filename {
+    font-size: 0.95rem;
+    font-weight: 700;
+    line-height: 1.3;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    color: var(--text-color);
+  }
+
+  .jobs-bulk-card__date {
+    margin-top: 0.14rem;
+    font-size: 0.76rem;
+    color: var(--muted);
+  }
+
+  .jobs-bulk-second-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 62%, #94a3b8 38%);
+  }
+
+  .jobs-link-chip,
+  .jobs-inline-file,
+  .jobs-deck-chip {
+    border: 1px solid color-mix(in srgb, var(--border-color) 68%, #94a3b8 32%);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    font-size: 0.74rem;
+  }
+
+  .jobs-deck-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.26rem 0.3rem 0.26rem 0.26rem;
+  }
+
+  .jobs-link-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.34rem 0.52rem;
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .jobs-inline-file {
+    overflow: hidden;
+  }
+
+  .jobs-inline-file__summary {
+    list-style: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.34rem 0.64rem;
+  }
+
+  .jobs-inline-file__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .jobs-inline-file__name {
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .jobs-inline-file__action {
+    color: var(--muted);
+  }
+
+  .jobs-inline-file--failed .jobs-inline-file__action {
+    color: #dc2626;
+    font-weight: 700;
+  }
+
+  .jobs-inline-file__body {
+    padding: 0 0.65rem 0.65rem;
+    border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+    background: var(--card-bg);
+  }
+
+  .jobs-bulk-card__error {
+    margin: 0.85rem 1rem 0;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid color-mix(in srgb, #dc2626 28%, var(--border-color));
+    border-radius: 14px;
+    background: color-mix(in srgb, #fef2f2 82%, var(--card-bg));
+    color: #b91c1c;
+    font-size: 0.84rem;
+  }
+
+
+  .jobs-attempt-list {
+    display: grid;
+    gap: 0.45rem;
+    padding-top: 0.55rem;
+  }
+
+  .jobs-attempt-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.55rem;
+    padding: 0.6rem 0.65rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+    border-radius: 10px;
+    background: var(--card-bg);
+  }
+
+  .jobs-attempt-row__main {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .jobs-attempt-row__top {
     display: flex;
     align-items: center;
     gap: 0.45rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    flex-wrap: wrap;
   }
 
-  .jobs-live-file-status-meta {
-    margin-top: 0.12rem;
-    font-size: 0.78rem;
-    color: var(--muted-color, #6b7280);
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .jobs-file-state-icon {
-    width: 1rem;
-    height: 1rem;
-    flex: 0 0 1rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .jobs-file-state-icon--running {
-    border: 2px solid color-mix(in srgb, #60a5fa 35%, transparent);
-    border-top-color: #2563eb;
-    border-radius: 999px;
-    animation: jobs-spin 0.85s linear infinite;
-  }
-
-  .jobs-file-state-icon--completed {
-    color: #16a34a;
-    font-weight: 800;
-  }
-
-  .jobs-file-state-icon--failed {
-    color: #dc2626;
-    font-weight: 800;
-  }
-
-  .jobs-file-state-pill {
-    font-size: 0.72rem;
-    line-height: 1;
-    padding: 0.28rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid var(--border-color);
-    background: var(--surface);
-    white-space: nowrap;
-  }
-
-  .jobs-file-state-pill--running {
-    color: #2563eb;
-  }
-
-  .jobs-file-state-pill--completed {
-    color: #16a34a;
-  }
-
-  .jobs-file-state-pill--failed {
-    color: #dc2626;
-  }
-
-  @keyframes jobs-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .jobs-table-wrap {
-    width: 100%;
-    overflow-x: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 18px;
-    background: color-mix(in srgb, var(--card-bg) 94%, #f8fafc);
-  }
-
-  .jobs-table-bulk-row td {
-    background: color-mix(in srgb, #eff6ff 34%, var(--card-bg));
-    border-left: 4px solid #93c5fd;
-  }
-
-  .jobs-table {
-    width: 100%;
-    border-collapse: collapse;
-    min-width: 760px;
-  }
-
-  .jobs-table th,
-  .jobs-table td {
-    text-align: left;
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: top;
-  }
-
-  .jobs-table th {
-    font-weight: 700;
+  .jobs-attempt-row__meta {
+    display: grid;
+    gap: 0.12rem;
+    margin-top: 0.32rem;
+    font-size: 0.7rem;
     color: var(--muted);
-    font-size: 0.85rem;
+  }
+
+  .jobs-attempt-row__error {
+    margin-top: 0.32rem;
+    font-size: 0.75rem;
+    color: #b91c1c;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .jobs-attempt-row__actions {
+    flex: 0 0 auto;
   }
 
   .jobs-code {
+    display: none;
     font-size: 0.75rem;
     word-break: break-all;
-  }
-
-  .jobs-code--mobile {
-    display: block;
-    margin-top: 0.2rem;
-  }
-
-  .jobs-time {
-    font-size: 0.8rem;
-    white-space: nowrap;
   }
 
   .jobs-status {
     display: inline-flex;
     align-items: center;
-    padding: 0.28rem 0.65rem;
+    gap: 0.3rem;
+    padding: 0.22rem 0.54rem;
     border-radius: 999px;
-    font-size: 0.78rem;
+    font-size: 0.71rem;
     font-weight: 700;
     background: var(--surface);
     border: 1px solid var(--border-color);
@@ -516,39 +371,32 @@
     color: #16a34a;
   }
 
-  .jobs-status--failed,
-  .jobs-failed-inline {
+  .jobs-status--failed {
     color: #dc2626;
   }
 
-  .jobs-table-bulk-row td {
-    background: var(--bg-secondary);
-    padding-top: 0.65rem;
-    padding-bottom: 0.65rem;
+  .jobs-inline-loader {
+    border: 2px solid color-mix(in srgb, #60a5fa 35%, transparent);
+    border-top-color: #2563eb;
+    border-radius: 999px;
+    animation: jobs-spin 0.85s linear infinite;
   }
 
-  .jobs-bulk-row {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.85rem;
-  }
-
-  .jobs-bulk-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-  }
-
-  .jobs-bulk-actions--mobile {
-    justify-content: flex-start;
+  .jobs-inline-loader {
+    width: 0.85rem;
+    height: 0.85rem;
+    flex: 0 0 0.85rem;
+    display: inline-block;
   }
 
   .jobs-retry-form {
     margin: 0;
+  }
+
+  .jobs-retry-form--disabled-block {
+    display: grid;
+    gap: 0.35rem;
+    justify-items: end;
   }
 
   .jobs-retry-button {
@@ -562,950 +410,41 @@
     font-weight: 600;
     line-height: 1;
     cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
-  }
-
-  .jobs-retry-form--inline {
-    display: inline-flex;
-  }
-
-  .jobs-retry-form--disabled-block {
-    display: grid;
-    gap: 0.35rem;
-    justify-items: end;
-  }
-
-  .jobs-retry-form--mobile-stack {
-    justify-items: stretch;
-  }
-
-  .jobs-force-retry-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: 0.72rem;
-    color: var(--muted-text);
-  }
-
-  .jobs-force-retry-toggle input {
-    margin: 0;
-  }
-
-  .jobs-retry-button--compact {
-    padding: 0.24rem 0.55rem;
-    font-size: 0.72rem;
-  }
-
-  .jobs-retry-button:hover {
-    background: rgba(37, 99, 235, 0.16);
-    border-color: rgba(37, 99, 235, 0.34);
-    transform: translateY(-1px);
   }
 
   .jobs-retry-button[disabled] {
     opacity: 0.6;
     cursor: not-allowed;
-    transform: none;
   }
 
-  .jobs-toast-stack {
-    position: fixed;
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 1200;
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    max-width: min(92vw, 24rem);
-  }
-
-  .jobs-toast {
-    border-radius: 14px;
-    padding: 0.85rem 1rem;
-    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
-    border: 1px solid var(--border-color);
-    background: var(--card-bg);
-    color: var(--text-color);
-    font-size: 0.92rem;
-    line-height: 1.4;
-  }
-
-  .jobs-toast--success {
-    border-color: color-mix(in srgb, #16a34a 30%, var(--border-color));
-  }
-
-  .jobs-toast--error {
-    border-color: color-mix(in srgb, #dc2626 30%, var(--border-color));
-  }
-
-  .jobs-toast__title {
-    display: block;
-    font-weight: 700;
-    margin-bottom: 0.2rem;
-  }
-
-  .jobs-retry-button:focus-visible {
-    outline: 2px solid rgba(37, 99, 235, 0.35);
-    outline-offset: 2px;
-  }
-
-  .jobs-bulk-row a,
-  .jobs-mobile-bulk a {
-    white-space: nowrap;
-  }
-
-  .jobs-mobile-bulk--compact {
-    padding-top: 0.1rem;
-  }
-
-  .jobs-bulk-summary-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-    margin-top: 0.45rem;
-  }
-
-  .jobs-summary-chip {
-    appearance: none;
-    border: 1px solid var(--border-color);
-    background: var(--surface);
-    color: var(--text-color);
-    border-radius: 999px;
-    padding: 0.32rem 0.7rem;
-    font-size: 0.78rem;
-    line-height: 1.1;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-  }
-
-  .jobs-summary-chip--compact {
-    padding: 0.22rem 0.42rem;
-    gap: 0.22rem;
-    font-size: 0.72rem;
-  }
-
-  .jobs-summary-chip__label {
-    font-weight: 700;
-    color: var(--muted);
-    font-size: 0.68rem;
-  }
-
-  .jobs-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 999px;
-    padding: 0.12rem 0.38rem;
-    font-size: 0.7rem;
-    font-weight: 700;
-    line-height: 1;
-  }
-
-  .jobs-count--deck {
-    background: rgba(37, 99, 235, 0.12);
-    color: #1d4ed8;
-  }
-
-  .jobs-count--completed {
-    background: rgba(22, 163, 74, 0.12);
-    color: #15803d;
-  }
-
-  .jobs-count--processing {
-    background: rgba(37, 99, 235, 0.12);
-    color: #2563eb;
-  }
-
-  .jobs-count--failed {
-    background: rgba(220, 38, 38, 0.12);
-    color: #b91c1c;
-  }
-
-  .jobs-count--pending {
-    background: rgba(245, 158, 11, 0.14);
-    color: #b45309;
-  }
-
-  .jobs-collapsible-panel {
-    margin-top: 0.4rem;
-  }
-
-  .jobs-bulk-links {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem 0.7rem;
-    margin-top: 0.45rem;
-    font-size: 0.82rem;
-  }
-
-  .jobs-bulk-links--mobile {
-    margin-top: 0.6rem;
-  }
-
-  .jobs-failed-files {
-    margin-top: 0.65rem;
-    padding-top: 0.65rem;
-    border-top: 1px dashed var(--border-color);
-  }
-
-  .jobs-failed-files--tight {
-    margin-top: 0.35rem;
-    padding-top: 0.45rem;
-    border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-  }
-
-  .jobs-failed-files--mobile {
-    margin-top: 0.8rem;
-  }
-
-  .jobs-failed-file-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .jobs-failed-file-item {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
-  }
-
-  .jobs-failed-file-item--mobile {
-    gap: 0.5rem;
-    padding: 0.4rem 0;
-  }
-
-  .jobs-failed-file-item:last-child {
-    border-bottom: 0;
-    padding-bottom: 0;
-  }
-
-  .jobs-failed-file-copy {
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  .jobs-failed-file-copy strong {
-    display: block;
-    margin-bottom: 0.2rem;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .jobs-failed-file-meta {
-    font-size: 0.8rem;
-    color: var(--muted);
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .jobs-failed-file-error {
-    font-size: 0.8rem;
-    color: var(--muted);
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .jobs-mobile-list {
-    display: none;
-    gap: 0.9rem;
-  }
-
-  .jobs-mobile-list--stacked {
-    gap: 0.55rem;
-  }
-
-  .jobs-mobile-card {
-    border: 1px solid var(--border-color);
-    border-radius: 18px;
-    padding: 0.95rem;
-    background: var(--surface);
-  }
-
-  .jobs-mobile-card--segregated {
-    padding: 0;
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--border-color) 82%, #cbd5e1);
-    background: var(--card-bg);
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
-  }
-
-  .jobs-mobile-card__top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.9rem;
-  }
-
-  .jobs-mobile-card--segregated .jobs-mobile-card__top {
-    margin-bottom: 0;
-    padding: 0.58rem 0.72rem 0.45rem;
-    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-    background: color-mix(in srgb, var(--surface) 80%, transparent);
-  }
-
-  .jobs-mobile-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.85rem 1rem;
-  }
-
-  .jobs-mobile-card--segregated .jobs-mobile-grid {
-    padding: 0.38rem 0.72rem 0.5rem;
-    background: var(--card-bg);
-  }
-
-  .jobs-mobile-card--segregated .jobs-mobile-grid > div {
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-  }
-
-  .jobs-mobile-grid p,
-  .jobs-mobile-bulk p {
-    margin: 0;
-  }
-
-  .jobs-mobile-line {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    min-width: 0;
-  }
-
-  .jobs-mobile-line--primary {
-    justify-content: space-between;
-  }
-
-  .jobs-mobile-line--meta {
-    margin-top: 0.28rem;
-    color: var(--muted);
-    font-size: 0.74rem;
-    gap: 0.7rem;
-    flex-wrap: wrap;
-  }
-
-  .jobs-mobile-upload-name {
-    min-width: 0;
-    flex: 1 1 auto;
-    font-size: 0.82rem;
-    font-weight: 600;
-    line-height: 1.2;
-    word-break: break-word;
-    overflow-wrap: anywhere;
-  }
-
-  .jobs-mobile-grid--counts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    padding-top: 0.45rem;
-  }
-
-  .jobs-mobile-count-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.28rem;
-    padding: 0.22rem 0.42rem;
-    border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
-    border-radius: 999px;
-    background: var(--surface);
-    font-size: 0.72rem;
-    line-height: 1;
-  }
-
-  .jobs-mobile-count-chip__label {
-    color: var(--muted);
-    font-weight: 600;
-    font-size: 0.68rem;
-  }
-
-  .jobs-mobile-count-chip--button {
-    appearance: none;
-    cursor: pointer;
-    color: inherit;
-  }
-
-  .jobs-mobile-bulk__summary {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35rem;
-    margin-top: 0.1rem;
-  }
-
-  .jobs-mobile-bulk__summary--singleline {
-    margin-top: 0;
-  }
-
-  .jobs-mobile-bulk__error {
-    margin-top: 0.38rem;
-    font-size: 0.74rem;
-    color: #b91c1c;
-    line-height: 1.25;
-  }
-
-  .jobs-mobile-label {
-    margin: 0 0 0.25rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--muted);
-  }
-
-  .jobs-mobile-bulk {
-    margin-top: 0.9rem;
-    padding-top: 0.9rem;
-    border-top: 1px solid var(--border-color);
-  }
-
-  .jobs-mobile-card--segregated .jobs-mobile-bulk {
-    margin-top: 0;
-    padding: 0 0.72rem 0.62rem;
-    border-top: 0;
-    background: var(--card-bg);
-  }
-
-  .jobs-mobile-bulk__meta {
-    margin-top: 0.5rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    font-size: 0.9rem;
-  }
-
-  .jobs-page__footer {
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-color);
-  }
-
-  .jobs-page__footnote {
-    font-size: 0.8rem;
+  @keyframes jobs-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   @media (max-width: 720px) {
-    .jobs-page {
-      padding: 0.9rem;
-    }
-
-    .jobs-page__heading {
-      align-items: flex-start;
-      gap: 0.9rem;
-      flex-direction: column;
-    }
-
-    .jobs-page__heading .dashboard-actions {
-      width: 100%;
-    }
-
-    .jobs-page__heading .dashboard-actions .button {
-      width: 100%;
-      justify-content: center;
-    }
-
-    .jobs-page__notice,
-    .jobs-live-card,
-    .jobs-mobile-card {
-      border-radius: 14px;
-    }
-
-    .jobs-live-card__header {
-      flex-direction: column;
-      gap: 0.4rem;
-    }
-
-    .jobs-live-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: 0.75rem;
-    }
-
-    .jobs-live-grid > div {
-      min-width: 0;
-    }
-
-    .jobs-live-grid > div > div,
-    .jobs-mobile-grid p,
-    .jobs-mobile-bulk p {
-      word-break: break-word;
-      overflow-wrap: anywhere;
-    }
-
-    .jobs-code,
-    .jobs-code--mobile {
-      font-size: 0.68rem;
-      line-height: 1.35;
-    }
-
-    .jobs-table-wrap {
-      display: none;
-    }
-
-    .jobs-mobile-list {
-      display: grid;
-      gap: 0.75rem;
-    }
-
-    .jobs-mobile-card {
-      padding: 0.85rem;
-    }
-
-    .jobs-mobile-card__top {
-      gap: 0.6rem;
-      margin-bottom: 0.75rem;
+    .jobs-bulk-card__title-row,
+    .jobs-attempt-row {
       flex-direction: column;
       align-items: stretch;
     }
 
-    .jobs-mobile-card__top > div:last-child {
-      display: flex;
-      justify-content: flex-start;
+    .jobs-bulk-second-line {
+      gap: 0.35rem;
     }
 
-    .jobs-mobile-grid {
-      grid-template-columns: 1fr;
-      gap: 0.7rem;
+    .jobs-inline-file,
+    .jobs-link-chip {
+      max-width: 100%;
     }
 
-    .jobs-mobile-bulk {
-      margin-top: 0.8rem;
-      padding-top: 0.8rem;
-    }
-
-    .jobs-mobile-bulk__meta {
-      margin-top: 0.55rem;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.45rem;
-    }
-
-    .jobs-failed-file-item,
-    .jobs-live-file-status-item {
-      flex-direction: column;
-      align-items: stretch;
-      gap: 0.5rem;
-    }
-
-    .jobs-failed-file-item .jobs-retry-form,
-    .jobs-failed-file-item .jobs-retry-button {
-      width: 100%;
-    }
-
-    .jobs-failed-file-item .jobs-retry-button {
-      justify-content: center;
-    }
-
-    .jobs-bulk-links,
-    .jobs-bulk-links--mobile,
-    #job-live-decks {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.45rem;
-    }
-
-    .jobs-bulk-links a,
-    .jobs-bulk-links--mobile a,
-    .jobs-live-deck-link {
-      white-space: normal;
-      line-height: 1.35;
-    }
-
-    .jobs-live-deck-link {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.1rem;
-    }
-
-    .jobs-page__footnote {
-      font-size: 0.76rem;
-      line-height: 1.45;
-    }
-  }
-
-  @media (max-width: 420px) {
-    .jobs-page {
-      padding: 0.8rem;
-    }
-
-    .jobs-live-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .jobs-mobile-card {
-      padding: 0.8rem;
-    }
-
-    .jobs-status {
-      font-size: 0.74rem;
-      padding: 0.24rem 0.55rem;
-    }
-
-    .jobs-code,
-    .jobs-code--mobile {
-      font-size: 0.64rem;
+    .jobs-attempt-row__actions {
+      align-self: flex-start;
+      justify-items: start;
     }
   }
 
 </style>
- 
-  <div id="jobs-toast-stack" class="jobs-toast-stack" aria-live="polite" aria-atomic="false"></div>
 
-  <script>
-
-(() => {
-  document.querySelectorAll('.jobs-force-retry-toggle input[type="checkbox"]').forEach((checkbox) => {
-    const formId = checkbox.getAttribute('form');
-    if (!formId) return;
-    const form = document.getElementById(formId);
-    if (!form) return;
-    const button = form.querySelector('button[type="submit"]');
-    if (!button) return;
-    const sync = () => {
-      button.disabled = !checkbox.checked;
-    };
-    checkbox.addEventListener('change', sync);
-    sync();
-  });
-
-  const params = new URLSearchParams(window.location.search);
-  const submitted = params.get("submitted");
-  const noticeText = params.get("notice");
-  const focusJobId = params.get("job") || params.get("job_id");
-  const notice = document.getElementById("job-submitted-notice");
-  const liveList = document.getElementById("job-live-list");
-  const toastStack = document.getElementById("jobs-toast-stack");
-  const tableRows = Array.from(document.querySelectorAll("[data-job-row]"));
-  const mobileCards = Array.from(document.querySelectorAll("[data-job-mobile-card]"));
-  const mobileCardMap = new Map(mobileCards.map((card) => [card.dataset.jobId, card]));
-  const activeStatuses = new Set(["pending", "running"]);
-  const sources = new Map();
-
-  if (notice && (submitted === "bulk-ai-upload" || noticeText)) {
-    notice.textContent = decodeURIComponent(noticeText || "Bulk upload submitted. Check this Jobs page for progress.") + (focusJobId ? ` Job: ${focusJobId}` : "");
-    notice.style.display = "block";
-  }
-
-  const statusHtml = (status) => {
-    if (status === "pending") return '<span class="jobs-status jobs-status--pending">Pending</span>';
-    if (status === "running") return '<span class="jobs-status jobs-status--running">Running</span>';
-    if (status === "completed") return '<span class="jobs-status jobs-status--completed">Completed</span>';
-    if (status === "failed") return '<span class="jobs-status jobs-status--failed">Failed</span>';
-    return status || "-";
-  };
-
-  const progressText = (job) => `${job.processed_items || 0} / ${job.total_items || 0} items${job.failed_items ? ` (${job.failed_items} failed)` : ""}`;
-
-  const updateRow = (job) => {
-    const row = tableRows.find((item) => item.dataset.jobId === job.id);
-    if (!row) return;
-    row.dataset.jobStatus = job.status || "";
-    const statusCell = row.querySelector("[data-job-status-cell]");
-    const progressCell = row.querySelector("[data-job-progress-cell]");
-    const completedCell = row.querySelector("[data-job-completed-cell]");
-    if (statusCell) statusCell.innerHTML = statusHtml(job.status);
-    if (progressCell) progressCell.innerHTML = progressText(job);
-    if (completedCell && ["completed", "failed"].includes(job.status)) {
-      completedCell.textContent = "Done";
-    }
-  };
-
-  const updateMobileCard = (job) => {
-    const card = mobileCardMap.get(job.id);
-    if (!card) return;
-    card.dataset.jobStatus = job.status || "";
-    const statusCell = card.querySelector("[data-job-mobile-status-cell]");
-    const progressCell = card.querySelector("[data-job-mobile-progress-cell]");
-    const completedCell = card.querySelector("[data-job-mobile-completed-cell]");
-    if (statusCell) statusCell.innerHTML = statusHtml(job.status);
-    if (progressCell) progressCell.innerHTML = progressText(job);
-    if (completedCell && ["completed", "failed"].includes(job.status)) {
-      completedCell.textContent = "Done";
-    }
-  };
-
-  const escapeHtml = (value) => String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-
-  const fileStateIconHtml = (status) => {
-    if (status === "processing") return '<span class="jobs-file-state-icon jobs-file-state-icon--running" aria-hidden="true"></span>';
-    if (status === "completed") return '<span class="jobs-file-state-icon jobs-file-state-icon--completed" aria-hidden="true">✓</span>';
-    if (status === "failed") return '<span class="jobs-file-state-icon jobs-file-state-icon--failed" aria-hidden="true">!</span>';
-    return '<span class="jobs-file-state-icon" aria-hidden="true"></span>';
-  };
-
-  const fileStateLabel = (status) => {
-    if (status === "processing") return "In progress";
-    if (status === "completed") return "Done";
-    if (status === "failed") return "Failed";
-    return status || "Unknown";
-  };
-
-  const showToast = (title, message, tone = "success") => {
-    if (!toastStack) return;
-    const toast = document.createElement("div");
-    toast.className = `jobs-toast jobs-toast--${tone}`;
-    toast.innerHTML = `<span class="jobs-toast__title">${escapeHtml(title)}</span><div>${escapeHtml(message)}</div>`;
-    toastStack.appendChild(toast);
-    window.setTimeout(() => {
-      toast.remove();
-    }, 3200);
-  };
-
-  const bindRetryForms = () => {
-    document.querySelectorAll(".jobs-retry-form").forEach((form) => {
-      if (form.dataset.retryBound === "1") return;
-      form.dataset.retryBound = "1";
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const button = form.querySelector("button[type='submit']");
-        const originalLabel = button?.textContent || "Retry";
-        if (button) {
-          button.disabled = true;
-          button.textContent = "Retrying...";
-        }
-        try {
-          const response = await fetch(form.action, {
-            method: "POST",
-            headers: {
-              "X-Requested-With": "fetch",
-            },
-          });
-          let payload = null;
-          const contentType = response.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            payload = await response.json();
-          } else {
-            const text = await response.text();
-            payload = { detail: text || response.statusText };
-          }
-          if (!response.ok) {
-            throw new Error(payload?.detail || payload?.message || "Retry failed");
-          }
-          const resumedJobId = payload?.job_id || payload?.id || "";
-          showToast("Retry started", resumedJobId ? `Job ${resumedJobId} queued.` : "Retry queued.");
-          window.setTimeout(() => window.location.reload(), 700);
-        } catch (error) {
-          showToast("Retry failed", error?.message || "Could not retry this upload.", "error");
-          if (button) {
-            button.disabled = false;
-            button.textContent = originalLabel;
-          }
-        }
-      });
-    });
-  };
-
-  const renderLiveCard = (payload) => {
-    const job = payload?.job || {};
-    const bulk = payload?.bulk || {};
-    if (!job.id || !liveList) return;
-    const shouldShow = activeStatuses.has((job.status || "").toLowerCase()) || (focusJobId && job.id === focusJobId);
-    const existingCard = liveList.querySelector(`[data-live-job-id="${CSS.escape(job.id)}"]`);
-
-    if (!shouldShow) {
-      existingCard?.remove();
-      if (!liveList.children.length) {
-        liveList.innerHTML = "";
-      }
-      return;
-    }
-
-    const card = existingCard || document.createElement("div");
-    card.className = "card jobs-live-card";
-    card.dataset.liveJobId = job.id;
-    card.innerHTML = `
-      <div class="jobs-live-card__header">
-        <div>
-          <p class="panel-label">Live job</p>
-          <h2 class="section-subtitle" style="margin:0;">Bulk upload progress</h2>
-        </div>
-        <code class="jobs-code">${escapeHtml(job.id)}</code>
-      </div>
-      <div class="jobs-live-grid">
-        <div><span class="jobs-mobile-label">Status</span><div data-live-status></div></div>
-        <div><span class="jobs-mobile-label">Progress</span><div data-live-progress></div></div>
-        <div><span class="jobs-mobile-label">Files</span><div data-live-files></div></div>
-        <div><span class="jobs-mobile-label">Cards</span><div data-live-cards></div></div>
-      </div>
-      <div data-live-error class="jobs-failed-inline" style="display:none;"></div>
-      <div>
-        <p class="jobs-mobile-label">Created decks</p>
-        <div data-live-decks class="jobs-bulk-links jobs-bulk-links--mobile"></div>
-      </div>
-      <div data-live-file-status-wrap style="display:none;">
-        <p class="jobs-mobile-label">Files</p>
-        <div data-live-file-status-list class="jobs-live-file-status-list"></div>
-      </div>
-    `;
-    if (!existingCard) {
-      liveList.appendChild(card);
-    }
-
-    const liveStatus = card.querySelector("[data-live-status]");
-    const liveProgress = card.querySelector("[data-live-progress]");
-    const liveFiles = card.querySelector("[data-live-files]");
-    const liveCards = card.querySelector("[data-live-cards]");
-    const liveError = card.querySelector("[data-live-error]");
-    const liveDecks = card.querySelector("[data-live-decks]");
-    const liveFileStatusWrap = card.querySelector("[data-live-file-status-wrap]");
-    const liveFileStatusList = card.querySelector("[data-live-file-status-list]");
-
-    if (liveStatus) liveStatus.innerHTML = statusHtml(job.status);
-    if (liveProgress) liveProgress.textContent = `${job.processed_items || 0} / ${job.total_items || 0}${job.failed_items ? ` (${job.failed_items} failed)` : ""}`;
-    if (liveFiles) {
-      const fileDetails = bulk.file_details || [];
-      const counts = { completed: 0, processing: 0, failed: 0, pending: 0 };
-      fileDetails.forEach((file) => {
-        const status = String(file.status || '').toLowerCase();
-        if (Object.prototype.hasOwnProperty.call(counts, status)) {
-          counts[status] += 1;
-        } else {
-          counts.pending += 1;
-        }
-      });
-      const totalFiles = fileDetails.length;
-      liveFiles.textContent = `✓ ${counts.completed} ⟳ ${counts.processing} ✕ ${counts.failed} ○ ${counts.pending} / ${totalFiles}`;
-    }
-    if (liveCards) liveCards.textContent = `${bulk.flashcards_generated || 0} flashcards, ${bulk.mcqs_generated || 0} MCQs`;
-    if (liveError) {
-      if (job.error_message) {
-        liveError.textContent = job.error_message;
-        liveError.style.display = "block";
-      } else {
-        liveError.style.display = "none";
-      }
-    }
-    if (liveDecks) {
-      const decks = bulk.created_decks || [];
-      liveDecks.innerHTML = decks.length
-        ? decks.map((deck) => `<a class="jobs-live-deck-link" href="/decks/${deck.id}">${escapeHtml(deck.name)}<span class="jobs-live-deck-meta">${deck.flashcard_count}F / ${deck.mcq_count}M</span></a>`).join("")
-        : '<span class="muted">No decks created yet.</span>';
-    }
-    if (liveFileStatusWrap && liveFileStatusList) {
-      const fileDetails = bulk.file_details || [];
-      if (fileDetails.length) {
-        liveFileStatusWrap.style.display = "block";
-        liveFileStatusList.innerHTML = fileDetails.map((file) => {
-          const safeName = escapeHtml(file.original_filename || "File");
-          const safeError = file.error_message ? `<div class="jobs-live-file-status-meta">${escapeHtml(file.error_message)}</div>` : "";
-          const safeStatus = escapeHtml(fileStateLabel(file.status));
-          return `<div class="jobs-live-file-status-item"><div class="jobs-live-file-status-copy"><div class="jobs-live-file-status-name">${fileStateIconHtml(file.status)}<span>${safeName}</span></div>${safeError}</div><span class="jobs-file-state-pill jobs-file-state-pill--${escapeHtml(file.status || "unknown")}">${safeStatus}</span></div>`;
-        }).join("");
-      } else {
-        liveFileStatusWrap.style.display = "none";
-        liveFileStatusList.innerHTML = "";
-      }
-    }
-  };
-
-  const handlePayload = (payload) => {
-    const job = payload?.job;
-    if (!job?.id) return;
-    updateRow(job);
-    updateMobileCard(job);
-    renderLiveCard(payload);
-    if (focusJobId && job.id === focusJobId && notice && !["pending", "running"].includes(job.status)) {
-      notice.style.display = "none";
-    }
-    if (!["pending", "running"].includes(job.status)) {
-      const source = sources.get(job.id);
-      if (source) {
-        source.close();
-        sources.delete(job.id);
-      }
-    }
-  };
-
-  const subscribe = (jobId) => {
-    if (!jobId || sources.has(jobId)) return;
-    const existingRow = tableRows.find((row) => row.dataset.jobId === jobId);
-    const existingMobileCard = mobileCardMap.get(jobId);
-    const existingStatus = (existingRow?.dataset.jobStatus || existingMobileCard?.dataset.jobStatus || "").toLowerCase();
-    if (existingStatus && !activeStatuses.has(existingStatus)) {
-      return;
-    }
-    const source = new EventSource(`/api/v1/live/jobs/${encodeURIComponent(jobId)}/stream`);
-    source.onmessage = (event) => {
-      try {
-        handlePayload(JSON.parse(event.data));
-      } catch (_) {}
-    };
-    source.onerror = () => {
-      const latestRow = tableRows.find((row) => row.dataset.jobId === jobId);
-      const latestMobileCard = mobileCardMap.get(jobId);
-      const latestStatus = (latestRow?.dataset.jobStatus || latestMobileCard?.dataset.jobStatus || "").toLowerCase();
-      if (!latestStatus || !activeStatuses.has(latestStatus)) {
-        source.close();
-        sources.delete(jobId);
-      }
-    };
-    sources.set(jobId, source);
-  };
-
-  if (focusJobId) {
-    const existingRow = tableRows.find((row) => row.dataset.jobId === focusJobId);
-    const existingMobileCard = mobileCardMap.get(focusJobId);
-    const existingStatus = (existingRow?.dataset.jobStatus || existingMobileCard?.dataset.jobStatus || "").toLowerCase();
-    if (notice && existingStatus && !activeStatuses.has(existingStatus)) {
-      notice.style.display = "none";
-    }
-  }
-
-  bindRetryForms();
-
-  document.querySelectorAll("[data-toggle-target]").forEach((button) => {
-    if (button.dataset.toggleBound === "1") return;
-    button.dataset.toggleBound = "1";
-    button.addEventListener("click", () => {
-      const panel = document.getElementById(button.dataset.toggleTarget || "");
-      if (!panel) return;
-      const isHidden = panel.hasAttribute("hidden");
-      if (isHidden) {
-        panel.removeAttribute("hidden");
-      } else {
-        panel.setAttribute("hidden", "hidden");
-      }
-    });
-  });
-
-  const pendingJobIds = new Set();
-  tableRows.forEach((row) => {
-    if (activeStatuses.has(row.dataset.jobStatus || "")) {
-      pendingJobIds.add(row.dataset.jobId);
-    }
-  });
-  mobileCards.forEach((card) => {
-    if (activeStatuses.has(card.dataset.jobStatus || "")) {
-      pendingJobIds.add(card.dataset.jobId);
-    }
-  });
-  if (focusJobId) {
-    const focusRow = tableRows.find((row) => row.dataset.jobId === focusJobId);
-    const focusMobileCard = mobileCardMap.get(focusJobId);
-    const focusStatus = (focusRow?.dataset.jobStatus || focusMobileCard?.dataset.jobStatus || "").toLowerCase();
-    if (!focusStatus || activeStatuses.has(focusStatus)) {
-      pendingJobIds.add(focusJobId);
-    }
-  }
-
-  pendingJobIds.forEach(subscribe);
-})();
-</script>
 {% endblock %}
-

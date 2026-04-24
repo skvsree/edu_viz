@@ -496,6 +496,7 @@ def _jobs_response(
     bulk_file_rows: dict = {}
     bulk_file_counts: dict = {}
     bulk_has_active_retry: set = set()
+    bulk_jobs_by_file: dict = {}
     if bulk_ids:
         file_rows_result = db.execute(
             select(BulkAIUploadFile)
@@ -558,6 +559,51 @@ def _jobs_response(
             for bulk_id, deck_id_list in bulk_output_decks.items()
         }
 
+    job_rank = {"running": 4, "pending": 3, "failed": 2, "completed": 1}
+    for bulk_id, file_list in bulk_file_rows.items():
+        file_groups: dict = {}
+        for file_row in file_list:
+            file_groups.setdefault(file_row.original_filename, []).append(file_row)
+
+        grouped_items = []
+        for filename, grouped_rows in file_groups.items():
+            latest_row = max(
+                grouped_rows,
+                key=lambda item: (
+                    item.created_at or datetime.min,
+                    item.started_at or datetime.min,
+                    item.completed_at or datetime.min,
+                ),
+            )
+            grouped_rows_sorted = sorted(
+                grouped_rows,
+                key=lambda item: (
+                    job_rank.get((item.status or "").lower(), 0),
+                    item.created_at or datetime.min,
+                    item.started_at or datetime.min,
+                    item.completed_at or datetime.min,
+                ),
+                reverse=True,
+            )
+            grouped_items.append(
+                {
+                    "filename": filename,
+                    "latest_file": latest_row,
+                    "jobs": grouped_rows_sorted,
+                }
+            )
+
+        bulk_jobs_by_file[bulk_id] = sorted(
+            grouped_items,
+            key=lambda item: (
+                job_rank.get((item["latest_file"].status or "").lower(), 0),
+                item["latest_file"].created_at or datetime.min,
+                item["latest_file"].started_at or datetime.min,
+                item["latest_file"].completed_at or datetime.min,
+            ),
+            reverse=True,
+        )
+
     return templates.TemplateResponse(
         "settings/jobs.html",
         {
@@ -570,6 +616,7 @@ def _jobs_response(
             "bulk_failed_files": bulk_failed_files,
             "bulk_file_counts": bulk_file_counts,
             "bulk_has_active_retry": bulk_has_active_retry,
+            "bulk_jobs_by_file": bulk_jobs_by_file,
             "title": "Jobs | edu selviz",
         },
         status_code=status_code,
