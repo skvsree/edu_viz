@@ -64,6 +64,7 @@
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-new" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-rename" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-move" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
+          <button type="button" class="browse-btn browse-btn--sm" id="bulk-access-btn" aria-label="Bulk access" title="Bulk access" disabled>Access</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-delete" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
           <button type="button" class="browse-btn browse-btn--sm" id="bulk-ai-upload-btn" aria-label="AI Bulk Upload" title="AI Bulk Upload">◈ Upload</button>
         </div>
@@ -294,6 +295,32 @@
       <footer class="modal__footer">
         <button type="button" class="browse-btn browse-btn--sm" id="picker-confirm">Move</button>
         <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="folder-picker-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
+
+  {# Bulk access #}
+  <dialog id="bulk-access-modal" class="modal">
+    <div class="modal__surface">
+      <header class="modal__header">
+        <h2 class="modal__title">Bulk change access</h2>
+      </header>
+      <div class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <label class="field-label" for="bulk-access-level">Access level</label>
+        <select id="bulk-access-level" class="search-select">
+          <option value="user">Private</option>
+          <option value="org">Organization</option>
+          <option value="global">Public</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:0.5rem;">
+          <input type="checkbox" id="bulk-access-recursive" checked />
+          <span>Apply recursively inside selected folders</span>
+        </label>
+        <p id="bulk-access-error" class="muted" style="display:none; color:var(--danger, #dc2626);"></p>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="browse-btn browse-btn--sm" id="bulk-access-confirm">Apply</button>
+        <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="bulk-access-modal">Cancel</button>
       </footer>
     </div>
   </dialog>
@@ -1400,6 +1427,8 @@ dialog.modal::backdrop {
     const n = selected.length;
     const allCheckboxes = getAllCheckboxes().filter(cb => cb.closest("[data-can-write='true']"));
     if (moveBtn) moveBtn.disabled = n === 0;
+    const bulkAccessBtn = document.getElementById("bulk-access-btn");
+    if (bulkAccessBtn) bulkAccessBtn.disabled = n === 0;
     if (deleteBtn) deleteBtn.disabled = n === 0;
     if (selectAllBtn) {
       const allSelected = allCheckboxes.length > 0 && allCheckboxes.every(cb => cb.checked);
@@ -1434,6 +1463,17 @@ dialog.modal::backdrop {
       if (modal) { populatePicker(); modal.showModal(); }
     });
   }
+
+  const bulkAccessBtn = document.getElementById("bulk-access-btn");
+  bulkAccessBtn?.addEventListener("click", () => {
+    const modal = document.getElementById("bulk-access-modal");
+    const err = document.getElementById("bulk-access-error");
+    if (err) {
+      err.style.display = "none";
+      err.textContent = "";
+    }
+    modal?.showModal();
+  });
 
   // Close modal buttons
   document.querySelectorAll('[data-modal-close]').forEach((btn) => {
@@ -1557,6 +1597,53 @@ dialog.modal::backdrop {
     } else {
       const err = document.getElementById("folder-picker-error");
       if (err) { err.textContent = errorMessage || "Move failed. Try again."; err.style.display = "block"; }
+    }
+  });
+
+  document.getElementById("bulk-access-confirm")?.addEventListener("click", async () => {
+    const accessLevel = document.getElementById("bulk-access-level")?.value;
+    const recursive = !!document.getElementById("bulk-access-recursive")?.checked;
+    const err = document.getElementById("bulk-access-error");
+    const folderIds = selected.filter(i => i.type === "folder").map(i => i.id);
+    const deckIds = selected.filter(i => i.type === "deck").map(i => i.id);
+
+    if (err) {
+      err.style.display = "none";
+      err.textContent = "";
+    }
+
+    try {
+      const r = await fetch("/api/v1/decks/access-level/bulk", {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          deck_ids: deckIds,
+          folder_ids: folderIds,
+          access_level: accessLevel,
+          recursive,
+        }),
+      });
+      if (!r.ok) {
+        let msg = `Bulk access change failed (${r.status})`;
+        try {
+          const data = await r.json();
+          msg = data.detail || msg;
+        } catch {}
+        if (err) {
+          err.textContent = msg;
+          err.style.display = "block";
+        }
+        return;
+      }
+      document.getElementById("bulk-access-modal")?.close();
+      getAllCheckboxes().forEach(cb => { cb.checked = false; });
+      syncSelected();
+      window.location.reload();
+    } catch {
+      if (err) {
+        err.textContent = "Bulk access change failed. Try again.";
+        err.style.display = "block";
+      }
     }
   });
 

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
 from app.core.db import get_db
-from app.models import Card, Deck, DeckAccess, User
+from app.models import Card, Deck, DeckAccess, Folder, User
 from app.services.access import ACCESS_LEVELS, ACCESS_NONE, can_manage_deck, can_set_deck_access
 
 router = APIRouter(prefix="/api/v1/decks", tags=["deck-access"])
@@ -227,6 +227,27 @@ class DeckAccessLevelUpdate(BaseModel):
     access_level: str
 
 
+class BulkDeckAccessLevelUpdate(BaseModel):
+    deck_ids: list[uuid.UUID] = []
+    folder_ids: list[uuid.UUID] = []
+    access_level: str
+    recursive: bool = True
+
+
+def _collect_descendant_folder_ids(db: Session, folder_id: uuid.UUID) -> list[uuid.UUID]:
+    descendant_ids = [folder_id]
+    to_process = [folder_id]
+    while to_process:
+        current = to_process.pop()
+        children = db.execute(
+            select(Folder.id).where(Folder.parent_id == current)
+        ).scalars().all()
+        for child_id in children:
+            descendant_ids.append(child_id)
+            to_process.append(child_id)
+    return descendant_ids
+
+
 @router.delete("/{deck_id}", status_code=204)
 def delete_deck_api(
     deck_id: uuid.UUID,
@@ -270,3 +291,59 @@ def update_deck_access_level(
     deck.is_global = update.access_level == "global"
     db.commit()
     return {"id": str(deck.id), "access_level": getattr(deck.access_level, "value", deck.access_level)}
+
+
+@router.put("/access-level/bulk", response_model=dict)
+def bulk_update_deck_access_level(
+    update: BulkDeckAccessLevelUpdate,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk update access level for selected decks and folders, optionally recursive."""
+    from app.services.access import can_change_access_level
+
+    valid_levels = {"global", "org", "user"}
+    if update.access_level not in valid_levels:
+        raise HTTPException(status_code=400, detail=f"Invalid access_level. Must be one of: {sorted(valid_levels)}")
+
+    if not update.deck_ids and not update.folder_ids:
+        raise HTTPException(status_code=400, detail="No deck_ids or folder_ids provided")
+
+    target_deck_ids: set[uuid.UUID] = set(update.deck_ids or [])
+
+    for folder_id in update.folder_ids or []:
+        folder = db.get(Folder, folder_id)
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder not found: {folder_id}")
+        if str(folder.user_id) != str(user.id):
+            raise HTTPException(status_code=403, detail="Cannot change access for one or more selected folders")
+
+        folder_ids = _collect_descendant_folder_ids(db, folder_id) if update.recursive else [folder_id]
+        folder_deck_ids = db.execute(
+            select(Deck.id).where(
+                Deck.folder_id.in_(folder_ids),
+                Deck.is_deleted.is_(False),
+            )
+        ).scalars().all()
+        target_deck_ids.update(folder_deck_ids)
+
+    if not target_deck_ids:
+        return {"success": True, "updated_count": 0}
+
+    decks = db.execute(
+        select(Deck).where(Deck.id.in_(list(target_deck_ids)), Deck.is_deleted.is_(False))
+    ).scalars().all()
+
+    if len(decks) != len(target_deck_ids):
+        raise HTTPException(status_code=404, detail="One or more decks were not found")
+
+    denied_ids = [str(deck.id) for deck in decks if not can_change_access_level(user, deck, update.access_level)]
+    if denied_ids:
+        raise HTTPException(status_code=403, detail="Cannot change access level for one or more selected decks")
+
+    for deck in decks:
+        deck.access_level = update.access_level
+        deck.is_global = update.access_level == "global"
+
+    db.commit()
+    return {"success": True, "updated_count": len(decks), "access_level": update.access_level}
