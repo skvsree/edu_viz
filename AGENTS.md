@@ -88,6 +88,9 @@
 - A `read` grant allows viewing a user-scope deck even if the user is not the owner.
 - A `write` grant allows modifying the deck.
 - A `delete` grant allows deleting the deck.
+- In browse, deck-row access icon is display-only; do not reintroduce row-level scope toggling there without explicit request.
+- Browse folder visibility must stay aligned with visible deck scope: if global/org-visible decks live inside folders, those folders must also be visible to the same user.
+- Be careful with folder/search browse code paths that reuse explicit-share helpers; the live DB enum uses lowercase grant levels (`none/read/write/delete`) and mismatched enum assumptions can break browse.
 
 ## Changing access
 - Changing the deck scope (`global` / `org` / `user`) is separate from granting per-user deck access.
@@ -95,6 +98,7 @@
 - System admin can change any deck scope.
 - Regular users cannot promote a deck to `global`.
 - `org` scope requires org-admin capability.
+- `/login` should send unauthenticated users to `/login/providers`; provider-specific OAuth should start only from `/login/microsoft` or `/login/google`.
 - Granting/revoking per-user deck access is allowed for:
   - deck owner
   - system admin

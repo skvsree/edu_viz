@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -1168,7 +1168,6 @@ def browse_decks(
     show_action_bar = can_write_tab(user, tab_param)
 
     from app.services.access import (
-        browse_accessible_deck_clause,
         can_delete_deck as _cdd,
         can_set_deck_access as _csda,
         can_write_deck as _cwd,
@@ -1186,11 +1185,49 @@ def browse_decks(
             return True
         if str(folder.user_id) == str(user.id):
             return True
-        return bool(
+        if (
             user.organization_id
             and folder.organization_id
             and str(folder.organization_id) == str(user.organization_id)
-        )
+        ):
+            return True
+        visible_child_filters = [
+            Deck.user_id == user.id,
+            Deck.access_level == "global",
+        ]
+        if user.organization_id:
+            visible_child_filters.append(
+                and_(
+                    Deck.access_level == "org",
+                    Deck.organization_id == user.organization_id,
+                )
+            )
+        folder_ids_to_check = [folder.id]
+        seen_folder_ids = set()
+        while folder_ids_to_check:
+            current_folder_id = folder_ids_to_check.pop()
+            if current_folder_id in seen_folder_ids:
+                continue
+            seen_folder_ids.add(current_folder_id)
+
+            accessible_child_exists = db.execute(
+                select(Deck.id)
+                .where(
+                    Deck.folder_id == current_folder_id,
+                    Deck.is_deleted.is_(False),
+                    or_(*visible_child_filters),
+                )
+                .limit(1)
+            ).first()
+            if accessible_child_exists is not None:
+                return True
+
+            child_folder_ids = db.execute(
+                select(Folder.id).where(Folder.parent_id == current_folder_id)
+            ).scalars().all()
+            folder_ids_to_check.extend(child_folder_ids)
+
+        return False
 
     def _can_manage_folder_local(folder: Folder | None) -> bool:
         if not folder:
@@ -1269,9 +1306,18 @@ def browse_decks(
     if apply_tab_filter:
         deck_filter = browse_filter_clause(user, tab_param)
     else:
-        deck_filter = browse_accessible_deck_clause(
-            user
-        )  # include explicit shares in folder/search views
+        visible_filters = [
+            Deck.user_id == user.id,
+            Deck.access_level == "global",
+        ]
+        if user.organization_id:
+            visible_filters.append(
+                and_(
+                    Deck.access_level == "org",
+                    Deck.organization_id == user.organization_id,
+                )
+            )
+        deck_filter = Deck.is_deleted.is_(False) & or_(*visible_filters)
 
     base_q = load_browse_deck_query(user).where(deck_filter).group_by(Deck.id)
 
@@ -1282,7 +1328,6 @@ def browse_decks(
     # Search (search always shows accessible decks across all tabs)
     if q:
         from app.services.access import normalize_deck_name
-        from sqlalchemy import or_
 
         normalized_q = normalize_deck_name(q)
         if normalized_q:

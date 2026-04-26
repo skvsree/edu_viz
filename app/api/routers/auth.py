@@ -65,11 +65,6 @@ async def login(
     if user is not None:
         return RedirectResponse(url="/dashboard", status_code=303)
 
-    if request is not None:
-        cfg = load_identity_config()
-        oauth = build_oauth()
-        return await oauth.microsoft.authorize_redirect(request, cfg.redirect_uri)
-
     return RedirectResponse(url="/login/providers", status_code=303)
 
 
