@@ -46,11 +46,56 @@
 
               <div class="jobs-bulk-second-line">
                 {% if output_decks %}
-                  {% for deck in output_decks %}
-                    <span class="jobs-deck-chip">
-                      <a class="jobs-link-chip" href="/decks/{{ deck.id }}">{{ deck.title or deck.name or bulk.filename or ('Deck ' ~ loop.index) }}</a>
-                      <span class="jobs-status jobs-status--completed">Completed</span>
-                    </span>
+                  {% for file_group in output_decks %}
+                    {% set latest = file_group.latest_file %}
+                    {% set latest_status = (latest.status or '').lower() %}
+                    {% set is_running = latest_status in ['pending', 'processing'] %}
+                    {% set is_failed = latest_status == 'failed' %}
+                    <details class="jobs-inline-file {% if is_failed %}jobs-inline-file--failed{% elif is_running %}jobs-inline-file--running{% endif %}" {% if is_running or is_failed %}open{% endif %}>
+                      <summary class="jobs-inline-file__summary">
+                        {% if latest.created_deck_id %}
+                          <a class="jobs-inline-file__name jobs-inline-file__name--link" href="/decks/{{ latest.created_deck_id }}">{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}</a>
+                        {% else %}
+                          <span class="jobs-inline-file__name">{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}</span>
+                        {% endif %}
+                        <span class="jobs-status {{ 'jobs-status--running' if is_running else 'jobs-status--completed' if latest_status == 'completed' else 'jobs-status--failed' }}">
+                          {% if is_running %}
+                            <span class="jobs-inline-loader" aria-hidden="true"></span>
+                          {% endif %}
+                          {{ latest_status|capitalize if latest_status else 'Pending' }}
+                        </span>
+                      </summary>
+                      <div class="jobs-inline-file__body">
+                        <div class="jobs-attempt-list">
+                          <div class="jobs-attempt-row">
+                            <div class="jobs-attempt-row__main">
+                              <div class="jobs-attempt-row__meta">
+                                <span>File: {{ file_group.filename }}</span>
+                                {% if latest.created_deck_id and latest_status == 'completed' %}
+                                  <span><a class="jobs-inline-link" href="/decks/{{ latest.created_deck_id }}">Open deck</a></span>
+                                {% endif %}
+                                <span>Created: {{ latest.created_at.strftime('%Y-%m-%d %H:%M') if latest.created_at else '—' }}</span>
+                              </div>
+                              {% if latest.error_message %}
+                                <div class="jobs-attempt-row__error">{{ latest.error_message }}</div>
+                              {% endif %}
+                            </div>
+                            <div class="jobs-attempt-row__actions">
+                              {% if is_failed %}
+                                <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}" class="jobs-retry-form">
+                                  <button type="submit" class="jobs-retry-button">Retry</button>
+                                </form>
+                              {% endif %}
+                              {% if latest_status in ['pending', 'processing', 'failed'] %}
+                                <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}&force=1" class="jobs-retry-form">
+                                  <button type="submit" class="jobs-retry-button jobs-retry-button--force">Force retry</button>
+                                </form>
+                              {% endif %}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
                   {% endfor %}
                 {% elif not file_groups and bulk.status == 'failed' and not bulk.error_message %}
                   <details class="jobs-inline-file jobs-inline-file--failed" open>
@@ -93,7 +138,7 @@
 
     <div class="stack-sm jobs-page__footer">
       <p class="muted jobs-page__footnote">
-        First line shows filename, date, and status. Second line shows only decks, with retry only when deck creation failed.
+        First line shows ZIP filename, date, and overall status. Second line shows one deck/status block for each uploaded file.
       </p>
     </div>
   </section>
@@ -221,19 +266,11 @@
   }
 
   .jobs-link-chip,
-  .jobs-inline-file,
-  .jobs-deck-chip {
+  .jobs-inline-file {
     border: 1px solid color-mix(in srgb, var(--border-color) 68%, #94a3b8 32%);
-    border-radius: 999px;
+    border-radius: 12px;
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     font-size: 0.74rem;
-  }
-
-  .jobs-deck-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.26rem 0.3rem 0.26rem 0.26rem;
   }
 
   .jobs-link-chip {
@@ -246,6 +283,7 @@
 
   .jobs-inline-file {
     overflow: hidden;
+    min-width: min(100%, 320px);
   }
 
   .jobs-inline-file__summary {
@@ -266,6 +304,14 @@
     color: var(--text-color);
   }
 
+  .jobs-inline-file__name--link {
+    text-decoration: none;
+    color: var(--accent-color);
+    pointer-events: auto;
+    position: relative;
+    z-index: 2;
+  }
+
   .jobs-inline-file__action {
     color: var(--muted);
   }
@@ -273,6 +319,17 @@
   .jobs-inline-file--failed .jobs-inline-file__action {
     color: #dc2626;
     font-weight: 700;
+  }
+
+  .jobs-inline-file--running {
+    border-color: color-mix(in srgb, #2563eb 45%, var(--border-color));
+    background: color-mix(in srgb, #dbeafe 30%, var(--surface));
+  }
+
+  .jobs-inline-link {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 600;
   }
 
   .jobs-inline-file__body {
@@ -410,6 +467,12 @@
     font-weight: 600;
     line-height: 1;
     cursor: pointer;
+  }
+
+  .jobs-retry-button--force {
+    border-color: rgba(124, 58, 237, 0.3);
+    background: rgba(124, 58, 237, 0.12);
+    color: #6d28d9;
   }
 
   .jobs-retry-button[disabled] {

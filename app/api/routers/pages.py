@@ -509,16 +509,11 @@ def _jobs_response(
             file_rows = file_rows_result.all()
         if file_rows and isinstance(file_rows[0], tuple):
             file_rows = []
-        seen_bulk_decks: dict = {}
         for file_row in file_rows:
             bulk_upload_id = file_row.bulk_upload_id
             bulk_file_rows.setdefault(bulk_upload_id, []).append(file_row)
             if file_row.created_deck_id:
                 deck_ids.add(file_row.created_deck_id)
-                seen = seen_bulk_decks.setdefault(bulk_upload_id, set())
-                if file_row.created_deck_id not in seen:
-                    seen.add(file_row.created_deck_id)
-                    bulk_output_decks.setdefault(bulk_upload_id, []).append(file_row.created_deck_id)
             if file_row.status == BulkAIUploadFileStatus.FAILED.value:
                 bulk_failed_files.setdefault(bulk_upload_id, []).append(file_row)
             if file_row.status in {
@@ -553,12 +548,6 @@ def _jobs_response(
         )
         decks = {d.id: d for d in deck_results}
 
-    if bulk_ids:
-        bulk_output_decks = {
-            bulk_id: [decks[deck_id] for deck_id in deck_id_list if deck_id in decks]
-            for bulk_id, deck_id_list in bulk_output_decks.items()
-        }
-
     job_rank = {"running": 4, "pending": 3, "failed": 2, "completed": 1}
     for bulk_id, file_list in bulk_file_rows.items():
         file_groups: dict = {}
@@ -585,13 +574,12 @@ def _jobs_response(
                 ),
                 reverse=True,
             )
-            grouped_items.append(
-                {
-                    "filename": filename,
-                    "latest_file": latest_row,
-                    "jobs": grouped_rows_sorted,
-                }
-            )
+            grouped_item = {
+                "filename": filename,
+                "latest_file": latest_row,
+                "jobs": grouped_rows_sorted,
+            }
+            grouped_items.append(grouped_item)
 
         bulk_jobs_by_file[bulk_id] = sorted(
             grouped_items,
@@ -603,6 +591,7 @@ def _jobs_response(
             ),
             reverse=True,
         )
+        bulk_output_decks[bulk_id] = bulk_jobs_by_file[bulk_id]
 
     return templates.TemplateResponse(
         "settings/jobs.html",

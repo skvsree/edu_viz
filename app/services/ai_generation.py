@@ -310,10 +310,13 @@ def build_title_generation_prompt(text: str, filename: str) -> str:
     safe_filename = (filename or "upload.pdf").strip()
     return (
         "Return strict JSON only with keys title and description. "
-        "Choose the best deck title from the source text. "
-        "Rule: if the material is clearly a chapter, title must be exactly in the form "
-        "'Chapter {number} - {full chapter or book title}'. "
-        "If it is not clearly a chapter, use the full book title only. "
+        "Choose the best deck title from the source text itself, not just the filename. "
+        "Prefer the real document or chapter title as a clean human title. "
+        "Do not prefix the title with labels like Chapter, Lesson, Unit, Part, "
+        "Module, or section numbers unless they are genuinely part of the natural title text. "
+        "If the PDF is one chapter from a larger book, prefer the chapter's actual "
+        "title text without adding synthetic prefixes like 'Chapter 3 -'. "
+        "Use the filename only as weak fallback context. "
         "Do not include file extensions. Keep title under 255 characters. "
         "Description should be a concise 1-2 sentence summary under 500 characters. "
         f"Filename: {safe_filename}\n\n"
