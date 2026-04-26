@@ -64,7 +64,9 @@
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-new" id="new-folder-btn" aria-label="New folder" title="New folder">＋</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-rename" id="rename-btn" aria-label="Rename" title="Rename" disabled>✎</button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-move" id="move-btn" aria-label="Move" title="Move" disabled>⇄</button>
-          <button type="button" class="browse-btn browse-btn--sm" id="bulk-access-btn" aria-label="Bulk access" title="Bulk access" disabled>Access</button>
+          <button type="button" class="browse-btn browse-btn--icon" id="bulk-access-btn" aria-label="Bulk access" title="Bulk access" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 12h.01"></path><path d="M15 12h.01"></path></svg>
+          </button>
           <button type="button" class="browse-btn browse-btn--icon browse-btn--icon-delete" id="delete-btn" aria-label="Delete" title="Delete" disabled>✕</button>
           <button type="button" class="browse-btn browse-btn--sm" id="bulk-ai-upload-btn" aria-label="AI Bulk Upload" title="AI Bulk Upload">◈ Upload</button>
         </div>
@@ -146,7 +148,7 @@
                 <div class="browse-table__cell browse-table__cell--select" role="cell">
                   {% if f.can_write %}
                   <div class="item-cb-wrap item-cb-wrap--table">
-                    <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+                    <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" data-can-manage-access="true" />
                   </div>
                   {% endif %}
                 </div>
@@ -224,7 +226,7 @@
                 <div class="browse-table__cell browse-table__cell--select" role="cell">
                   {% if f.can_write %}
                   <div class="item-cb-wrap item-cb-wrap--table">
-                    <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" />
+                    <input type="checkbox" class="item-cb" data-type="folder" data-id="{{ f.id }}" data-can-manage-access="true" />
                   </div>
                   {% endif %}
                 </div>
@@ -308,19 +310,34 @@
       <div class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
         <label class="field-label" for="bulk-access-level">Access level</label>
         <select id="bulk-access-level" class="search-select">
-          <option value="user">Private</option>
-          <option value="org">Organization</option>
-          <option value="global">Public</option>
+          <option value="user">User</option>
+          <option value="org">Org</option>
+          <option value="global">Global</option>
         </select>
         <label style="display:flex; align-items:center; gap:0.5rem;">
           <input type="checkbox" id="bulk-access-recursive" checked />
           <span>Apply recursively inside selected folders</span>
         </label>
         <p id="bulk-access-error" class="muted" style="display:none; color:var(--danger, #dc2626);"></p>
+        <p id="bulk-access-success" class="muted" style="display:none; color:var(--success, #16a34a);"></p>
       </div>
       <footer class="modal__footer">
         <button type="button" class="browse-btn browse-btn--sm" id="bulk-access-confirm">Apply</button>
         <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost" data-modal-close="bulk-access-modal">Cancel</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <dialog id="bulk-access-result-modal" class="modal">
+    <div class="modal__surface">
+      <header class="modal__header">
+        <h2 class="modal__title">Access updated</h2>
+      </header>
+      <div class="modal__body" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <p id="bulk-access-result-message">Done.</p>
+      </div>
+      <footer class="modal__footer">
+        <button type="button" class="browse-btn browse-btn--sm" id="bulk-access-result-ok">OK</button>
       </footer>
     </div>
   </dialog>
@@ -460,6 +477,22 @@
 </dialog>
 
 <style>
+  .spinner {
+    display: inline-block;
+    width: 0.9rem;
+    height: 0.9rem;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 999px;
+    animation: bulk-spin 0.75s linear infinite;
+    vertical-align: -0.1rem;
+    margin-right: 0.35rem;
+  }
+
+  @keyframes bulk-spin {
+    to { transform: rotate(360deg); }
+  }
+
   .ai-upload-progress-panel {
     margin-top: 0.5rem;
   }
@@ -1423,12 +1456,20 @@ dialog.modal::backdrop {
     // Only include items the user can actually write
     selected = getAllCheckboxes()
       .filter(cb => cb.checked && cb.closest("[data-can-write='true']"))
-      .map(cb => ({ type: cb.dataset.type, id: cb.dataset.id }));
+      .map(cb => ({
+        type: cb.dataset.type,
+        id: cb.dataset.id,
+        canManageAccess: cb.dataset.canManageAccess === "true",
+      }));
     const n = selected.length;
+    const accessEligibleCount = selected.filter(item => item.canManageAccess).length;
     const allCheckboxes = getAllCheckboxes().filter(cb => cb.closest("[data-can-write='true']"));
     if (moveBtn) moveBtn.disabled = n === 0;
     const bulkAccessBtn = document.getElementById("bulk-access-btn");
-    if (bulkAccessBtn) bulkAccessBtn.disabled = n === 0;
+    if (bulkAccessBtn) {
+      bulkAccessBtn.disabled = accessEligibleCount === 0;
+      bulkAccessBtn.title = accessEligibleCount === 0 ? "No selected items support access changes" : "Bulk access";
+    }
     if (deleteBtn) deleteBtn.disabled = n === 0;
     if (selectAllBtn) {
       const allSelected = allCheckboxes.length > 0 && allCheckboxes.every(cb => cb.checked);
@@ -1468,9 +1509,14 @@ dialog.modal::backdrop {
   bulkAccessBtn?.addEventListener("click", () => {
     const modal = document.getElementById("bulk-access-modal");
     const err = document.getElementById("bulk-access-error");
+    const success = document.getElementById("bulk-access-success");
     if (err) {
       err.style.display = "none";
       err.textContent = "";
+    }
+    if (success) {
+      success.style.display = "none";
+      success.textContent = "";
     }
     modal?.showModal();
   });
@@ -1604,12 +1650,35 @@ dialog.modal::backdrop {
     const accessLevel = document.getElementById("bulk-access-level")?.value;
     const recursive = !!document.getElementById("bulk-access-recursive")?.checked;
     const err = document.getElementById("bulk-access-error");
-    const folderIds = selected.filter(i => i.type === "folder").map(i => i.id);
-    const deckIds = selected.filter(i => i.type === "deck").map(i => i.id);
+    const success = document.getElementById("bulk-access-success");
+    const confirmBtn = document.getElementById("bulk-access-confirm");
+    const resultModal = document.getElementById("bulk-access-result-modal");
+    const resultMessage = document.getElementById("bulk-access-result-message");
+    const eligibleSelected = selected.filter(i => i.canManageAccess);
+    const folderIds = eligibleSelected.filter(i => i.type === "folder").map(i => i.id);
+    const deckIds = eligibleSelected.filter(i => i.type === "deck").map(i => i.id);
 
     if (err) {
       err.style.display = "none";
       err.textContent = "";
+    }
+    if (success) {
+      success.style.display = "none";
+      success.textContent = "";
+    }
+
+    if (!deckIds.length && !folderIds.length) {
+      if (err) {
+        err.textContent = "Select at least one access-manageable deck or folder.";
+        err.style.display = "block";
+      }
+      return;
+    }
+
+    const originalLabel = confirmBtn?.innerHTML || "Apply";
+    if (confirmBtn) {
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Applying...';
     }
 
     try {
@@ -1635,16 +1704,33 @@ dialog.modal::backdrop {
         }
         return;
       }
+      const data = await r.json();
+      const updatedCount = Number(data.updated_count || 0);
       document.getElementById("bulk-access-modal")?.close();
       getAllCheckboxes().forEach(cb => { cb.checked = false; });
       syncSelected();
-      window.location.reload();
+      if (resultMessage) {
+        resultMessage.textContent = updatedCount > 0
+          ? `Updated access to ${accessLevel} for ${updatedCount} deck${updatedCount === 1 ? "" : "s"}.`
+          : "Nothing changed. Selected folders may not contain any decks.";
+      }
+      resultModal?.showModal();
     } catch {
       if (err) {
         err.textContent = "Bulk access change failed. Try again.";
         err.style.display = "block";
       }
+    } finally {
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.innerHTML = originalLabel;
+      }
     }
+  });
+
+  document.getElementById("bulk-access-result-ok")?.addEventListener("click", () => {
+    document.getElementById("bulk-access-result-modal")?.close();
+    window.location.reload();
   });
 
   // Delete
@@ -1751,57 +1837,6 @@ dialog.modal::backdrop {
           btn.classList.toggle("deck-favorite-btn--active", d.favorite);
         }
       } finally { btn.disabled = false; }
-    });
-  });
-
-  // Access level toggle
-  const accessCycle = ["user", "org", "global"];
-  const accessIcon = level => {
-    if (level === "global") {
-      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18"></path><path d="M12 3a15 15 0 0 0 0 18"></path></svg>`;
-    }
-    if (level === "org") {
-      return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16"></path><path d="M6 20V8l6-4 6 4v12"></path><path d="M9 12h.01"></path><path d="M15 12h.01"></path></svg>`;
-    }
-    return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"></path><circle cx="12" cy="8" r="4"></circle></svg>`;
-  };
-  const accessLabel = level => ({ user: "Mine", org: "Org", global: "Global" }[level] || level);
-  const applyAccessVisual = (btn, level, deckName) => {
-    if (!btn) return;
-    btn.dataset.accessLevel = level;
-    btn.classList.remove("deck-access-toggle--user", "deck-access-toggle--org", "deck-access-toggle--global");
-    btn.classList.add(`deck-access-toggle--${level}`);
-    btn.innerHTML = accessIcon(level);
-    btn.title = `Access: ${accessLabel(level)}. Tap to change.`;
-    btn.setAttribute("aria-label", `Access level for ${deckName}: ${accessLabel(level)}`);
-  };
-  document.querySelectorAll(".deck-access-toggle").forEach(btn => {
-    const deckName = btn.closest(".browse-item")?.querySelector(".browse-table__link")?.textContent?.trim() || "deck";
-    applyAccessVisual(btn, btn.dataset.accessLevel || "user", deckName);
-    btn.addEventListener("click", async e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const deckId = btn.dataset.deckId;
-      const currentLevel = btn.dataset.accessLevel || "user";
-      const nextLevel = accessCycle[(accessCycle.indexOf(currentLevel) + 1) % accessCycle.length];
-      btn.disabled = true;
-      try {
-        const r = await fetch("/api/v1/decks/" + deckId + "/access-level", {
-          method: "PUT",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ access_level: nextLevel }),
-        });
-        if (!r.ok) {
-          const d = await r.json().catch(() => ({}));
-          alert(d.detail || "Failed to update access level");
-        } else {
-          applyAccessVisual(btn, nextLevel, deckName);
-          const item = btn.closest(".browse-item");
-          if (item) item.dataset.accessLevel = nextLevel;
-        }
-      } finally {
-        btn.disabled = false;
-      }
     });
   });
 

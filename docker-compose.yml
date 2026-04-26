@@ -3,6 +3,8 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://srs:srs@pgbouncer:5432/srs
     depends_on:
       - pgbouncer
       - seaweedfs
@@ -45,8 +47,6 @@ services:
       POSTGRES_DB: srs
       POSTGRES_USER: srs
       POSTGRES_PASSWORD: srs
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
