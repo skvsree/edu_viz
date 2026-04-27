@@ -40,6 +40,19 @@
   - `docker compose logs app --tail=20`
 - For deck overview/favorites live metadata changes, verify both rendered HTML and CSS/JS behavior in the running container, not just source files.
 
+## NCERT i-learning pilot
+- Active QA branch for the NCERT pilot is `i-learning-pilot`.
+- Pilot file path: `app/static/ncert/chapter2_diversity.html`.
+- Live QA URL pattern: `https://qa.edu.selviz.in/static/ncert/chapter2_diversity.html?v=<bump>`.
+- Interaction model is `LEARN → ANIMATE → CHECK → NEXT TOPIC`; keep it instructional, not quiz-game-like.
+- During the animation step, keep the viewport focused at the top on the animation first; reveal bottom check/continue UI only after the scene is completed.
+- The ant mascot appears in multiple forms: CSS ant on intro/learn screens and p5-drawn ant in animation scenes; visual changes may need updates in both places.
+- CSS ant eyes for intro/learn screens are drawn on `.ant-head::before` and `.ant-head::after`.
+- p5 animation ant eyes are drawn inside `drawWalkingAnt(...)`; if eyes disappear only in scenes, inspect that function instead of CSS.
+- Hotspot behavior is sensitive to stage state (`idle` / `prompt` / `answer`) and current hotspot index; verify real tap behavior live after any hotspot logic change.
+- Hotspot visual preference is a single hollow yellow glowing circle, not a filled marker.
+- For this pilot, rebuild the Docker app and verify with the live QA page after each meaningful UI/interaction fix because the app image is baked.
+
 ## Processing badge notes
 - Deck overview processing badge is server-rendered from `show_processing_badge` in `app/api/routers/pages.py`.
 - Deck overview live SSE in `app/templates/decks/overview.html` updates only flashcard/MCQ counts; it must not infer processing from count deltas.
