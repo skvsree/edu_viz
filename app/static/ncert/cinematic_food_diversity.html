@@ -1,0 +1,2835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cinematic Food Diversity — NCERT Animation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Bangers&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --title-size: clamp(2.2rem, 5.8vw, 4.8rem);
+      --subtitle-size: clamp(1rem, 2.3vw, 1.6rem);
+      --body-size: clamp(1.08rem, 2.35vw, 1.6rem);
+      --body-line: 1.68;
+      --label-size: clamp(0.95rem, 1.9vw, 1.2rem);
+      --phase-size: clamp(0.78rem, 1.5vw, 1rem);
+      --button-size: clamp(1rem, 2vw, 1.4rem);
+      --question-size: clamp(1.25rem, 3vw, 2rem);
+      --option-size: clamp(1rem, 2.2vw, 1.3rem);
+      --content-width: min(900px, calc(100vw - 32px));
+      --card-radius: 18px;
+    }
+    body {
+      font-family: 'Nunito', 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      overflow-x: hidden;
+      min-height: 100vh;
+      color: #fff;
+    }
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+    #canvas-container canvas {
+      display: block;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    #phaser-container {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: none;
+    }
+    #phaser-container canvas {
+      display: block;
+    }
+    main {
+      position: relative;
+      min-height: 100vh;
+      z-index: 10;
+    }
+    .screen {
+      display: none;
+      position: relative;
+      min-height: 100vh;
+      padding: 24px 18px 36px;
+      width: 100%;
+      z-index: 12;
+    }
+    .screen--active {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .eyebrow, .lesson-kicker {
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+      color: #ffd166;
+      font-weight: 800;
+      font-size: clamp(0.82rem, 1.8vw, 1rem);
+    }
+    .hero-card, .lesson-card, .animation-card, .question-card, .summary-card, .mascot-panel__card {
+      background: rgba(11, 20, 40, 0.82);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.26);
+      backdrop-filter: blur(10px);
+    }
+    .hero-card {
+      width: min(980px, 100%);
+      border-radius: 28px;
+      padding: clamp(28px, 4vw, 48px);
+      text-align: center;
+    }
+    .hero-card h1 {
+      font-family: 'Bangers', cursive;
+      color: #ffb347;
+      letter-spacing: 0.03em;
+      line-height: 1.05;
+      font-size: clamp(2.8rem, 8vw, 5.8rem);
+      margin: 18px 0;
+    }
+    .hero-copy, .summary-copy, .lesson-summary, #animation-copy, #mascot-message {
+      font-size: clamp(1.15rem, 2.6vw, 1.6rem);
+      line-height: 1.75;
+      color: rgba(255,255,255,0.88);
+    }
+    .hero-points {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin: 28px 0 32px;
+    }
+    .hero-point {
+      padding: 12px 18px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      font-size: clamp(1rem, 2vw, 1.15rem);
+      font-weight: 700;
+    }
+    .hero-mascot {
+      margin-bottom: 8px;
+    }
+    .topbar {
+      width: min(1180px, 100%);
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      justify-content: space-between;
+      margin: 0 auto 20px;
+    }
+    .topbar__text {
+      min-width: 180px;
+    }
+    #topic-label, #animate-topic-label {
+      font-family: 'Bangers', cursive;
+      font-size: clamp(1.35rem, 3vw, 2rem);
+      color: #ffd166;
+      letter-spacing: 0.05em;
+    }
+    #phase-label, .phase-static {
+      color: rgba(255,255,255,0.66);
+      font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      margin-top: 4px;
+    }
+    #progress-container {
+      flex: 1;
+      max-width: 520px;
+      height: 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+    }
+    #progress-fill {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, #ff8a5b, #ffd166, #4caf50);
+      border-radius: inherit;
+      transition: width 0.25s ease;
+    }
+    .lesson-shell {
+      width: min(1180px, 100%);
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+    .mascot-panel__card {
+      border-radius: 24px;
+      padding: 26px 22px;
+      position: sticky;
+      top: 20px;
+    }
+    .mascot-panel__card h3 {
+      font-family: 'Bangers', cursive;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      color: #ffb347;
+      margin: 14px 0 10px;
+      letter-spacing: 0.04em;
+    }
+    .lesson-card {
+      border-radius: 28px;
+      padding: clamp(24px, 3.6vw, 40px);
+    }
+    .lesson-card__header h2, .animation-card h2, .summary-card h2 {
+      font-size: clamp(2.1rem, 5vw, 3.6rem);
+      line-height: 1.12;
+      margin: 10px 0 16px;
+      color: #ffffff;
+    }
+    .lesson-pages {
+      margin-top: 26px;
+      min-height: 360px;
+    }
+    .lesson-page {
+      display: none;
+      animation: fadeIn 0.25s ease;
+    }
+    .lesson-page--active {
+      display: block;
+    }
+    .lesson-page h3 {
+      font-size: clamp(1.5rem, 3.2vw, 2.2rem);
+      color: #ffd166;
+      margin-bottom: 18px;
+      line-height: 1.3;
+    }
+    .lesson-page p {
+      font-size: clamp(1.18rem, 2.55vw, 1.62rem);
+      line-height: 1.92;
+      margin-bottom: 20px;
+      color: rgba(255,255,255,0.94);
+    }
+    .term-highlight {
+      color: #ffb347;
+      font-weight: 800;
+    }
+    .lesson-nav, .lesson-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
+    .page-indicator {
+      color: rgba(255,255,255,0.72);
+      font-weight: 700;
+      font-size: clamp(1rem, 2vw, 1.12rem);
+    }
+    .nav-btn, .cta-btn, .q-option {
+      border: none;
+      border-radius: 18px;
+      font-family: inherit;
+    }
+    .nav-btn {
+      background: rgba(255,255,255,0.09);
+      color: #fff;
+      padding: 14px 20px;
+      font-size: clamp(1rem, 2vw, 1.12rem);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 24px;
+      min-height: 58px;
+      background: linear-gradient(135deg, #ff7a45, #ffb347);
+      color: #fff;
+      font-weight: 800;
+      font-size: clamp(1.08rem, 2.1vw, 1.22rem);
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      box-shadow: 0 12px 32px rgba(255,122,69,0.28);
+    }
+    .cta-btn--secondary {
+      background: linear-gradient(135deg, #4caf50, #7bd389);
+      box-shadow: 0 12px 32px rgba(76,175,80,0.24);
+    }
+    .cta-btn--ghost {
+      background: rgba(255,255,255,0.08);
+      box-shadow: none;
+    }
+    .cta-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+      box-shadow: none;
+    }
+    .animation-card, .summary-card, .question-card {
+      width: min(980px, 100%);
+      border-radius: 28px;
+      padding: clamp(26px, 4vw, 42px);
+      text-align: center;
+    }
+    .animation-card.is-hidden {
+      display: none;
+    }
+    #speech-bubble.is-hidden {
+      display: none;
+    }
+    #selection-detail-panel {
+      background: rgba(15, 23, 42, 0.95);
+    }
+    .selection-detail-panel__label,
+    .selection-detail-panel__title,
+    .selection-detail-panel__text {
+      text-align: left;
+    }
+    .selection-detail-panel__title {
+      line-height: 1.15;
+    }
+    .selection-detail-panel__text {
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .selection-detail-panel__text strong {
+      color: #ffd166;
+    }
+    .selection-detail-panel__text em {
+      font-style: normal;
+      color: #ffffff;
+    }
+    #animate-screen {
+      justify-content: flex-start;
+      padding-top: 18px;
+      gap: 18px;
+    }
+    .animation-stage {
+      width: min(1320px, 100%);
+      height: min(72vh, 760px);
+      min-height: 560px;
+      border-radius: 32px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 18px;
+    }
+    .animation-stage::after {
+      content: '';
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 88px;
+      background: linear-gradient(180deg, rgba(76,175,80,0.1), rgba(76,175,80,0.22));
+    }
+    .animation-stage-note {
+      margin-top: 18px;
+      font-size: clamp(1.05rem, 2vw, 1.2rem);
+      color: rgba(255,255,255,0.72);
+    }
+    .animation-stage {
+      position: relative;
+    }
+    .ant-callout {
+      position: absolute;
+      left: 20px;
+      top: 20px;
+      z-index: 4;
+      display: inline-flex;
+      align-items: center;
+      gap: 16px;
+      pointer-events: none;
+    }
+    .ant-callout__ant {
+      transform: scale(0.9);
+      transform-origin: left center;
+    }
+    .ant-callout__bubble {
+      max-width: min(380px, calc(100vw - 140px));
+      background: rgba(255, 248, 220, 0.97);
+      color: #2d1a09;
+      border: 3px solid #f2c14e;
+      border-radius: 26px;
+      padding: 16px 20px;
+      font-family: 'Nunito', sans-serif;
+      font-weight: 900;
+      font-size: clamp(1.2rem, 3vw, 1.7rem);
+      line-height: 1.3;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.2);
+      position: relative;
+    }
+    .ant-callout.is-hidden {
+      display: none !important;
+    }
+    .ant-callout__bubble::before {
+      content: '';
+      position: absolute;
+      left: -12px;
+      top: 26px;
+      width: 20px;
+      height: 20px;
+      background: rgba(255, 248, 220, 0.97);
+      border-left: 3px solid #f2c14e;
+      border-bottom: 3px solid #f2c14e;
+      transform: rotate(45deg);
+    }
+    .animation-hotspot-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+    }
+    .selection-detail-panel,
+    #speech-bubble,
+    #speech-bubble.is-hidden,
+    #selection-detail-panel {
+      display: none !important;
+    }
+    .animation-hotspot {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      border: none;
+      background: transparent;
+      color: transparent;
+      cursor: pointer;
+      z-index: 6;
+      pointer-events: auto;
+      touch-action: manipulation;
+      box-shadow: none;
+      outline: none;
+      opacity: 0;
+    }
+    .animation-hotspot--available,
+    .animation-hotspot--active,
+    .animation-hotspot--done {
+      animation: none;
+    }
+    #q-topic-label {
+      font-family: 'Bangers', cursive;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      color: #ffd166;
+      margin-bottom: 12px;
+    }
+    #q-text {
+      font-size: clamp(1.45rem, 3.2vw, 2.1rem);
+      line-height: 1.45;
+      margin-bottom: 24px;
+      font-weight: 800;
+    }
+    #q-options {
+      display: grid;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    .q-option {
+      background: rgba(255,255,255,0.08);
+      border: 2px solid rgba(255,255,255,0.14);
+      padding: 18px 22px;
+      font-size: clamp(1.1rem, 2.2vw, 1.34rem);
+      line-height: 1.6;
+      color: #fff;
+      font-weight: 700;
+      text-align: left;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+    .q-option:hover { background: rgba(255,107,53,0.2); border-color: #FF6B35; transform: translateY(-1px); }
+    .q-option.selected { border-color: #FF6B35; background: rgba(255,107,53,0.25); }
+    .q-option.correct { border-color: #4CAF50; background: rgba(76,175,80,0.28); }
+    .q-option.wrong { border-color: #E91E63; background: rgba(233,30,99,0.2); }
+    .summary-list {
+      display: grid;
+      gap: 16px;
+      margin-top: 28px;
+      text-align: left;
+    }
+    .summary-item {
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.07);
+    }
+    .summary-item h3 {
+      color: #ffd166;
+      font-size: clamp(1.2rem, 2.4vw, 1.5rem);
+      margin-bottom: 8px;
+    }
+    .summary-item p {
+      font-size: clamp(1.02rem, 2vw, 1.16rem);
+      line-height: 1.7;
+      color: rgba(255,255,255,0.86);
+    }
+    .mascot, .ant-hero {
+      position: relative;
+      width: 122px;
+      height: 96px;
+      margin: 0 auto;
+      animation: mascotBob 2.6s ease-in-out infinite;
+    }
+    .ant-segment {
+      position: absolute;
+      display: block;
+      border-radius: 50%;
+      background: linear-gradient(180deg, #c97a2c, #7b3f00);
+      box-shadow: inset 0 -4px 0 rgba(0,0,0,0.14);
+    }
+    .ant-head { width: 28px; height: 24px; left: 8px; top: 34px; }
+    .ant-head::before,
+    .ant-head::after {
+      content: '';
+      position: absolute;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #ffffff;
+      top: 5px;
+      box-shadow: 0 0 0 1px rgba(93, 49, 16, 0.18);
+    }
+    .ant-head::before { left: 5px; }
+    .ant-head::after { left: 14px; }
+    .ant-body { width: 36px; height: 30px; left: 38px; top: 30px; }
+    .ant-tail { width: 34px; height: 28px; left: 76px; top: 32px; }
+    .ant-leg, .ant-antenna {
+      position: absolute;
+      background: #5d3110;
+      transform-origin: top left;
+      border-radius: 999px;
+    }
+    .ant-leg { width: 26px; height: 3px; }
+    .ant-leg-1 { left: 38px; top: 36px; transform: rotate(-32deg); }
+    .ant-leg-2 { left: 38px; top: 48px; transform: rotate(22deg); }
+    .ant-leg-3 { left: 52px; top: 34px; transform: rotate(-18deg); }
+    .ant-leg-4 { left: 52px; top: 52px; transform: rotate(18deg); }
+    .ant-leg-5 { left: 70px; top: 36px; transform: rotate(-22deg); }
+    .ant-leg-6 { left: 70px; top: 50px; transform: rotate(26deg); }
+    .ant-antenna { width: 22px; height: 3px; left: 10px; top: 32px; }
+    .ant-antenna-1 { transform: rotate(-38deg); }
+    .ant-antenna-2 { transform: rotate(-8deg); }
+    .ant-hero .ant-head::before,
+    .ant-hero .ant-head::after,
+    .mascot .ant-head::before,
+    .mascot .ant-head::after {
+      background-image: radial-gradient(circle at 52% 52%, #1a1a1a 0 32%, transparent 36%), linear-gradient(180deg, #ffffff, #f7e6c7);
+      background-color: #ffffff;
+    }
+    .pulse-ready { animation: pulseReady 1s ease-in-out infinite; }
+    @keyframes mascotBob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulseReady {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.04); }
+    }
+    @keyframes hotspotPulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.08); }
+    }
+    @media (max-width: 900px) {
+      .lesson-shell {
+        grid-template-columns: 1fr;
+      }
+      .mascot-panel__card {
+        position: static;
+      }
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+    @media (max-width: 640px) {
+      .screen {
+        padding: 18px 12px 28px;
+      }
+      .lesson-card, .hero-card, .animation-card, .question-card, .summary-card {
+        border-radius: 22px;
+        padding: 22px 18px;
+      }
+      .lesson-page p {
+        line-height: 1.82;
+      }
+      .lesson-nav, .lesson-actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .nav-btn, .cta-btn {
+        width: 100%;
+      }
+      .animation-stage {
+        height: calc(100vh - 150px);
+        min-height: 560px;
+        border-radius: 24px;
+        padding: 12px;
+      }
+      .speech-bubble {
+        left: 12px;
+        right: 12px;
+        top: 12px;
+        max-width: none;
+        padding: 14px 16px;
+      }
+      .selection-detail-panel {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        min-height: 170px;
+        padding: 16px;
+      }
+      .speech-bubble__text {
+        font-size: 1rem;
+      }
+    }
+  
+  </style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<main>
+<section id="animate-screen" class="screen">
+    <div class="topbar topbar--animate">
+      <div class="topbar__text">
+        <div id="animate-topic-label">Topic</div>
+        <div class="phase-static">Animation</div>
+      </div>
+    </div>
+    <div class="animation-stage" id="animation-stage">
+      <div class="ant-callout" aria-hidden="true" id="ant-callout">
+        <div class="ant-hero ant-callout__ant">
+          <span class="ant-segment ant-head"></span>
+          <span class="ant-segment ant-body"></span>
+          <span class="ant-segment ant-tail"></span>
+          <span class="ant-leg ant-leg-1"></span>
+          <span class="ant-leg ant-leg-2"></span>
+          <span class="ant-leg ant-leg-3"></span>
+          <span class="ant-leg ant-leg-4"></span>
+          <span class="ant-leg ant-leg-5"></span>
+          <span class="ant-leg ant-leg-6"></span>
+          <span class="ant-antenna ant-antenna-1"></span>
+          <span class="ant-antenna ant-antenna-2"></span>
+        </div>
+        <div class="ant-callout__bubble">Click item to know about it</div>
+      </div>
+      <div class="animation-hotspot-overlay" id="animation-hotspot-overlay" aria-live="polite"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const COLORS = {
+  bg: '#1a1a2e',
+  bgLight: '#16213e',
+  primary: '#FF6B35',
+  secondary: '#4CAF50',
+  accent: '#FFD700',
+  blue: '#2196F3',
+  text: '#FFFFFF',
+  textDim: 'rgba(255,255,255,0.72)',
+  cardBg: 'rgba(255,255,255,0.08)',
+  highlight: '#E91E63'
+};
+
+const topics = [
+  {
+    id: 1,
+    title: 'What Do We Eat?',
+    summary: 'India has rich food diversity. Our food choices vary by region, culture, and locally grown crops.',
+    mascot: 'Food connects us to our land and culture. Let us explore the wonderful variety of what India eats.',
+    pages: [
+      {
+        heading: 'Food is part of daily life',
+        points: [
+          'All of us eat food every day. Food is an essential component of our daily life.',
+          'When we list the food we eat over a week, we see great variety in our meals.'
+        ]
+      },
+      {
+        heading: 'Food differs across regions',
+        points: [
+          'India is an agricultural country with diverse soil and climate. Traditional food in each state is based on locally grown crops.',
+          'Punjab has makki di roti and sarson da saag. Karnataka has idli, dosa, and sambhar. Manipur has rice and bamboo shoot dishes.'
+        ]
+      },
+      {
+        heading: 'Cooking practices have changed',
+        points: [
+          'Cooking methods have changed over time. Traditional chulhas have been replaced by modern gas stoves.',
+          'Sil-batta grinding has been replaced by electric grinders. Technology has changed how we prepare food.'
+        ]
+      }
+    ],
+    animationType: 'food-diversity',
+    animationCopy: 'Tap the glowing food items. Anty will ask what you notice, pause, and then explain.',
+    hotspots: [
+      {
+        key: 'food-roti',
+        label: 'Punjab Meal',
+        prompt: 'What do you notice about this traditional Punjabi meal?',
+        answer: 'Makki di roti and sarson da saag are traditional Punjabi dishes made from locally grown crops.',
+        detail: 'This traditional Punjabi meal shows how food is connected to locally grown crops. The wheat used for makki di roti comes from Punjab fields, and the mustard greens for sarson da saag grow well in the cold Punjab climate. This connection between local crops and traditional food is seen across India.',
+        x: 0.2,
+        y: 0.62,
+        r: 0.14,
+        revealOrder: 1
+      },
+      {
+        key: 'food-idli',
+        label: 'South Indian Meal',
+        prompt: 'What is special about this South Indian meal?',
+        answer: 'Idli, dosa, and sambhar are traditional South Indian foods made from rice and lentils.',
+        detail: 'South Indian cuisine is built around rice and ragi, which grow well in the warm, moist climate of Karnataka and Tamil Nadu. Idli and dosa are made from fermented rice and urad dal, a combination that is both nutritious and easy to digest. The coconut and sambhar reflect the local produce of the region.',
+        x: 0.5,
+        y: 0.58,
+        r: 0.12,
+        revealOrder: 2
+      },
+      {
+        key: 'food-chulha',
+        label: 'Traditional Cooker',
+        prompt: 'How does this traditional cooker compare with modern ones?',
+        answer: 'The traditional chulha uses less fuel-efficient burning. Modern gas stoves cook faster and are easier to use.',
+        detail: 'Cooking tools have changed significantly over time. The traditional chulha was built from clay and used biomass like wood and dung cakes. Modern gas stoves are faster and cleaner. Electric grinders have also replaced the manual sil-batta. These changes reflect technological development and improved communication and transport.',
+        x: 0.78,
+        y: 0.68,
+        r: 0.12,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'Traditional food in a region is usually based on:', options: ['Food imported from other countries', 'Locally grown crops', 'Fast food chains'], correct: 1 },
+      { q: 'An example of a change in cooking practice over time is:', options: ['Using sil-batta instead of grinder', 'Gas stoves replacing chulhas', 'Eating more junk food'], correct: 1 }
+    ]
+  },
+  {
+    id: 2,
+    title: 'Components of Food',
+    summary: 'Our food contains carbohydrates, proteins, fats, vitamins, minerals, and roughage. Each nutrient has a specific role.',
+    mascot: 'Every bite we take contains different nutrients. Let us understand what they do for our body.',
+    pages: [
+      {
+        heading: 'Energy-giving foods',
+        points: [
+          'Carbohydrates and fats provide energy. Cereals like wheat and rice, vegetables like potato, and fruits like banana are rich in carbohydrates.',
+          'Nuts, groundnuts, and oils are rich in fats. These are called energy-giving foods.'
+        ]
+      },
+      {
+        heading: 'Body-building foods',
+        points: [
+          'Proteins help in growth and repair of the body. Pulses, beans, peas, milk, paneer, egg, fish, and meat are rich in proteins.',
+          'Sportspersons need more proteins to build and maintain strong muscles.'
+        ]
+      },
+      {
+        heading: 'Protective foods',
+        points: [
+          'Vitamins and minerals protect our body from diseases. Vitamin C in citrus fruits prevents scurvy. Iodine in iodised salt prevents goitre.',
+          'Deficiency of nutrients over a long time leads to deficiency diseases like beriberi, rickets, and anaemia.'
+        ]
+      }
+    ],
+    animationType: 'food-components',
+    animationCopy: 'Tap each nutrient group. Anty explains what the nutrient does and which foods contain it.',
+    hotspots: [
+      {
+        key: 'nutrient-carb',
+        label: 'Carbohydrates',
+        prompt: 'What do carbohydrates give our body?',
+        answer: 'Carbohydrates are the primary source of energy. They give us the fuel to run, think, and work.',
+        detail: 'Carbohydrates are found in cereals like wheat, rice, and maize. Vegetables like potato and sweet potato also contain carbohydrates. Fruits like banana and mango are natural carbohydrate sources. When we eat these foods, our body breaks them down into glucose, which gives us immediate energy for all our activities.',
+        x: 0.18,
+        y: 0.72,
+        r: 0.12,
+        revealOrder: 1
+      },
+      {
+        key: 'nutrient-protein',
+        label: 'Proteins',
+        prompt: 'What makes proteins different from carbohydrates and fats?',
+        answer: 'Proteins are body-building foods. They help grow and repair muscles, skin, and other body parts.',
+        detail: 'Proteins are found in both plant and animal sources. Plant proteins include pulses, beans, peas, and nuts. Animal proteins include milk, paneer, egg, fish, and meat. Growing children especially need adequate protein for proper growth and development. Without enough protein, the body cannot repair damaged tissues or build new cells.',
+        x: 0.5,
+        y: 0.62,
+        r: 0.12,
+        revealOrder: 2
+      },
+      {
+        key: 'nutrient-vitamins',
+        label: 'Vitamins',
+        prompt: 'Why are vitamins important even in small amounts?',
+        answer: 'Vitamins protect our body from diseases even though we need only small amounts.',
+        detail: 'Vitamins like A, B1, C, and D are essential for different body functions. Vitamin A keeps eyes and skin healthy. Vitamin B1 supports heart function. Vitamin C prevents scurvy and helps heal wounds. Vitamin D helps absorb calcium for strong bones and teeth. Minerals like iron, calcium, and iodine are also needed in small amounts but are equally important for health.',
+        x: 0.8,
+        y: 0.58,
+        r: 0.12,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'Proteins are called body-building foods because they:', options: ['Give instant energy', 'Help grow and repair the body', 'Protect from infections'], correct: 1 },
+      { q: 'A deficiency of Vitamin C can cause:', options: ['Scurvy', 'Beriberi', 'Rickets'], correct: 0 }
+    ]
+  },
+  {
+    id: 3,
+    title: 'Testing Food Components',
+    summary: 'Simple tests can detect starch, fat, and protein in food items using iodine solution and other chemicals.',
+    mascot: 'Scientists use simple tests to find which nutrients are in our food. Let us see how these tests work.',
+    pages: [
+      {
+        heading: 'Testing for starch',
+        points: [
+          'A few drops of iodine solution on food can detect starch. If the food turns blue-black, starch is present.',
+          'Bread, potato, and rice all contain starch. This simple test can show which foods are starchy.'
+        ]
+      },
+      {
+        heading: 'Testing for fats',
+        points: [
+          'Pressing food on paper can reveal fat. An oily patch that lets light through shows fat is present.',
+          'Nuts, oil, and butter leave oily patches. This test works even with a small amount of food.'
+        ]
+      },
+      {
+        heading: 'Testing for proteins',
+        points: [
+          'Copper sulphate and caustic soda solution can test for protein. A violet colour means protein is present.',
+          'Peanuts contain both protein and fat. Many foods contain more than one nutrient.'
+        ]
+      }
+    ],
+    animationType: 'food-tests',
+    animationCopy: 'Tap each test to see how it works. Anty explains the science behind each test.',
+    hotspots: [
+      {
+        key: 'test-starch',
+        label: 'Iodine Test',
+        prompt: 'What does the iodine test tell us about this food?',
+        answer: 'A blue-black colour with iodine means starch is present in the food.',
+        detail: 'The iodine test is a simple and reliable test for starch. Iodine solution is pale brown in colour. When it touches starch, a chemical reaction changes it to deep blue-black. Potato, bread, rice, and wheat all contain starch and will give this positive result. Foods like cucumber and oil will not change colour.',
+        x: 0.22,
+        y: 0.62,
+        r: 0.12,
+        revealOrder: 1
+      },
+      {
+        key: 'test-fat',
+        label: 'Paper Test',
+        prompt: 'What does the paper test reveal about this food?',
+        answer: 'An oily patch on paper that lets light through shows fat is present.',
+        detail: 'The paper test for fat is simple but effective. When you press food onto paper and hold it to light, an oily patch appears transparent. This is because fat absorbs into the paper fibres differently than water would. Nuts, oil, butter, and peanuts all contain fat and produce this result. Dry foods like rice and wheat do not.',
+        x: 0.5,
+        y: 0.62,
+        r: 0.12,
+        revealOrder: 2
+      },
+      {
+        key: 'test-protein',
+        label: 'Biuret Test',
+        prompt: 'What does the violet colour in the test tube tell us?',
+        answer: 'A violet colour change means protein is present in the food.',
+        detail: 'The biuret test uses copper sulphate and caustic soda to detect proteins. When protein is present, the chemicals react to produce a violet colour. This test is done carefully in a lab because the chemicals need careful handling. Milk, egg, pulses, and meat all give a positive result. The violet colour intensity can also indicate how much protein is present.',
+        x: 0.78,
+        y: 0.62,
+        r: 0.12,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'Iodine solution turning blue-black shows:', options: ['Fat is present', 'Starch is present', 'Protein is present'], correct: 1 },
+      { q: 'An oily patch on paper that lets light through shows:', options: ['Starch is present', 'Fat is present', 'Sugar is present'], correct: 1 }
+    ]
+  },
+  {
+    id: 4,
+    title: 'Balanced Diet',
+    summary: 'A balanced diet has all nutrients in the right amount, along with roughage and water, for proper growth and health.',
+    mascot: 'Eating the right mix of foods keeps us healthy. Let us learn what a balanced diet really means.',
+    pages: [
+      {
+        heading: 'What is a balanced diet?',
+        points: [
+          'A balanced diet has all essential nutrients in the right amounts, along with roughage and water.',
+          'Our nutritional needs differ by age, gender, physical activity, and health status. Children need more protein for growth.'
+        ]
+      },
+      {
+        heading: 'Junk food and health',
+        points: [
+          'Junk foods are high in sugar and fat but low in proteins, vitamins, and fibre. Frequent junk food consumption leads to obesity and health problems.',
+          'Reading nutritional information on food packets helps us make healthier food choices.'
+        ]
+      },
+      {
+        heading: 'Fortified foods',
+        points: [
+          'Some foods have extra nutrients added during processing. Iodised salt and fortified baby foods are examples.',
+          'The Food Safety and Standards Authority of India (FSSAI) regulates food quality in India.'
+        ]
+      }
+    ],
+    animationType: 'balanced-diet',
+    animationCopy: 'Tap each food item. Anty asks what nutrients it provides and how it fits into a balanced diet.',
+    hotspots: [
+      {
+        key: 'balance-plate',
+        label: 'Balanced Plate',
+        prompt: 'What makes this a balanced meal?',
+        answer: 'A balanced meal includes grains, pulses, vegetables, fruits, and dairy in the right proportions.',
+        detail: 'A balanced diet means eating foods from different groups in the right amounts. Cereals give carbohydrates for energy. Pulses give proteins for growth. Vegetables and fruits give vitamins and minerals for protection. Dairy gives calcium for bones and teeth. Water and roughage help digestion. Eating only one type of food cannot give us all the nutrients we need.',
+        x: 0.28,
+        y: 0.58,
+        r: 0.14,
+        revealOrder: 1
+      },
+      {
+        key: 'balance-junk',
+        label: 'Junk Food',
+        prompt: 'Why is this food called junk food?',
+        answer: 'Junk food has high calories from sugar and fat but very little protein, vitamins, or fibre.',
+        detail: 'Junk foods like potato wafers and candy bars give us energy but lack the nutrients we truly need. They can make us gain weight without nourishing our body. Frequent junk food eating can lead to obesity, diabetes, and heart problems. Choosing foods like roasted chana over wafers gives us more protein and fibre with fewer unhealthy calories.',
+        x: 0.56,
+        y: 0.62,
+        r: 0.12,
+        revealOrder: 2
+      },
+      {
+        key: 'balance-fssai',
+        label: 'FSSAI Logo',
+        prompt: 'What does the FSSAI logo tell us about this food?',
+        answer: 'The FSSAI logo shows the food has been checked for safety and quality standards in India.',
+        detail: 'FSSAI, the Food Safety and Standards Authority of India, is the government body that regulates food quality. Packaged foods must show the FSSAI licence number and nutritional information. This helps consumers make informed choices. Fortified foods like iodised salt carry the FSSAI standard mark, showing they meet the required nutritional specifications.',
+        x: 0.8,
+        y: 0.68,
+        r: 0.1,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'A balanced diet provides:', options: ['Only carbohydrates', 'All essential nutrients in right amounts', 'Only proteins'], correct: 1 },
+      { q: 'Junk foods are unhealthy because they are:', options: ['High in vitamins', 'Low in nutrients but high in calories', 'Natural foods'], correct: 1 }
+    ]
+  },
+  {
+    id: 5,
+    title: 'Millets: Nutri-Cereals',
+    summary: 'Millets like jowar, bajra, and ragi are highly nutritious grains called nutri-cereals, native to India.',
+    mascot: 'Ancient grains are making a healthy comeback. Millets are small but mighty in nutrition.',
+    pages: [
+      {
+        heading: 'What are millets?',
+        points: [
+          'Millets are small-grained crops like jowar, bajra, ragi, and sanwa that have been grown in India for centuries.',
+          'They are highly nutritious, rich in iron, calcium, vitamins, and dietary fibres. That is why they are called nutri-cereals.'
+        ]
+      },
+      {
+        heading: 'Growing millets',
+        points: [
+          'Millets can grow in different climatic conditions and need less water than rice or wheat.',
+          'They are native to India and have been part of Indian cuisine for generations.'
+        ]
+      },
+      {
+        heading: 'Why eat millets?',
+        points: [
+          'Millets provide sustained energy, help digestion, and are good for heart health.',
+          'Eating locally grown millets also reduces food miles and supports local farmers.'
+        ]
+      }
+    ],
+    animationType: 'millets',
+    animationCopy: 'Tap each millet to learn about its nutrition and benefits. Anty explains why these ancient grains are special.',
+    hotspots: [
+      {
+        key: 'millet-jowar',
+        label: 'Jowar',
+        prompt: 'What is special about jowar?',
+        answer: 'Jowar is a millet rich in protein, iron, and fibre. It is a staple food in many parts of India.',
+        detail: 'Jowar is one of the most important millets grown in India. It is rich in protein, iron, and dietary fibre. It is naturally gluten-free and easy to digest. Jowar rotis and bhakris are traditional foods in Maharashtra and Karnataka. Because jowar needs less water than wheat or rice, it is also more sustainable to grow.',
+        x: 0.18,
+        y: 0.68,
+        r: 0.1,
+        revealOrder: 1
+      },
+      {
+        key: 'millet-bajra',
+        label: 'Bajra',
+        prompt: 'What nutrients does bajra give us?',
+        answer: 'Bajra is rich in iron, magnesium, and fibre. It is especially good for heart health.',
+        detail: 'Bajra or pearl millet is one of the most hardy millets. It can grow in very dry conditions where other crops would fail. It is rich in iron and magnesium, which are important for blood health and energy production. In Rajasthan, bajra rotis are a traditional staple. The fibre in bajra helps digestion and keeps blood sugar levels stable.',
+        x: 0.46,
+        y: 0.66,
+        r: 0.1,
+        revealOrder: 2
+      },
+      {
+        key: 'millet-ragi',
+        label: 'Ragi',
+        prompt: 'Why is ragi especially good for children?',
+        answer: 'Ragi is rich in calcium and amino acids that help build strong bones and support growth in children.',
+        detail: 'Ragi or finger millet is one of the most nutritious millets. It is exceptionally rich in calcium, which is vital for growing bones and teeth. It also contains iron and amino acids that support overall development. In Karnataka, ragi mudde is a traditional and nutritious staple. Ragi flour can be used to make porridge, dosas, and cookies, making it a versatile and healthy food for children and adults alike.',
+        x: 0.74,
+        y: 0.68,
+        r: 0.1,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'Millets are called nutri-cereals because they are:', options: ['Very expensive grains', 'Rich in vitamins, minerals, and fibre', 'Imported from other countries'], correct: 1 },
+      { q: 'Unlike rice, millets:', options: ['Need more water to grow', 'Can grow in different climatic conditions with less water', 'Contain no nutrients'], correct: 1 }
+    ]
+  },
+  {
+    id: 6,
+    title: 'Food Miles: From Farm to Plate',
+    summary: 'Food miles are the distance food travels from production to our plate. Reducing food miles saves cost, reduces pollution, and keeps food fresh.',
+    mascot: 'Every meal has a journey. Let us follow food from the farm all the way to our plate.',
+    pages: [
+      {
+        heading: 'The journey of food',
+        points: [
+          'Food travels from the farmer through threshing, grinding, transport, and storage before reaching our plate.',
+          'A bag of wheat travels from field to mill to shop to our kitchen. Each step takes time and effort.'
+        ]
+      },
+      {
+        heading: 'What are food miles?',
+        points: [
+          'Food miles are the total distance food travels from producer to consumer. Long food miles mean more transport cost and pollution.',
+          'Eating locally grown food reduces food miles, supports local farmers, and keeps food fresher.'
+        ]
+      },
+      {
+        heading: 'Respecting food',
+        points: [
+          'We should take only as much food as we can eat. Reducing food waste helps the environment.',
+          'Eating local and seasonal food reduces pollution, saves energy, and supports our local farmers and community.'
+        ]
+      }
+    ],
+    animationType: 'food-miles',
+    animationCopy: 'Tap each step in the food journey. Anty explains how far food travels and why eating locally matters.',
+    hotspots: [
+      {
+        key: 'miles-farm',
+        label: 'Farm',
+        prompt: 'What happens at the farm in the food journey?',
+        answer: 'The farmer sows, tends, and harvests the crop. This is where our food journey begins.',
+        detail: 'Every food item starts at a farm. A wheat farmer in Punjab prepares the field, sows the seeds, waters the crop, and waits for harvest. This process takes months of careful work. The farmer uses seed grains that germinate and grow into the plants that will eventually become flour for our chapatis. Understanding this effort helps us respect food and avoid waste.',
+        x: 0.12,
+        y: 0.68,
+        r: 0.1,
+        revealOrder: 1
+      },
+      {
+        key: 'miles-transport',
+        label: 'Transport',
+        prompt: 'Why does food need to be transported over long distances?',
+        answer: 'Food is transported from farms to mills, then to shops. Long distances add cost, pollution, and reduce freshness.',
+        detail: 'After harvest, grain is threshed and winnowed to separate the grain from the husk. Then it travels by truck to a mill for grinding. After grinding and packing, it travels again to wholesale shops and finally to retail stores. Each journey step adds to food miles, increasing transport costs and carbon emissions. The longer the journey, the more freshness is lost.',
+        x: 0.42,
+        y: 0.62,
+        r: 0.1,
+        revealOrder: 2
+      },
+      {
+        key: 'miles-plate',
+        label: 'Our Plate',
+        prompt: 'What can we do to reduce food miles?',
+        answer: 'Eating locally grown, seasonal food reduces food miles and supports local farmers.',
+        detail: 'The final step is food on our plate. We can reduce food miles by choosing locally grown fruits and vegetables, eating seasonal foods, and buying from local farmers markets. When we waste food, we waste all the effort and resources that went into growing, transporting, and preparing it. Taking only what we can eat, and valuing the effort behind every meal, is what mindful eating is all about.',
+        x: 0.74,
+        y: 0.66,
+        r: 0.12,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'Food miles refer to:', options: ['The weight of food', 'The distance food travels from producer to consumer', 'The number of people who eat the food'], correct: 1 },
+      { q: 'To reduce food miles we should:', options: ['Buy imported food', 'Eat locally grown, seasonal food', 'Order food online from far away'], correct: 1 }
+    ]
+  }
+];
+
+let currentScreen = 'intro';
+let topicIndex = 0;
+let currentPageIndex = 0;
+let checked = false;
+let continueRevealTimer = null;
+let canvas;
+let stars = [];
+let antsTrailOffset = 0;
+let animationStageEl = null;
+let animationHotspotOverlayEl = null;
+let animationInfoCardEl = null;
+let phaserGame = null;
+let animationState = null;
+let pointerIsDown = false;
+let ttsEnabled = true;
+
+function stopPhaser() {
+  if (typeof phaserGame === 'undefined' || !phaserGame) return;
+  phaserGame.destroy(true);
+  phaserGame = null;
+  document.getElementById('phaser-container').style.display = 'none';
+}
+
+const screens = {
+  intro: null,
+  learn: null,
+  animate: null,
+  questions: null,
+  summary: null
+};
+
+function setup() {
+  canvas = createCanvas(windowWidth, windowHeight);
+  canvas.parent('canvas-container');
+  canvas.style('pointer-events', 'auto');
+  canvas.style('touch-action', 'none');
+  noStroke();
+  initStars();
+  animationStageEl = document.getElementById('animation-stage');
+  animationHotspotOverlayEl = document.getElementById('animation-hotspot-overlay');
+  animationInfoCardEl = document.getElementById('animation-info-card');
+  currentScreen = 'animate';
+  startAnimationSequence(topics[0]);
+  loop();
+}
+
+function draw() {
+  background(COLORS.bg);
+  if (currentScreen === 'animate') {
+    drawAnimationBackdrop();
+    drawAnimationScene();
+  } else {
+    drawStars();
+  }
+  antsTrailOffset += 0.02;
+}
+
+function cacheScreens() {
+  screens.intro = document.getElementById('intro-screen');
+  screens.learn = document.getElementById('learn-screen');
+  screens.animate = document.getElementById('animate-screen');
+  screens.questions = document.getElementById('question-overlay');
+  screens.summary = document.getElementById('summary-screen');
+}
+
+function bindEvents() {
+  const on = (id, event, handler) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener(event, handler);
+  };
+  on('start-btn', 'click', startLearning);
+  on('animate-btn', 'click', enterAnimatePhase);
+  on('continue-btn', 'click', enterCheckPhase);
+  on('next-topic-btn', 'click', handleNextTopic);
+  on('restart-btn', 'click', restart);
+  on('summary-restart-btn', 'click', restart);
+  on('prev-page-btn', 'click', () => changePage(-1));
+  on('next-page-btn', 'click', () => changePage(1));
+}
+
+function showScreen(name) {
+  currentScreen = name;
+  Object.values(screens).forEach(el => {
+    if (el) el.classList.remove('screen--active');
+  });
+  if (screens[name]) {
+    screens[name].classList.add('screen--active');
+  }
+}
+
+function startLearning() {
+  topicIndex = 0;
+  currentPageIndex = 0;
+  updateProgress();
+  enterLearnPhase();
+}
+
+function enterLearnPhase() {
+  clearContinueRevealTimer();
+  stopSpeech();
+  stopPhaser();
+  animationState = null;
+  closeupState = null;
+  const topic = topics[topicIndex];
+  currentPageIndex = 0;
+  renderLesson(topic);
+  updateProgress();
+  showScreen('learn');
+}
+
+function enterAnimatePhase() {
+  clearContinueRevealTimer();
+  stopSpeech();
+  const topic = topics[topicIndex];
+  document.getElementById('animate-topic-label').textContent = `Topic ${topicIndex + 1} of ${topics.length}`;
+  document.getElementById('animation-title').textContent = topic.title;
+  document.getElementById('animation-copy').textContent = topic.animationCopy;
+  document.getElementById('animation-instruction').textContent = 'Tap a glowing item — Anty will ask a question, then answer it automatically.';
+  document.getElementById('continue-btn').classList.remove('pulse-ready');
+  document.getElementById('continue-btn').disabled = true;
+  setAnimationInfoVisible(false);
+
+  stopPhaser();
+  startAnimationSequence(topic);
+
+  showScreen('animate');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function enterCheckPhase() {
+  clearContinueRevealTimer();
+  stopSpeech();
+  stopPhaser();
+  document.getElementById('continue-btn').classList.remove('pulse-ready');
+  checked = false;
+  showQuestions(topics[topicIndex]);
+  showScreen('questions');
+}
+
+function handleNextTopic() {
+  document.getElementById('next-topic-btn').style.display = 'none';
+  topicIndex += 1;
+  if (topicIndex >= topics.length) {
+    enterSummaryPhase();
+  } else {
+    enterLearnPhase();
+  }
+}
+
+function enterSummaryPhase() {
+  stopSpeech();
+  updateProgress(true);
+  showScreen('summary');
+}
+
+function restart() {
+  clearContinueRevealTimer();
+  stopSpeech();
+  checked = false;
+  topicIndex = 0;
+  currentPageIndex = 0;
+  animationState = null;
+  closeupState = null;
+  updateProgress();
+  showScreen('intro');
+}
+
+function renderLesson(topic) {
+  document.getElementById('topic-label').textContent = `Topic ${topicIndex + 1} of ${topics.length}`;
+  document.getElementById('phase-label').textContent = 'Learning';
+  document.getElementById('lesson-kicker').textContent = `Topic ${topicIndex + 1}`;
+  document.getElementById('lesson-title').textContent = topic.title;
+  document.getElementById('lesson-summary').textContent = topic.summary;
+  document.getElementById('mascot-message').textContent = topic.mascot;
+
+  const pagesEl = document.getElementById('lesson-pages');
+  pagesEl.innerHTML = '';
+
+  const intro = document.createElement('section');
+  intro.className = 'lesson-page lesson-page--active';
+  intro.dataset.page = 0;
+  const introHeading = document.createElement('h3');
+  introHeading.textContent = 'Start with the scene';
+  intro.appendChild(introHeading);
+  const introText = document.createElement('p');
+  introText.innerHTML = highlightTerms(`Most of this topic is taught in the animation. ${topic.summary} Tap the scene items, listen to Anty, and then come back here only for a short recap.`);
+  intro.appendChild(introText);
+  pagesEl.appendChild(intro);
+
+  topic.pages.forEach((page, index) => {
+    const section = document.createElement('section');
+    section.className = 'lesson-page';
+    section.dataset.page = index + 1;
+    const h = document.createElement('h3');
+    h.textContent = page.heading;
+    section.appendChild(h);
+    const condensed = page.points.slice(0, 1);
+    condensed.forEach(point => {
+      const p = document.createElement('p');
+      p.innerHTML = highlightTerms(point);
+      section.appendChild(p);
+    });
+    pagesEl.appendChild(section);
+  });
+
+  updateLessonPage();
+}
+
+function changePage(delta) {
+  const topic = topics[topicIndex];
+  const next = currentPageIndex + delta;
+  if (next < 0 || next >= topic.pages.length) return;
+  currentPageIndex = next;
+  updateLessonPage();
+}
+
+function updateLessonPage() {
+  const topic = topics[topicIndex];
+  const pages = Array.from(document.querySelectorAll('.lesson-page'));
+  pages.forEach((page, index) => {
+    page.classList.toggle('lesson-page--active', index === currentPageIndex);
+  });
+  document.getElementById('page-indicator').textContent = `Page ${currentPageIndex + 1} of ${topic.pages.length}`;
+  document.getElementById('prev-page-btn').disabled = currentPageIndex === 0;
+  document.getElementById('next-page-btn').disabled = currentPageIndex === topic.pages.length - 1;
+  document.getElementById('animate-btn').disabled = currentPageIndex !== topic.pages.length - 1;
+  const ant = document.getElementById('ant-mascot');
+  ant.style.transform = `translateX(${currentPageIndex * 10}px) scale(${1 + currentPageIndex * 0.03})`;
+}
+
+function buildSummary() {
+  const summary = document.getElementById('summary-list');
+  summary.innerHTML = '';
+  topics.forEach(topic => {
+    const item = document.createElement('div');
+    item.className = 'summary-item';
+    item.innerHTML = `<h3>${topic.title}</h3><p>${topic.summary}</p>`;
+    summary.appendChild(item);
+  });
+}
+
+function showQuestions(topic) {
+  const qTopicLabel = document.getElementById('q-topic-label');
+  const qText = document.getElementById('q-text');
+  const qOptions = document.getElementById('q-options');
+  qTopicLabel.textContent = topic.title;
+  qOptions.innerHTML = '';
+  showQuestion(topic, 0, qText, qOptions);
+}
+
+function showQuestion(topic, qIndex, qTextEl, qOptionsEl) {
+  if (qIndex >= topic.questions.length) {
+    qOptionsEl.innerHTML = '';
+    qTextEl.innerHTML = 'Well done! You completed this topic.';
+    const nextBtn = document.getElementById('next-topic-btn');
+    nextBtn.style.display = 'inline-flex';
+    nextBtn.textContent = topicIndex < topics.length - 1 ? 'Next Topic' : 'See Summary';
+    return;
+  }
+  const q = topic.questions[qIndex];
+  qTextEl.textContent = q.q;
+  qOptionsEl.innerHTML = '';
+  document.getElementById('next-topic-btn').style.display = 'none';
+  q.options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'q-option';
+    btn.type = 'button';
+    btn.textContent = opt;
+    btn.addEventListener('click', () => selectOption(topic, qIndex, i, btn, qTextEl, qOptionsEl, q));
+    qOptionsEl.appendChild(btn);
+  });
+}
+
+function selectOption(topic, qIndex, idx, btn, qTextEl, qOptionsEl, q) {
+  if (checked) return;
+  checked = true;
+  const allBtns = qOptionsEl.querySelectorAll('.q-option');
+  allBtns.forEach(b => b.disabled = true);
+  btn.classList.add('selected');
+  if (idx === q.correct) {
+    btn.classList.add('correct');
+    setTimeout(() => {
+      checked = false;
+      showQuestion(topic, qIndex + 1, qTextEl, qOptionsEl);
+    }, 700);
+  } else {
+    btn.classList.add('wrong');
+    allBtns[q.correct].classList.add('correct');
+    setTimeout(() => {
+      checked = false;
+      showQuestion(topic, qIndex + 1, qTextEl, qOptionsEl);
+    }, 1300);
+  }
+}
+
+function updateProgress(forceComplete = false) {
+  const pct = forceComplete ? 100 : (topicIndex / topics.length) * 100;
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+
+function highlightTerms(text) {
+  const terms = ['CARBOHYDRATES', 'PROTEINS', 'FATS', 'VITAMINS', 'MINERALS', 'ROUGHAGE', 'BALANCED DIET', 'JUNK FOOD', 'FSSAI', 'FORTIFIED', 'BIODIVERSITY', 'MILLETS', 'NUTRI-CEREALS', 'FOOD MILES', 'IODISED SALT', 'SCOURVY', 'GOITRE', 'BERIBERI', 'RICKETS', 'ANAEMIA'];
+  let out = text;
+  terms.forEach(term => {
+    out = out.replaceAll(term, `<span class="term-highlight">${term}</span>`);
+  });
+  return out;
+}
+
+function clearContinueRevealTimer() {
+  if (continueRevealTimer) {
+    clearTimeout(continueRevealTimer);
+    continueRevealTimer = null;
+  }
+}
+
+function startAnimationSequence(topic) {
+  const hotspots = (topic.hotspots || []).slice().sort((a, b) => (a.revealOrder || 0) - (b.revealOrder || 0));
+  animationState = {
+    topicId: topic.id,
+    antProgress: 0,
+    bubbleText: '',
+    completed: false,
+    hotspots,
+    currentHotspotIndex: 0,
+    currentHotspotKey: null,
+    bubbleStage: 'idle',
+    bubbleStageStartedAt: millis(),
+    answeredKeys: [],
+    autoAdvanceAt: Infinity,
+    promptDelayMs: 0,
+    answerHoldMs: 0,
+    revealCooldownMs: 1400
+  };
+  const bubble = document.getElementById('speech-bubble-text');
+  if (bubble) bubble.textContent = '';
+  setSpeechBubbleVisible(false);
+  setSelectionDetail('', '');
+  fadeSelectionDetail(false);
+  renderAnimationHotspotButtons();
+}
+
+function setBubbleText(text, speak = false, onEnd = null) {
+  if (speak) speakText(text, onEnd);
+  else if (typeof onEnd === 'function') onEnd();
+}
+
+function setSpeechBubbleVisible(visible) {
+  void visible;
+}
+
+function setSelectionTip(text, showBubble = false) {
+  void text;
+  void showBubble;
+}
+
+function clearSelectionFocus() {}
+
+function setSelectionDetail(title, text) {
+  void title;
+  void text;
+}
+
+function fadeSelectionDetail(hidden = true) {
+  void hidden;
+}
+
+function setAnimationInfoVisible(visible) {
+  if (!animationInfoCardEl) return;
+  animationInfoCardEl.classList.toggle('is-hidden', !visible);
+}
+
+function stopSpeech() {
+  if (!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+}
+
+function estimateSpeechDurationMs(text) {
+  if (!text) return 0;
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(2200, Math.round((words / 2.1) * 1000) + 900);
+}
+
+function speakText(text, onEnd = null) {
+  if (!ttsEnabled || !('speechSynthesis' in window) || !text) {
+    if (typeof onEnd === 'function') onEnd();
+    return null;
+  }
+  stopSpeech();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.72;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const preferredVoice = voices.find(v => /en-IN|en-GB|en-US/i.test(v.lang || '')) || voices[0];
+  if (preferredVoice) utterance.voice = preferredVoice;
+  if (typeof onEnd === 'function') utterance.onend = onEnd;
+  window.speechSynthesis.speak(utterance);
+  return utterance;
+}
+
+function hideAntCallout() {
+  const antCallout = document.querySelector('.ant-callout');
+  if (antCallout) antCallout.classList.add('is-hidden');
+}
+
+function beginHotspotPrompt(hotspot) {
+  if (!animationState || animationState.completed || !hotspot) return;
+  hideAntCallout();
+  if (animationState.answeredKeys.includes(hotspot.key)) return;
+  if (animationState.currentHotspotKey === hotspot.key && (animationState.bubbleStage === 'prompt' || animationState.bubbleStage === 'answer')) return;
+  animationState.currentHotspotKey = hotspot.key;
+  animationState.bubbleStage = 'prompt';
+  animationState.bubbleStageStartedAt = millis();
+  animationState.bubbleText = hotspot.prompt;
+  const speechDuration = estimateSpeechDurationMs(hotspot.prompt);
+  animationState.autoAdvanceAt = millis() + speechDuration + 500;
+  renderAnimationHotspotButtons();
+  setBubbleText(animationState.bubbleText, true, () => {
+    if (!animationState || animationState.currentHotspotKey !== hotspot.key || animationState.bubbleStage !== 'prompt') return;
+    animationState.autoAdvanceAt = millis() + 400;
+  });
+}
+
+function finishAnimationTopic() {
+  if (!animationState || animationState.completed) return;
+  animationState.completed = true;
+  animationState.currentHotspotKey = null;
+  animationState.bubbleStage = 'done';
+  animationState.bubbleText = 'Nice work! You explored every item. Now go to the check section.';
+  setBubbleText(animationState.bubbleText, true);
+  setSelectionDetail('Scene complete', 'You explored every highlighted item in this scene. Continue to the check section when you are ready.');
+  fadeSelectionDetail(true);
+  renderAnimationHotspotButtons();
+  const instruction = document.getElementById('animation-instruction');
+  if (instruction) instruction.textContent = 'All items explored. Continue to the check section.';
+  const btn = document.getElementById('continue-btn');
+  btn.disabled = false;
+  btn.classList.add('pulse-ready');
+  setAnimationInfoVisible(true);
+}
+
+function advanceAnimationFlow(topic) {
+  if (!animationState || animationState.topicId !== topic.id) {
+    startAnimationSequence(topic);
+  }
+  const hotspots = animationState.hotspots || [];
+  if (!hotspots.length) {
+    finishAnimationTopic();
+    return animationState;
+  }
+  const now = millis();
+  if (animationState.bubbleStage === 'prompt' && now >= animationState.autoAdvanceAt) {
+    const hotspot = hotspots.find(h => h.key === animationState.currentHotspotKey);
+    if (hotspot) {
+      animationState.bubbleStage = 'answer';
+      animationState.bubbleStageStartedAt = now;
+      animationState.bubbleText = hotspot.answer;
+      const answerDuration = estimateSpeechDurationMs(hotspot.answer);
+      animationState.autoAdvanceAt = millis() + answerDuration + 500;
+      setBubbleText(animationState.bubbleText, true, () => {
+        if (!animationState || animationState.currentHotspotKey !== hotspot.key || animationState.bubbleStage !== 'answer') return;
+        animationState.autoAdvanceAt = millis() + 700;
+      });
+      setSelectionDetail(hotspot.label, hotspot.detail || hotspot.answer);
+      fadeSelectionDetail(false);
+      const instruction = document.getElementById('animation-instruction');
+      if (instruction) instruction.textContent = `Good thinking. Listen to Anty's explanation about ${hotspot.label.toLowerCase()}.`;
+    }
+  } else if (animationState.bubbleStage === 'answer' && now >= animationState.autoAdvanceAt) {
+    if (!animationState.answeredKeys.includes(animationState.currentHotspotKey)) {
+      animationState.answeredKeys.push(animationState.currentHotspotKey);
+    }
+    animationState.currentHotspotIndex = animationState.answeredKeys.length;
+    animationState.currentHotspotKey = null;
+    if (animationState.answeredKeys.length >= hotspots.length) {
+      finishAnimationTopic();
+    } else {
+      animationState.bubbleStage = 'idle';
+      animationState.bubbleStageStartedAt = now;
+      animationState.bubbleText = 'Tap the next glowing item to continue.';
+      setBubbleText(animationState.bubbleText, true);
+      setSelectionDetail('Next item', '');
+      fadeSelectionDetail(true);
+      renderAnimationHotspotButtons();
+    }
+  }
+  const activeHotspot = hotspots.find(h => h.key === animationState.currentHotspotKey);
+  const targetX = activeHotspot ? activeHotspot.x : (hotspots[Math.min(animationState.currentHotspotIndex, hotspots.length - 1)]?.x ?? 0.2);
+  animationState.antProgress = constrain(targetX, 0.08, 0.92);
+  return animationState;
+}
+
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 80; i++) {
+    stars.push({
+      x: random(width),
+      y: random(height),
+      size: random(1, 3),
+      alpha: random(80, 220),
+      twinkle: random(TWO_PI)
+    });
+  }
+}
+
+function drawStars() {
+  noStroke();
+  stars.forEach(s => {
+    fill(255, 255, 255, s.alpha * (0.65 + 0.35 * sin(frameCount * 0.02 + s.twinkle)));
+    circle(s.x, s.y, s.size);
+  });
+}
+
+function drawAmbientScene() {
+  noStroke();
+  fill(22, 33, 62, 120);
+  ellipse(width * 0.15, height * 0.18, 220, 120);
+  ellipse(width * 0.82, height * 0.22, 260, 140);
+  fill(76, 175, 80, 55);
+  rect(0, height - 120, width, 120);
+  drawWalkingAnt(width * 0.12 + sin(antsTrailOffset) * 18, height - 80, 1);
+}
+
+function getAnimationViewport() {
+  if (!animationStageEl) {
+    return { x: 0, y: 0, w: width, h: height * 0.55 };
+  }
+  const rect = animationStageEl.getBoundingClientRect();
+  return {
+    x: rect.left,
+    y: rect.top,
+    w: Math.max(40, rect.width),
+    h: Math.max(40, rect.height)
+  };
+}
+
+function drawAnimationBackdrop() {
+  drawStars();
+  const v = getAnimationViewport();
+  noStroke();
+  fill(31, 58, 95, 170);
+  rect(v.x, v.y, v.w, v.h, 28);
+  fill(255, 255, 255, 18);
+  rect(v.x + 10, v.y + 10, v.w - 20, v.h - 20, 24);
+}
+
+function drawAnimationScene() {
+  const topic = topics[topicIndex];
+  const state = advanceAnimationFlow(topic);
+  const v = getAnimationViewport();
+  const groundY = v.y + v.h - 70;
+  const left = v.x;
+  const top = v.y;
+  const antProgress = state ? state.antProgress : 0.2;
+  const antX = left + antProgress * v.w;
+
+  noStroke();
+  fill(76, 175, 80, 95);
+  rect(left, groundY, v.w, 90, 0, 0, 24, 24);
+  drawAnimationHotspots(v, state);
+  drawWalkingAnt(antX, groundY - 10, width < 700 ? 1.45 : 1.7);
+
+  const at = topic.animationType;
+  if (at === 'food-diversity') {
+    drawFoodDiversityCinematic(v, state);
+  } else if (at === 'food-components') {
+    drawGrainBunch(left + v.w * 0.16, groundY + 10, '#F4D35E', 1);
+    drawPulseBunch(left + v.w * 0.46, groundY + 8, 1);
+    drawFruit(left + v.w * 0.76, groundY + 6, 1);
+  } else if (at === 'food-tests') {
+    drawTestTube(left + v.w * 0.22, groundY + 14, '#1a4a8a', 1);
+    drawTestTube(left + v.w * 0.5, groundY + 14, '#8B6914', 1);
+    drawTestTube(left + v.w * 0.78, groundY + 14, '#6a2c91', 1);
+  } else if (at === 'balanced-diet') {
+    drawPlate(left + v.w * 0.26, groundY + 8, 1);
+    drawBiscuit(left + v.w * 0.54, groundY + 10, 1);
+    drawFssaiLogo(left + v.w * 0.8, groundY + 14, 1);
+  } else if (at === 'millets') {
+    drawMilletBunch(left + v.w * 0.16, groundY + 10, '#8B6914', 1);
+    drawMilletBunch(left + v.w * 0.44, groundY + 10, '#5a4a2a', 1);
+    drawMilletBunch(left + v.w * 0.72, groundY + 10, '#7a3a1a', 1);
+  } else if (at === 'food-miles') {
+    drawFarm(left + v.w * 0.12, groundY + 4, 1);
+    drawTruck(left + v.w * 0.42, groundY + 12, 1);
+    drawPlate(left + v.w * 0.74, groundY + 8, 1);
+  }
+}
+
+function drawAnimationHotspots(v, state) {
+  if (!state?.hotspots?.length) return;
+  state.hotspots.forEach((hotspot, index) => {
+    const cx = v.x + hotspot.x * v.w;
+    const cy = v.y + hotspot.y * v.h;
+    const radius = hotspot.r * Math.min(v.w, v.h);
+    const answered = state.answeredKeys.includes(hotspot.key);
+    const active = state.currentHotspotKey === hotspot.key;
+    const available = !answered && index === state.currentHotspotIndex && !state.completed;
+    noFill();
+    strokeWeight(active ? 6 : 4);
+    if (answered) {
+      stroke(80, 200, 120, 220);
+    } else if (available) {
+      stroke(255, 214, 10, 170 + 70 * sin(frameCount * 0.12));
+    } else {
+      stroke(255, 255, 255, 60);
+    }
+    circle(cx, cy, radius * 2);
+    if (available) {
+      fill(255, 214, 10, 28 + 22 * sin(frameCount * 0.12));
+      noStroke();
+      circle(cx, cy, radius * 1.6);
+    }
+  });
+}
+
+function renderAnimationHotspotButtons() {
+  if (!animationHotspotOverlayEl || !animationState?.hotspots?.length) return;
+  animationHotspotOverlayEl.innerHTML = '';
+  const v = getAnimationViewport();
+  const hotspots = animationState.hotspots || [];
+  if (animationState.completed) return;
+  hotspots.forEach((hotspot) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'animation-hotspot animation-hotspot--available';
+    if (animationState.currentHotspotKey === hotspot.key) btn.classList.add('animation-hotspot--active');
+    if (animationState.answeredKeys.includes(hotspot.key)) btn.classList.add('animation-hotspot--done');
+    if (animationState.currentHotspotIndex === animationState.hotspots.indexOf(hotspot)) btn.classList.add('animation-hotspot--available');
+    const diameter = Math.max(hotspot.r * Math.min(v.w, v.h) * 2, 92);
+    btn.style.left = `${hotspot.x * 100}%`;
+    btn.style.top = `${hotspot.y * 100}%`;
+    btn.style.width = `${diameter}px`;
+    btn.style.height = `${diameter}px`;
+    btn.setAttribute('aria-label', `Select ${hotspot.label} to know about it`);
+    btn.dataset.hotspotKey = hotspot.key;
+    btn.disabled = animationState.currentHotspotKey === hotspot.key && (animationState.bubbleStage === 'prompt' || animationState.bubbleStage === 'answer');
+    const triggerHotspot = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hideAntCallout();
+      beginHotspotPrompt(hotspot);
+    };
+    btn.addEventListener('pointerup', triggerHotspot);
+    btn.addEventListener('click', triggerHotspot);
+    animationHotspotOverlayEl.appendChild(btn);
+  });
+}
+
+function drawWalkingAnt(x, y, scaleFactor) {
+  push();
+  translate(x, y);
+  scale(scaleFactor);
+  const legSwing = sin(frameCount * 0.25) * 4;
+  stroke(64, 38, 18);
+  strokeWeight(2);
+  line(-6, 0, -16, -8 - legSwing);
+  line(-6, 2, -16, 8 + legSwing);
+  line(0, 0, -8, -10 + legSwing);
+  line(0, 2, -8, 10 - legSwing);
+  line(6, 0, 16, -8 - legSwing);
+  line(6, 2, 16, 8 + legSwing);
+  noStroke();
+  fill(139, 69, 19);
+  ellipse(-14, -1, 16, 14);
+  ellipse(0, 0, 20, 18);
+  ellipse(18, -1, 18, 16);
+  noStroke();
+  fill(255);
+  ellipse(19.5, -5.5, 7.5, 7.5);
+  ellipse(25.5, -4.8, 7.2, 7.2);
+  fill(18, 18, 18);
+  ellipse(20.1, -5.2, 3, 3);
+  ellipse(26.1, -4.5, 2.9, 2.9);
+  stroke(64, 38, 18);
+  line(24, -8, 32, -18 + sin(frameCount * 0.18) * 2);
+  line(24, -4, 34, -10 + sin(frameCount * 0.18 + 1) * 2);
+  pop();
+}
+
+function drawTree(x, groundY, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, groundY);
+  scale(0.75 + prog * 0.25);
+  noStroke();
+  fill(101, 67, 33, 255 * prog);
+  rect(0, -90, 28, 90, 8);
+  fill(46, 139, 87, 255 * prog);
+  circle(14, -120, 80 * prog);
+  circle(-12, -95, 62 * prog);
+  circle(42, -92, 60 * prog);
+  pop();
+}
+
+function drawFlower(x, y, petal, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.5 + prog * 0.5);
+  stroke(72, 160, 88, 255 * prog);
+  strokeWeight(4);
+  line(0, 0, 0, -42);
+  noStroke();
+  fill(red(petal), green(petal), blue(petal), 255 * prog);
+  for (let i = 0; i < 6; i++) {
+    const angle = (TWO_PI / 6) * i + frameCount * 0.01;
+    ellipse(cos(angle) * 12, -42 + sin(angle) * 12, 18, 14);
+  }
+  fill(255, 215, 0, 255 * prog);
+  circle(0, -42, 16);
+  pop();
+}
+
+function drawBird(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x + sin(frameCount * 0.03) * 8, y + cos(frameCount * 0.05) * 4);
+  scale(0.65 + prog * 0.35);
+  stroke(255, 255 * prog);
+  strokeWeight(2);
+  noFill();
+  arc(-10, 0, 20, 12, PI, TWO_PI);
+  arc(10, 0, 20, 12, PI, TWO_PI);
+  noStroke();
+  fill(255, 255 * prog);
+  ellipse(0, 4, 16, 8);
+  pop();
+}
+
+function drawSmallPlant(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(prog);
+  stroke(139, 90, 43, 255 * prog);
+  strokeWeight(3);
+  line(0, 0, 0, -34);
+  noStroke();
+  fill(76, 175, 80, 255 * prog);
+  ellipse(-10, -18, 18, 10);
+  ellipse(10, -24, 18, 10);
+  pop();
+}
+
+function drawPlate(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(prog);
+  noStroke();
+  fill(230, 230, 245, 255 * prog);
+  ellipse(0, 0, 90, 60);
+  fill(200, 200, 220, 255 * prog);
+  ellipse(0, 0, 70, 46);
+  // food items on plate
+  fill(210, 160, 60, 255 * prog);
+  ellipse(-10, -4, 26, 18);
+  fill(80, 160, 80, 255 * prog);
+  ellipse(10, -2, 22, 14);
+  fill(220, 120, 60, 255 * prog);
+  ellipse(0, 8, 20, 12);
+  pop();
+}
+
+function drawGrainBunch(x, y, col, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.8 + prog * 0.2);
+  noStroke();
+  fill(red(col), green(col), blue(col), 255 * prog);
+  for (let i = 0; i < 8; i++) {
+    const gx = (i % 4 - 1.5) * 14;
+    const gy = Math.floor(i / 4) * -18;
+    ellipse(gx, gy, 16, 28);
+  }
+  pop();
+}
+
+function drawPulseBunch(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.8 + prog * 0.2);
+  noStroke();
+  fill(139, 90, 43, 255 * prog);
+  const positions = [[-12, -10], [0, -8], [12, -10], [-6, 4], [6, 4], [0, 16]];
+  positions.forEach(([px, py]) => ellipse(px, py, 14, 12));
+  pop();
+}
+
+function drawFruit(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x + sin(frameCount * 0.03) * 4, y);
+  scale(0.8 + prog * 0.2);
+  noStroke();
+  fill(255, 200, 60, 255 * prog);
+  ellipse(0, 0, 38, 44);
+  fill(76, 175, 80, 255 * prog);
+  ellipse(2, -20, 8, 10);
+  stroke(76, 139, 50, 255 * prog);
+  strokeWeight(3);
+  line(2, -18, 2, -26);
+  pop();
+}
+
+function drawTestTube(x, y, col, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.85 + prog * 0.15);
+  noStroke();
+  fill(200, 220, 255, 150 * prog);
+  rect(-8, -50, 16, 55, 8);
+  noStroke();
+  fill(red(col), green(col), blue(col), 220 * prog);
+  rect(-6, -20, 12, 24, 0, 0, 6, 6);
+  // bubble
+  fill(255, 255, 255, 80 * prog);
+  circle(-2, -14, 5 * prog);
+  circle(2, -8, 3 * prog);
+  pop();
+}
+
+function drawChulha(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(160, 120, 80, 255 * prog);
+  rect(-30, -28, 60, 38, 6);
+  fill(40, 30, 20, 255 * prog);
+  ellipse(0, -8, 36, 22);
+  fill(255, 150, 50, 150 * prog);
+  ellipse(0, -10, 24, 14);
+  pop();
+}
+
+function drawBiscuit(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(220, 180, 80, 255 * prog);
+  rect(-28, -18, 56, 36, 8);
+  fill(180, 140, 50, 200 * prog);
+  for (let i = -20; i <= 20; i += 10) {
+    for (let j = -10; j <= 10; j += 10) {
+      circle(i, j, 6 * prog);
+    }
+  }
+  pop();
+}
+
+function drawFssaiLogo(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.6 + prog * 0.4);
+  noStroke();
+  fill(255, 150, 50, 255 * prog);
+  circle(0, 0, 60 * prog);
+  fill(255, 255, 255, 255 * prog);
+  circle(0, 0, 46 * prog);
+  fill(30, 130, 60, 255 * prog);
+  textAlign(CENTER, CENTER);
+  textSize(14 * prog);
+  textFont('Nunito');
+  text('FSSAI', 0, 0);
+  pop();
+}
+
+function drawMilletBunch(x, y, col, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(red(col), green(col), blue(col), 255 * prog);
+  for (let i = 0; i < 6; i++) {
+    const mx = (i % 3 - 1) * 16;
+    const my = Math.floor(i / 3) * -18;
+    ellipse(mx, my, 14, 20);
+  }
+  stroke(139, 90, 43, 200 * prog);
+  strokeWeight(2);
+  for (let i = 0; i < 3; i++) {
+    line((i - 1) * 16, 0, (i - 1) * 16, 14);
+  }
+  pop();
+}
+
+function drawFarm(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(76, 175, 80, 200 * prog);
+  rect(-40, -10, 80, 20);
+  fill(101, 67, 33, 255 * prog);
+  rect(-6, -40, 12, 40, 4);
+  fill(46, 139, 87, 255 * prog);
+  circle(0, -50, 40 * prog);
+  circle(-16, -38, 30 * prog);
+  circle(16, -38, 30 * prog);
+  fill(255, 220, 80, 200 * prog);
+  ellipse(-26, -20, 12, 8);
+  ellipse(26, -20, 12, 8);
+  ellipse(0, -14, 14, 8);
+  pop();
+}
+
+function drawTruck(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x + sin(frameCount * 0.02) * 6, y);
+  scale(0.6 + prog * 0.4);
+  noStroke();
+  fill(100, 180, 255, 255 * prog);
+  rect(-30, -28, 40, 30, 6);
+  fill(180, 220, 255, 255 * prog);
+  rect(-30, -28, 40, 16, 6, 6, 0, 0);
+  fill(80, 140, 200, 255 * prog);
+  rect(10, -20, 22, 22, 4);
+  fill(60, 60, 60, 255 * prog);
+  circle(-18, 8, 14 * prog);
+  circle(22, 8, 14 * prog);
+  fill(200, 160, 60, 200 * prog);
+  rect(-28, -14, 36, 12, 3);
+  pop();
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CINEMATIC CLOSE-UP ENGINE — Topic 1 Food Diversity
+// ═══════════════════════════════════════════════════════════════════════════
+
+let closeupState = null;
+
+function initCloseupState(topic) {
+  closeupState = {
+    activeDishKey: null,
+    phase: 'idle',        // 'idle' | 'spot' | 'q' | 'a' | 'dismiss'
+    spotProgress: 0,       // 0→1 for the dish selection pulse
+    cardProgress: 0,      // 0→1 for card scale-in
+    cardScale: 0,
+    spotlightPhase: 0,
+    particles: [],
+    typewriterText: '',
+    typewriterWords: [],
+    typewriterIndex: 0,
+    typewriterTimer: 0,
+    answerGreen: false,
+    spokenPhase: '',
+    questionAutoAdvanceAt: 0,  // timestamp when question typewriter + estimated speech finishes
+    tapCount: 0,          // 1st = show Q, 2nd = show A, 3rd = dismiss
+    dismissProgress: 0,
+    dismissed: false,
+    spotPulse: 0,
+    time: 0
+  };
+}
+
+function addCloseupParticles(dishKey) {
+  if (!closeupState) return;
+  const palettes = {
+    'food-roti':  ['#F4A020','#E07010','#FFD166','#FF8C00'],
+    'food-idli':  ['#E8F4F8','#7EC8E3','#B8E0D2','#90C5B0'],
+    'food-chulha':['#FF5722','#FF8C00','#FFD166','#8B4513']
+  };
+  const cols = palettes[dishKey] || ['#FFD166','#FFF'];
+  closeupState.particles = [];
+  for (let i = 0; i < 40; i++) {
+    closeupState.particles.push({
+      x: random(width),
+      y: random(height * 0.5, height),
+      col: cols[floor(random(cols.length))],
+      size: random(2, 7),
+      vy: random(-0.4, -1.2),
+      vx: random(-0.3, 0.3),
+      alpha: random(120, 255),
+      life: random(0.6, 1.0)
+    });
+  }
+}
+
+function drawFoodDiversityCinematic(v, state) {
+  if (!closeupState) initCloseupState(topics[topicIndex]);
+  closeupState.time += deltaTime / 1000;
+
+  // ── Idle: draw the three food items as selectable cards ──────────────
+  if (closeupState.phase === 'idle') {
+    drawCinematicIdleScene(v, state);
+    return;
+  }
+
+  // ── Dismissed → restore idle ─────────────────────────────────────────
+  if (closeupState.dismissed) {
+    const finishedKey = closeupState.activeDishKey; // remember before clearing
+    closeupState.phase = 'idle';
+    closeupState.dismissed = false;
+    closeupState.cardProgress = 0;
+    closeupState.cardScale = 0;
+    closeupState.cardAlpha = 0;
+    closeupState.activeDishKey = null;
+    closeupState.tapCount = 0;
+    closeupState.particles = [];
+    closeupState.typewriterText = '';
+    closeupState.typewriterWords = [];
+    closeupState.idleAlpha = 255;
+
+    // ── Track answered dish ──────────────────────────────────────────────
+    if (finishedKey && animationState) {
+      if (!animationState.answeredKeys.includes(finishedKey)) {
+        animationState.answeredKeys.push(finishedKey);
+      }
+      animationState.currentHotspotIndex = animationState.answeredKeys.length;
+      if (animationState.answeredKeys.length >= animationState.hotspots.length) {
+        animationState.completed = true;
+      }
+    }
+
+    renderAnimationHotspotButtons(); // re-enable buttons
+    drawCinematicIdleScene(v, state);
+    return;
+  }
+
+  // ── Active close-up ───────────────────────────────────────────────────
+  drawCinematicOverlay(closeupState, v);
+  drawDishCloseup(closeupState, v);
+  drawTypewriterBubble(closeupState, v);
+  drawIngredientBadges(closeupState, v);
+  drawParticles(closeupState);
+  drawDishLabel(closeupState, v);
+}
+
+function drawCinematicIdleScene(v, state) {
+  // Dim scene
+  fill(0, 0, 0, 160);
+  noStroke();
+  rect(v.x, v.y, v.w, v.h, 28);
+
+  const items = [
+    { key: 'food-roti',  label: 'Punjab Meal',        x: 0.18, y: 0.62 },
+    { key: 'food-idli',  label: 'South Indian Meal',  x: 0.50, y: 0.58 },
+    { key: 'food-chulha',label: 'Traditional Cooker', x: 0.78, y: 0.68 }
+  ];
+
+  const answered = state?.answeredKeys || [];
+  const currentIdx = state?.currentHotspotIndex || 0;
+  const completed = state?.completed || false;
+
+  items.forEach((item, i) => {
+    const cx = v.x + item.x * v.w;
+    const cy = v.y + item.y * v.h;
+    const r  = 0.13 * Math.min(v.w, v.h);
+    const isAvail = !completed && answered.indexOf(item.key) === -1;
+    const isDone  = answered.indexOf(item.key) !== -1;
+
+    // Card bg
+    noStroke();
+    fill(15, 25, 50, 220);
+    rectMode(CENTER);
+    rect(cx, cy + r + 28, 130, 48, 12);
+    fill(isAvail ? 255 : 200, isAvail ? 214 : 180, isAvail ? 10 : 100, 240);
+    textAlign(CENTER, CENTER);
+    textSize(13);
+    textFont('Nunito');
+    text(item.label, cx, cy + r + 28);
+
+    // Mini food icon with object glow
+    if (item.key === 'food-roti')  drawIdleRoti(cx, cy, r, isAvail, isDone);
+    if (item.key === 'food-idli') drawIdleIdli(cx, cy, r, isAvail, isDone);
+    if (item.key === 'food-chulha') drawIdleChulha(cx, cy, r, isAvail, isDone);
+  });
+  rectMode(CORNER);
+
+  // Instruction text
+  fill(255, 255, 255, 180);
+  textAlign(CENTER, CENTER);
+  textSize(14);
+  text('Select an item to know about it', v.x + v.w / 2, v.y + v.h - 22);
+}
+
+function drawIdleRoti(cx, cy, r, isAvail = false, isDone = false) {
+  push();
+  translate(cx, cy);
+  scale(map(r, 50, 100, 0.55, 1.1));
+  noStroke();
+  if (isAvail) {
+    fill(255, 214, 10, 60);
+    circle(0, 0, 102);
+    fill(255, 214, 10, 24);
+    circle(0, 0, 126);
+  } else if (isDone) {
+    fill(80, 200, 120, 40);
+    circle(0, 0, 96);
+  }
+  fill(220, 160, 55);
+  circle(0, 0, 80);
+  fill(180, 120, 30);
+  for (let i = 0; i < 5; i++) {
+    ellipse((i - 2) * 14, (i % 2) * 8 - 4, 8, 5);
+  }
+  // char marks
+  fill(100, 55, 15, 150);
+  ellipse(-16, -8, 14, 5);
+  ellipse(8, 4, 12, 4);
+  ellipse(-4, 14, 10, 4);
+  pop();
+}
+
+function drawIdleIdli(cx, cy, r, isAvail = false, isDone = false) {
+  push();
+  translate(cx, cy);
+  scale(map(r, 50, 100, 0.5, 1.0));
+  noStroke();
+  if (isAvail) {
+    fill(120, 210, 240, 50);
+    ellipse(0, 0, 132, 92);
+  } else if (isDone) {
+    fill(80, 200, 120, 35);
+    ellipse(0, 0, 118, 84);
+  }
+  fill(240, 235, 220);
+  for (let i = 0; i < 3; i++) {
+    ellipse((i - 1) * 22, 0, 36, 28);
+  }
+  fill(200, 170, 80, 120);
+  for (let i = 0; i < 3; i++) {
+    ellipse((i - 1) * 22, -18, 10, 6);
+  }
+  pop();
+}
+
+function drawIdleChulha(cx, cy, r, isAvail = false, isDone = false) {
+  push();
+  translate(cx, cy);
+  scale(map(r, 50, 100, 0.6, 1.1));
+  noStroke();
+  if (isAvail) {
+    fill(255, 140, 30, 45);
+    ellipse(0, -4, 150, 110);
+  } else if (isDone) {
+    fill(80, 200, 120, 30);
+    ellipse(0, -4, 140, 100);
+  }
+  fill(160, 110, 70);
+  rect(-32, -20, 64, 42, 8);
+  fill(40, 25, 15);
+  ellipse(0, -6, 38, 22);
+  // fire flicker
+  fill(255, 140, 30, 150 + 60 * sin(frameCount * 0.2));
+  ellipse(0, -8, 22, 14);
+  fill(255, 200, 60, 130 + 50 * sin(frameCount * 0.25 + 1));
+  ellipse(0, -10, 12, 8);
+  pop();
+}
+
+function triggerDishCloseup(dishKey) {
+  if (!closeupState || closeupState.phase !== 'idle') return;
+  if (closeupState.activeDishKey === dishKey) return;
+
+  const hotspot = (topics[0].hotspots || []).find(h => h.key === dishKey);
+  if (!hotspot) return;
+
+  closeupState.activeDishKey = dishKey;
+  closeupState.phase = 'q';
+  closeupState.spotProgress = 1;
+  closeupState.tapCount = 1;
+  closeupState.typewriterText = '';
+  closeupState.typewriterWords = hotspot.prompt.split(' ');
+  closeupState.typewriterIndex = 0;
+  closeupState.typewriterTimer = millis();
+  closeupState.answerGreen = false;
+  closeupState.dismissProgress = 0;
+  closeupState.dismissed = false;
+  closeupState.idleAlpha = 180;
+  addCloseupParticles(dishKey);
+
+  // Speak the question; TTS onEnd advances phase to 'a' for the answer
+  speakText(hotspot.prompt, () => {
+    if (!closeupState || closeupState.activeDishKey !== dishKey || closeupState.phase !== 'q') return;
+    closeupState.phase = 'a';
+    closeupState.answerGreen = true;
+    closeupState.typewriterIndex = 0;
+    closeupState.typewriterTimer = millis();
+    closeupState.typewriterWords = hotspot.answer.split(' ');
+    closeupState.typewriterText = '';
+    closeupState.tapCount = 2;
+    speakText(hotspot.answer, null);
+  });
+}
+
+function drawCinematicOverlay(s, v) {
+  // Dark background with radial spotlight
+  noStroke();
+  rect(v.x, v.y, v.w, v.h, 28);
+
+  const palettes = {
+    'food-roti':  { cx: color(255,160,30), r: color(255,80,0) },
+    'food-idli':  { cx: color(120,210,240), r: color(30,100,180) },
+    'food-chulha':{ cx: color(255,130,30), r: color(180,50,0) }
+  };
+  const pal = palettes[s.activeDishKey] || palettes['food-roti'];
+
+  // Animated spotlight
+  s.spotlightPhase += deltaTime / 1000;
+  const pulseR = 0.42 + 0.04 * sin(s.spotlightPhase * 1.2);
+
+  push();
+  drawingContext.save();
+  drawingContext.beginPath();
+  drawingContext.rect(v.x, v.y, v.w, v.h);
+  drawingContext.clip();
+
+  // Background vignette
+  fill(0, 0, 0, 220);
+  rect(v.x, v.y, v.w, v.h);
+  drawingContext.restore();
+
+  // Radial spotlight
+  noStroke();
+  const sx = v.x + v.w * 0.5;
+  const sy = v.y + v.h * 0.42;
+  const spotW = v.w * pulseR;
+  for (let i = 8; i >= 0; i--) {
+    const frac = i / 8;
+    const c = lerpColor(pal.cx, pal.r, frac);
+    c.setAlpha(28 * frac);
+    fill(c);
+    ellipse(sx, sy, spotW * frac * 2, spotW * frac * 1.4);
+  }
+  pop();
+}
+
+function drawDishCloseup(s, v) {
+  const cx = v.x + v.w * 0.5;
+  const cy = v.y + v.h * 0.42;
+  const cw = v.w * 0.62;
+  const ch = cw * 0.65;
+
+  // Card scale-in animation
+  s.cardProgress = min(s.cardProgress + deltaTime / 380, 1.0);
+  const ease = 1 - pow(1 - s.cardProgress, 3); // cubic ease out
+  s.cardScale = ease;
+  s.cardAlpha = ease;
+
+  push();
+  translate(cx, cy);
+  scale(s.cardScale);
+  translate(-cx, -cy);
+
+  // Card shadow
+  noStroke();
+  fill(0, 0, 0, 60 * s.cardAlpha);
+  rect(cx - cw / 2 - 6, cy - ch / 2 - 6, cw + 12, ch + 12, 24);
+
+  // Card bg
+  const cardPalettes = {
+    'food-roti':   { bg: color(30, 18, 5), accent: color(255,160,30) },
+    'food-idli':   { bg: color(10, 25, 40), accent: color(120,210,240) },
+    'food-chulha': { bg: color(20, 12, 5), accent: color(255,100,20) }
+  };
+  const cpal = cardPalettes[s.activeDishKey] || cardPalettes['food-roti'];
+
+  fill(red(cpal.bg), green(cpal.bg), blue(cpal.bg), 245 * s.cardAlpha);
+  stroke(red(cpal.accent), green(cpal.accent), blue(cpal.accent), 160 * s.cardAlpha);
+  strokeWeight(2);
+  rect(cx - cw / 2, cy - ch / 2, cw, ch, 20);
+
+  // Atmospheric inner glow
+  noStroke();
+  const glowC = cpal.accent;
+  for (let i = 4; i >= 0; i--) {
+    const gAlpha = (12 - i * 2) * s.cardAlpha;
+    fill(red(glowC), green(glowC), blue(glowC), gAlpha);
+    rect(cx - cw / 2, cy - ch / 2, cw, ch, 20);
+  }
+
+  // Draw the layered illustration
+  if (s.activeDishKey === 'food-roti')   drawPunjabMealIllus(cx, cy, cw, ch, s);
+  if (s.activeDishKey === 'food-idli')   drawSouthIndianIllus(cx, cy, cw, ch, s);
+  if (s.activeDishKey === 'food-chulha') drawChulhaIllus(cx, cy, cw, ch, s);
+
+  pop();
+}
+
+function drawPunjabMealIllus(cx, cy, cw, ch, s) {
+  push();
+  translate(cx, cy);
+  scale(cw / 600, ch / 400);
+  translate(-300, -200);
+  const alpha = s.cardAlpha;
+
+  // Banana leaf base
+  noStroke();
+  fill(60, 130, 50, 220 * alpha);
+  ellipse(300, 220, 280, 200);
+  fill(40, 100, 35, 180 * alpha);
+  ellipse(300, 220, 200, 140);
+
+  // Makki di roti 1 (bottom)
+  fill(200, 140, 40, 240 * alpha);
+  ellipse(240, 260, 100, 70);
+  fill(120, 70, 15, 180 * alpha);
+  ellipse(245, 258, 12, 5);
+  ellipse(238, 265, 10, 4);
+  ellipse(250, 262, 8, 3);
+  fill(255, 220, 100, 50 * alpha);
+  ellipse(240, 258, 95, 65);
+
+  // Makki di roti 2 (middle, slightly behind)
+  fill(210, 150, 45, 230 * alpha);
+  ellipse(310, 230, 95, 65);
+  fill(120, 70, 15, 160 * alpha);
+  ellipse(314, 228, 10, 4);
+  ellipse(308, 235, 8, 3);
+
+  // Makki di roti 3 (top)
+  fill(215, 155, 48, 235 * alpha);
+  ellipse(275, 200, 90, 60);
+  fill(120, 70, 15, 170 * alpha);
+  ellipse(278, 198, 10, 4);
+  ellipse(272, 205, 8, 3);
+  fill(255, 220, 100, 55 * alpha);
+  ellipse(275, 200, 86, 56);
+
+  // Sarson da saag bowl
+  fill(139, 90, 43, 230 * alpha);
+  ellipse(380, 250, 100, 55);
+  fill(100, 65, 30, 220 * alpha);
+  ellipse(380, 240, 90, 45);
+  fill(70, 160, 60, 230 * alpha);
+  ellipse(380, 235, 84, 40);
+  // ghee dollops
+  fill(255, 220, 80, 200 * alpha);
+  ellipse(370, 228, 12, 8);
+  ellipse(390, 232, 10, 7);
+  // green swirl
+  fill(50, 130, 45, 160 * alpha);
+  ellipse(382, 230, 40, 18);
+
+  // Onion rings
+  noFill();
+  stroke(220, 180, 120, 180 * alpha);
+  strokeWeight(3);
+  ellipse(190, 210, 50, 30);
+  ellipse(185, 205, 45, 28);
+  strokeWeight(2);
+  ellipse(182, 200, 40, 25);
+
+  // Butter pat
+  noStroke();
+  fill(255, 235, 150, 220 * alpha);
+  rect(440, 180, 40, 28, 6);
+  fill(255, 220, 100, 160 * alpha);
+  rect(442, 182, 36, 24, 5);
+
+  // Green chutney bowl
+  fill(60, 140, 60, 220 * alpha);
+  ellipse(470, 270, 55, 35);
+  fill(40, 120, 45, 200 * alpha);
+  ellipse(470, 265, 48, 28);
+  fill(80, 180, 70, 180 * alpha);
+  ellipse(470, 262, 42, 22);
+  // green swirl
+  stroke(30, 100, 35, 150 * alpha);
+  strokeWeight(2);
+  noFill();
+  ellipse(470, 260, 28, 14);
+
+  pop();
+}
+
+function drawSouthIndianIllus(cx, cy, cw, ch, s) {
+  push();
+  translate(cx, cy);
+  scale(cw / 600, ch / 400);
+  translate(-300, -200);
+  const alpha = s.cardAlpha;
+
+  // Banana leaf base
+  noStroke();
+  fill(60, 130, 50, 220 * alpha);
+  ellipse(300, 220, 280, 200);
+  fill(40, 100, 35, 180 * alpha);
+  ellipse(300, 220, 200, 140);
+
+  // Idli rack — 3 idlis
+  const idliPositions = [[210, 250], [300, 240], [390, 250]];
+  idliPositions.forEach(([ix, iy], i) => {
+    // shadow
+    fill(180, 165, 140, 160 * alpha);
+    ellipse(ix + 3, iy + 4, 72, 52);
+    // idli body
+    fill(240, 228, 205, 245 * alpha);
+    ellipse(ix, iy, 70, 50);
+    // slight gradient
+    fill(250, 240, 220, 80 * alpha);
+    ellipse(ix, iy - 6, 60, 35);
+    // steam
+    noFill();
+    stroke(200, 220, 230, 80 * alpha * (0.5 + 0.5 * sin(frameCount * 0.1 + i)));
+    strokeWeight(2);
+    for (let st = 0; st < 3; st++) {
+      const sy = iy - 35 - st * 10;
+      arc(ix - 8 + st * 8, sy, 8, 8, PI, TWO_PI);
+    }
+  });
+
+  // Sambhar bowl
+  noStroke();
+  fill(180, 120, 60, 230 * alpha);
+  ellipse(300, 300, 110, 60);
+  fill(220, 100, 30, 200 * alpha);
+  ellipse(300, 290, 100, 52);
+  fill(200, 90, 25, 220 * alpha);
+  ellipse(300, 284, 92, 44);
+  // sambhar liquid
+  fill(160, 75, 20, 180 * alpha);
+  ellipse(300, 282, 84, 36);
+  // vegetables in sambhar
+  fill(100, 150, 60, 180 * alpha);
+  ellipse(288, 278, 16, 12);
+  ellipse(312, 280, 14, 10);
+  ellipse(300, 288, 12, 10);
+  fill(220, 140, 40, 160 * alpha);
+  ellipse(295, 285, 10, 8);
+  // ghee top
+  fill(255, 200, 60, 80 * alpha);
+  ellipse(300, 278, 20, 8);
+
+  // Coconut chutney bowl
+  fill(160, 110, 60, 220 * alpha);
+  ellipse(440, 270, 80, 50);
+  fill(200, 160, 80, 200 * alpha);
+  ellipse(440, 262, 72, 40);
+  fill(240, 220, 140, 200 * alpha);
+  ellipse(440, 258, 65, 32);
+  // green swirl
+  stroke(60, 140, 60, 160 * alpha);
+  strokeWeight(3);
+  noFill();
+  arc(440, 256, 40, 18, PI * 0.8, TWO_PI * 0.9);
+  noStroke();
+
+  // Papad
+  fill(230, 210, 160, 200 * alpha);
+  ellipse(170, 300, 60, 20);
+  fill(200, 180, 130, 160 * alpha);
+  ellipse(170, 298, 55, 16);
+  // papad texture dots
+  fill(180, 160, 110, 100 * alpha);
+  for (let dx = -18; dx <= 18; dx += 9) {
+    for (let dy = -5; dy <= 5; dy += 5) {
+      circle(170 + dx, 298 + dy, 2);
+    }
+  }
+
+  // Small bowl of chutney (top left)
+  fill(60, 140, 60, 220 * alpha);
+  ellipse(160, 200, 55, 35);
+  fill(200, 165, 80, 200 * alpha);
+  ellipse(160, 194, 50, 28);
+  fill(80, 180, 70, 180 * alpha);
+  ellipse(160, 190, 44, 22);
+
+  pop();
+}
+
+function drawChulhaIllus(cx, cy, cw, ch, s) {
+  push();
+  translate(cx, cy);
+  scale(cw / 600, ch / 400);
+  translate(-300, -200);
+  const alpha = s.cardAlpha;
+
+  // Clay body
+  noStroke();
+  fill(160, 100, 55, 240 * alpha);
+  rect(180, 150, 240, 160, 20);
+  fill(140, 85, 45, 220 * alpha);
+  rect(185, 155, 230, 150, 16);
+
+  // Opening (fire mouth)
+  fill(30, 15, 5, 250 * alpha);
+  ellipse(300, 250, 100, 65);
+
+  // Fire animation
+  for (let fi = 0; fi < 5; fi++) {
+    const flicker = sin(frameCount * 0.18 + fi * 1.3) * 0.3 + 0.7;
+    const fAlpha = (200 - fi * 30) * flicker * alpha;
+    const fH = (35 - fi * 5) * flicker;
+    const fW = (22 - fi * 2) * flicker;
+    fill(255, 140 + fi * 20, 20, fAlpha);
+    ellipse(300 + (fi - 2) * 12, 248 - fi * 6, fW, fH);
+  }
+  // Flame core
+  fill(255, 240, 100, 200 * alpha);
+  ellipse(300, 240, 18, 24);
+  fill(255, 220, 60, 180 * alpha);
+  ellipse(298, 242, 12, 16);
+
+  // Cooking pot on top
+  fill(80, 75, 90, 240 * alpha);
+  ellipse(300, 148, 130, 50);
+  rect(235, 148, 130, 70, 0, 0, 8, 8);
+  fill(60, 55, 70, 220 * alpha);
+  ellipse(300, 218, 126, 35);
+  // handles
+  fill(70, 65, 80, 230 * alpha);
+  ellipse(228, 170, 18, 28);
+  ellipse(372, 170, 18, 28);
+  // lid
+  fill(90, 85, 100, 230 * alpha);
+  ellipse(300, 148, 126, 44);
+  // steam from chimney
+  noFill();
+  stroke(180, 180, 190, 60 * alpha);
+  strokeWeight(4);
+  for (let si = 0; si < 3; si++) {
+    const sty = 80 - si * 18 + sin(frameCount * 0.12 + si) * 5;
+    arc(340, sty, 16, 20, PI, TWO_PI);
+  }
+  noStroke();
+
+  // Fuel sticks at base
+  fill(100, 65, 25, 200 * alpha);
+  for (let fi = 0; fi < 6; fi++) {
+    push();
+    translate(260 + fi * 15, 310);
+    rotate(radians(-20 + fi * 8));
+    rect(-4, -30, 8, 35, 3);
+    pop();
+  }
+
+  // Ash / embers glow
+  fill(255, 100, 20, 30 * alpha);
+  ellipse(300, 305, 80, 20);
+
+  pop();
+}
+
+function drawParticles(s) {
+  s.particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.alpha -= 0.4;
+    p.life -= 0.003;
+    if (p.alpha <= 0 || p.life <= 0) return;
+    noStroke();
+    fill(red(color(p.col)), green(color(p.col)), blue(color(p.col)), p.alpha * p.life);
+    ellipse(p.x, p.y, p.size, p.size);
+  });
+}
+
+function drawDishLabel(s, v) {
+  if (s.phase !== 'spot' && s.phase !== 'q' && s.phase !== 'a') return;
+  const hotspot = (topics[0].hotspots || []).find(h => h.key === s.activeDishKey);
+  if (!hotspot) return;
+  const alpha = s.cardAlpha;
+
+  const lx = v.x + v.w * 0.5;
+  const ly = v.y + v.h * 0.83;
+
+  noStroke();
+  fill(0, 0, 0, 120 * alpha);
+  rectMode(CENTER);
+  rect(lx, ly, 240, 40, 12);
+  fill(255, 214, 10, 240 * alpha);
+  textAlign(CENTER, CENTER);
+  textSize(16);
+  textFont('Bangers');
+  text(hotspot.label, lx, ly);
+  textFont('Nunito');
+  rectMode(CORNER);
+}
+
+function drawTypewriterBubble(s, v) {
+  if (!s.typewriterWords || s.typewriterWords.length === 0) return;
+  if (s.phase === 'idle' || s.phase === 'dismiss') return;
+
+  // Typewriter logic
+  const now = millis();
+  const wordDelay = 52;
+  if (s.typewriterIndex < s.typewriterWords.length) {
+    if (now - s.typewriterTimer > wordDelay) {
+      s.typewriterIndex++;
+      s.typewriterTimer = now;
+    }
+    s.typewriterText = s.typewriterWords.slice(0, s.typewriterIndex).join(' ') + (s.typewriterIndex < s.typewriterWords.length ? ' ▊' : '');
+  } else {
+    s.typewriterText = s.typewriterWords.join(' ');
+  }
+
+  const bx = v.x + 20;
+  const by = v.y + 20;
+  const bw = v.w - 40;
+  const bh = 120;
+
+  // Bubble bg
+  noStroke();
+  const bubbleBg = s.answerGreen ? color(240, 255, 240) : color(255, 250, 225);
+  fill(red(bubbleBg), green(bubbleBg), blue(bubbleBg), 248 * s.cardAlpha);
+  rect(bx, by, bw, bh, 20, 20, 20, 6);
+
+  // Border
+  const bubbleBorder = s.answerGreen ? color(76, 175, 80) : color(255, 193, 7);
+  stroke(red(bubbleBorder), green(bubbleBorder), blue(bubbleBorder), 200 * s.cardAlpha);
+  strokeWeight(3);
+  noFill();
+  rect(bx, by, bw, bh, 20, 20, 20, 6);
+  noStroke();
+
+  // Label
+  const labelCol = s.answerGreen ? color(27, 94, 32) : color(146, 64, 14);
+  fill(red(labelCol), green(labelCol), blue(labelCol), 240 * s.cardAlpha);
+  textAlign(LEFT, TOP);
+  textSize(constrain(v.w * 0.032, 14, 22));
+  textFont('Nunito');
+  text('ANTY ' + (s.answerGreen ? 'EXPLAINS' : 'SAYS'), bx + 18, by + 12);
+
+  // Typewriter text - bigger, responsive
+  fill(30, 30, 30, 240 * s.cardAlpha);
+  textSize(constrain(v.w * 0.044, 16, 30));
+  text(s.typewriterText, bx + 18, by + 34, bw - 36, bh - 44);
+}
+
+function constrain(val, mn, mx) { return max(mn, min(mx, val)); }
+
+function drawIngredientBadges(s, v) {
+  if (!s.activeDishKey) return;
+  const alpha = s.cardAlpha;
+  const badgeData = {
+    'food-roti':  ['Makki di Roti', 'Sarson da Saag', 'Ghee', 'Onion Rings'],
+    'food-idli':  ['Steamed Idli', 'Sambhar', 'Coconut Chutney', 'Papad'],
+    'food-chulha':['Clay Body', 'Cooking Pot', 'Fuel Sticks', 'Chimney Smoke']
+  };
+  const badges = badgeData[s.activeDishKey] || [];
+  const cols = s.activeDishKey === 'food-roti' ? ['#E07010','#4CAF50','#FFD700','#E8D5B7'] :
+               s.activeDishKey === 'food-idli' ? ['#E8F4F8','#E07010','#4CAF50','#D4A050'] :
+               ['#8B4513','#607D8B','#D2691E','#90A4AE'];
+  const totalW = badges.length * 110 + (badges.length - 1) * 8;
+  let bx = v.x + (v.w - totalW) / 2;
+  const by = v.y + v.h - 44;
+
+  badges.forEach((badge, i) => {
+    noStroke();
+    fill(red(color(cols[i])), green(color(cols[i])), blue(color(cols[i])), 200 * alpha);
+    rect(bx, by, 105, 28, 14);
+    fill(255, 255, 255, 230 * alpha);
+    textAlign(CENTER, CENTER);
+    textSize(constrain(v.w * 0.022, 10, 15));
+    textFont('Nunito');
+    text(badge, bx + 52, by + 14);
+    bx += 110 + 8;
+  });
+}
+
+function handleCloseupTap() {
+  if (!closeupState) return;
+  if (closeupState.phase === 'idle') return;
+  if (closeupState.dismissed) return;
+
+  const hotspot = (topics[0].hotspots || []).find(h => h.key === closeupState.activeDishKey);
+  if (!hotspot) return;
+
+  if (closeupState.tapCount === 1) {
+    // TTS onEnd callback auto-advances to 'a'. If user taps during Q,
+    // advance to 'a' immediately — the same tap also counts as tap 2
+    // (dismiss intent) since we want a total of 2 taps to dismiss.
+    if (closeupState.phase === 'q') {
+      closeupState.phase = 'a';
+      closeupState.answerGreen = true;
+      closeupState.typewriterIndex = 0;
+      closeupState.typewriterTimer = millis();
+      closeupState.typewriterWords = hotspot.answer.split(' ');
+      closeupState.typewriterText = '';
+      closeupState.tapCount = 3;         // one more tap dismisses
+      speakText(hotspot.answer, null);
+    }
+    // If phase is still 'spot', TTS onEnd will handle auto-advance to 'a'.
+  } else if (closeupState.tapCount === 3) {
+    // Dismiss
+    closeupState.dismissed = true;
+    closeupState.phase = 'dismiss';
+    closeupState.tapCount = 0;
+  }
+}
+
+function clamp(val, mn, mx) { return max(mn, min(mx, val)); }
+
+// Fix: override startAnimationSequence to also init closeupState
+const _originalSAR = startAnimationSequence;
+startAnimationSequence = function(topic) {
+  _originalSAR(topic);
+  if (topic.animationType === 'food-diversity') {
+    initCloseupState(topic);
+  }
+};
+
+function findHotspotAt(v, mx, my) {
+  if (!animationState?.hotspots?.length) return null;
+  const nextHotspot = animationState.hotspots[animationState.currentHotspotIndex];
+  if (!nextHotspot) return null;
+  const cx = v.x + nextHotspot.x * v.w;
+  const cy = v.y + nextHotspot.y * v.h;
+  const r = nextHotspot.r * Math.min(v.w, v.h);
+  const d = dist(mx, my, cx, cy);
+  return d <= r ? nextHotspot : null;
+}
+
+function mousePressed() {
+  pointerIsDown = true;
+  if (currentScreen === 'animate' && animationState && !phaserGame) {
+    if (closeupState && closeupState.phase !== 'idle') {
+      handleCloseupTap();
+      return;
+    }
+    const v = getAnimationViewport();
+    const clickedHotspot = findHotspotAt(v, mouseX, mouseY);
+    if (clickedHotspot) {
+      if (topics[topicIndex]?.animationType === 'food-diversity') {
+        triggerDishCloseup(clickedHotspot.key);
+      } else {
+        beginHotspotPrompt(clickedHotspot);
+      }
+    }
+  }
+}
+
+function touchStarted() {
+  if (touches.length > 0 && currentScreen === 'animate' && animationState && !phaserGame) {
+    if (closeupState && closeupState.phase !== 'idle') {
+      handleCloseupTap();
+      return false;
+    }
+  }
+  return true;
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  initStars();
+  renderAnimationHotspotButtons();
+}
+
+function initApp() {
+  cacheScreens();
+  bindEvents();
+  showScreen('animate');
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initApp, { once: true });
+} else {
+  initApp();
+}
+</script>
+
+
+</body>
+</html>
