@@ -3,12 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DoraLearn - Diversity in the Living World | Class 6 Science</title>
+  <title>DoraLearn - Mindful Eating</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@400;600;700;800&display=swap" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Bangers&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet"></noscript>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Bangers&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="/static/ncert/phaser.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -41,6 +40,15 @@
       display: block;
       pointer-events: auto;
       touch-action: none;
+    }
+    #phaser-container {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: none;
+    }
+    #phaser-container canvas {
+      display: block;
     }
     main {
       position: relative;
@@ -107,6 +115,9 @@
       font-size: clamp(1rem, 2vw, 1.15rem);
       font-weight: 700;
     }
+    .hero-mascot {
+      margin-bottom: 8px;
+    }
     .topbar {
       width: min(1180px, 100%);
       display: flex;
@@ -149,16 +160,9 @@
     .lesson-shell {
       width: min(1180px, 100%);
       display: grid;
-      grid-template-columns: 260px minmax(0, 1fr);
-      gap: 24px;
+      grid-template-columns: 280px minmax(0, 1fr);
+      gap: 22px;
       align-items: start;
-    }
-    .learn-fullwidth .lesson-shell {
-      grid-template-columns: 1fr;
-      max-width: 820px;
-    }
-    .learn-fullwidth .mascot-panel {
-      display: none;
     }
     .mascot-panel__card {
       border-radius: 24px;
@@ -176,15 +180,6 @@
     .lesson-card {
       border-radius: 28px;
       padding: clamp(24px, 3.6vw, 40px);
-      background: rgba(11, 20, 40, 0.72);
-      backdrop-filter: blur(10px);
-    }
-    .learn-fullwidth .lesson-card {
-      background: transparent;
-      border: none;
-      box-shadow: none;
-      backdrop-filter: none;
-      padding: clamp(20px, 3vw, 36px);
     }
     .lesson-card__header h2, .animation-card h2, .summary-card h2 {
       font-size: clamp(2.1rem, 5vw, 3.6rem);
@@ -325,25 +320,8 @@
       pointer-events: none;
     }
     .selection-detail-panel {
-      position: absolute;
-      left: 18px;
-      right: 18px;
-      bottom: 18px;
-      min-height: 140px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 24px;
-      padding: 18px 20px;
-      box-shadow: 0 18px 36px rgba(0,0,0,0.26);
-      z-index: 3;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 10px;
-      pointer-events: none;
-      opacity: 1;
-      transform: translateY(0);
-      transition: opacity 260ms ease, transform 260ms ease;
+      /* removed: screen focus panel hidden by request */
+      display: none !important;
     }
     .selection-detail-panel.is-faded {
       opacity: 0;
@@ -511,12 +489,8 @@
       top: 5px;
       box-shadow: 0 0 0 1px rgba(93, 49, 16, 0.18);
     }
-    .ant-head::before {
-      left: 5px;
-    }
-    .ant-head::after {
-      left: 14px;
-    }
+    .ant-head::before { left: 5px; }
+    .ant-head::after { left: 14px; }
     .ant-body { width: 36px; height: 30px; left: 38px; top: 30px; }
     .ant-tail { width: 34px; height: 28px; left: 76px; top: 32px; }
     .ant-leg, .ant-antenna {
@@ -616,12 +590,50 @@
   </style>
 </head>
 <body>
-  <div id="canvas-container"></div>
-  <main>
-    <section id="intro-screen" class="screen screen--active">
-      <div class="hero-card">
-        <div class="hero-mascot">
-          <div class="ant-hero">
+<div id="canvas-container"></div>
+<div id="phaser-container"></div>
+<main>
+  <section id="intro-screen" class="screen screen--active">
+    <div class="hero-card">
+      <div class="hero-mascot">
+        <div class="ant-hero">
+          <span class="ant-segment ant-head"></span>
+          <span class="ant-segment ant-body"></span>
+          <span class="ant-segment ant-tail"></span>
+          <span class="ant-leg ant-leg-1"></span>
+          <span class="ant-leg ant-leg-2"></span>
+          <span class="ant-leg ant-leg-3"></span>
+          <span class="ant-leg ant-leg-4"></span>
+          <span class="ant-leg ant-leg-5"></span>
+          <span class="ant-leg ant-leg-6"></span>
+          <span class="ant-antenna ant-antenna-1"></span>
+          <span class="ant-antenna ant-antenna-2"></span>
+        </div>
+      </div>
+      <p class="eyebrow">DoraLearn • NCERT Class 6 Science</p>
+      <h1>Mindful Eating</h1>
+      <p class="hero-copy">Learn the chapter as a guided story with bigger text, richer explanations, and simple check questions after each topic.</p>
+      <div class="hero-points">
+        <div class="hero-point">6 guided topics</div>
+        <div class="hero-point">Readable multi-page lessons</div>
+        <div class="hero-point">Animated ant guide</div>
+      </div>
+      <button class="cta-btn" id="start-btn" type="button">Start Learning</button>
+    </div>
+  </section>
+
+  <section id="learn-screen" class="screen" aria-live="polite">
+    <div class="topbar">
+      <div class="topbar__text">
+        <div id="topic-label">Topic 1 of 6</div>
+        <div id="phase-label">Learning</div>
+      </div>
+      <div id="progress-container"><div id="progress-fill"></div></div>
+    </div>
+    <div class="lesson-shell">
+      <aside class="mascot-panel">
+        <div class="mascot-panel__card">
+          <div class="mascot ant-guide" id="ant-mascot" aria-hidden="true">
             <span class="ant-segment ant-head"></span>
             <span class="ant-segment ant-body"></span>
             <span class="ant-segment ant-tail"></span>
@@ -634,127 +646,82 @@
             <span class="ant-antenna ant-antenna-1"></span>
             <span class="ant-antenna ant-antenna-2"></span>
           </div>
+          <h3>Ant Guide</h3>
+          <p id="mascot-message">Let us explore the chapter one clear idea at a time.</p>
         </div>
-        <p class="eyebrow">DoraLearn • NCERT Class 6 Science</p>
-        <h1>Diversity in the Living World</h1>
-        <p class="hero-copy">Learn the chapter as a guided story with bigger text, richer explanations, and simple check questions after each topic.</p>
-        <div class="hero-points">
-          <div class="hero-point">5 guided topics</div>
-          <div class="hero-point">Readable multi-page lessons</div>
-          <div class="hero-point">Animated ant guide</div>
+      </aside>
+      <article class="lesson-card">
+        <header class="lesson-card__header">
+          <p class="lesson-kicker" id="lesson-kicker">Topic 1</p>
+          <h2 id="lesson-title">What Do We Eat?</h2>
+          <p class="lesson-summary" id="lesson-summary"></p>
+        </header>
+        <div class="lesson-pages" id="lesson-pages"></div>
+        <div class="lesson-nav">
+          <button class="nav-btn" id="prev-page-btn" type="button">← Previous Page</button>
+          <div class="page-indicator" id="page-indicator">Page 1 of 1</div>
+          <button class="nav-btn" id="next-page-btn" type="button">Next Page →</button>
         </div>
-        <button class="cta-btn" id="start-btn" type="button">Start Learning</button>
+        <div class="lesson-actions">
+          <button class="cta-btn cta-btn--secondary" id="animate-btn" type="button">See Animation</button>
+          <button class="cta-btn cta-btn--ghost" id="restart-btn" type="button">Start Over</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="animate-screen" class="screen">
+    <div class="topbar topbar--animate">
+      <div class="topbar__text">
+        <div id="animate-topic-label">Topic</div>
+        <div class="phase-static">Animation</div>
       </div>
-    </section>
-
-    <section id="learn-screen" class="screen" aria-live="polite">
-      <div class="topbar">
-        <div class="topbar__text">
-          <div id="topic-label">Topic 1 of 5</div>
-          <div id="phase-label">Learning</div>
-        </div>
-        <div id="progress-container"><div id="progress-fill"></div></div>
+    </div>
+    <div class="animation-stage" id="animation-stage">
+      <div class="speech-bubble" id="speech-bubble" aria-live="polite">
+        <div class="speech-bubble__label">Anty says</div>
+        <p class="speech-bubble__text" id="speech-bubble-text">Watch carefully. I will explain this scene step by step.</p>
       </div>
-
-      <div class="lesson-shell">
-        <aside class="mascot-panel">
-          <div class="mascot-panel__card">
-            <div class="mascot ant-guide" id="ant-mascot" aria-hidden="true">
-              <span class="ant-segment ant-head"></span>
-              <span class="ant-segment ant-body"></span>
-              <span class="ant-segment ant-tail"></span>
-              <span class="ant-leg ant-leg-1"></span>
-              <span class="ant-leg ant-leg-2"></span>
-              <span class="ant-leg ant-leg-3"></span>
-              <span class="ant-leg ant-leg-4"></span>
-              <span class="ant-leg ant-leg-5"></span>
-              <span class="ant-leg ant-leg-6"></span>
-              <span class="ant-antenna ant-antenna-1"></span>
-              <span class="ant-antenna ant-antenna-2"></span>
-            </div>
-            <h3>Ant Guide</h3>
-            <p id="mascot-message">Let us explore the chapter one clear idea at a time.</p>
-          </div>
-        </aside>
-
-        <article class="lesson-card">
-          <header class="lesson-card__header">
-            <p class="lesson-kicker" id="lesson-kicker">Topic 1</p>
-            <h2 id="lesson-title">What is Biodiversity?</h2>
-            <p class="lesson-summary" id="lesson-summary"></p>
-          </header>
-
-          <div class="lesson-pages" id="lesson-pages"></div>
-
-          <div class="lesson-nav">
-            <button class="nav-btn" id="prev-page-btn" type="button">← Previous Page</button>
-            <div class="page-indicator" id="page-indicator">Page 1 of 1</div>
-            <button class="nav-btn" id="next-page-btn" type="button">Next Page →</button>
-          </div>
-
-          <div class="lesson-actions">
-            <button class="cta-btn cta-btn--secondary" id="animate-btn" type="button">See Animation</button>
-            <button class="cta-btn cta-btn--ghost" id="restart-btn" type="button">Start Over</button>
-          </div>
-        </article>
+      <div class="animation-hotspot-overlay" id="animation-hotspot-overlay" aria-live="polite"></div>
+      <div class="selection-detail-panel" id="selection-detail-panel" aria-live="polite">
+        <div class="selection-detail-panel__label">Scene focus</div>
+        <div class="selection-detail-panel__title" id="selection-detail-title">Tap the glowing item</div>
+        <div class="selection-detail-panel__text" id="selection-detail-text">Choose the highlighted item to see a bigger explanation with more detail.</div>
       </div>
-    </section>
+    </div>
+    <div class="animation-card is-hidden" id="animation-info-card">
+      <div class="animation-card__copy">
+        <p class="lesson-kicker">Watch closely</p>
+        <h2 id="animation-title">Animation</h2>
+        <p id="animation-copy">The ant guide shows the idea in motion. Watch the scene, then continue to check your understanding.</p>
+      </div>
+      <div class="animation-stage-note" id="animation-instruction">Tap the glowing item to begin. Anty asks first, then explains after a short pause.</div>
+      <div class="lesson-actions lesson-actions--animate">
+        <button class="cta-btn" id="continue-btn" type="button">Go to Check</button>
+      </div>
+    </div>
+  </section>
 
-    <section id="animate-screen" class="screen">
-      <div class="topbar topbar--animate">
-        <div class="topbar__text">
-          <div id="animate-topic-label">Topic</div>
-          <div class="phase-static">Animation</div>
-        </div>
-      </div>
-      <div class="animation-stage" id="animation-stage">
-        <div class="speech-bubble" id="speech-bubble" aria-live="polite">
-          <div class="speech-bubble__label">Anty says</div>
-          <p class="speech-bubble__text" id="speech-bubble-text">Watch carefully. I will explain this scene step by step.</p>
-        </div>
-        <div class="animation-hotspot-overlay" id="animation-hotspot-overlay" aria-live="polite"></div>
-        <div class="selection-detail-panel" id="selection-detail-panel" aria-live="polite">
-          <div class="selection-detail-panel__label">Scene focus</div>
-          <div class="selection-detail-panel__title" id="selection-detail-title">Tap the glowing item</div>
-          <div class="selection-detail-panel__text" id="selection-detail-text">Choose the highlighted item to see a bigger explanation with more detail.</div>
-        </div>
-      </div>
-      <div class="animation-card is-hidden" id="animation-info-card">
-        <div class="animation-card__copy">
-          <p class="lesson-kicker">Watch closely</p>
-          <h2 id="animation-title">Animation</h2>
-          <p id="animation-copy">The ant guide shows the idea in motion. Watch the scene, then continue to check your understanding.</p>
-        </div>
-        <div class="animation-stage-note" id="animation-instruction">Tap the glowing item to begin. Anty asks first, then explains after a short pause.</div>
-        <div class="lesson-actions lesson-actions--animate">
-          <button class="cta-btn" id="continue-btn" type="button">Go to Check</button>
-        </div>
-      </div>
-    </section>
+  <section id="question-overlay" class="screen" aria-live="polite">
+    <div class="question-card">
+      <div id="q-topic-label">Topic</div>
+      <p id="q-text"></p>
+      <div id="q-options"></div>
+      <button class="cta-btn cta-btn--ghost" id="next-topic-btn" type="button" style="display:none;margin-top:24px;">Next Topic</button>
+    </div>
+  </section>
 
-    <section id="question-overlay" class="screen">
-      <div class="question-card">
-        <div id="q-topic-label">Topic 1</div>
-        <div id="q-text">Question text</div>
-        <div id="q-options"></div>
-        <div class="lesson-actions lesson-actions--questions">
-          <button class="cta-btn" id="next-topic-btn" type="button">Next Topic</button>
-        </div>
+  <section id="summary-screen" class="screen screen--active">
+    <div class="summary-card">
+      <p class="eyebrow">Chapter Complete</p>
+      <h2>What We Learnt</h2>
+      <div class="summary-list" id="summary-list"></div>
+      <div style="margin-top:32px;display:flex;gap:16px;justify-content:center;flex-wrap:wrap;">
+        <button class="cta-btn" id="summary-restart-btn" type="button">Learn Again</button>
       </div>
-    </section>
-
-    <section id="summary-screen" class="screen">
-      <div class="summary-card">
-        <p class="eyebrow">Chapter Summary</p>
-        <h2>Great Learning!</h2>
-        <p class="summary-copy">You completed all five ideas in Chapter 2 with the ant guide. Review the key ideas below and start again anytime.</p>
-        <div class="summary-list" id="summary-list"></div>
-        <div class="lesson-actions lesson-actions--summary">
-          <button class="cta-btn" id="summary-restart-btn" type="button">Start Over</button>
-        </div>
-      </div>
-    </section>
-  </main>
+    </div>
+  </section>
+</main>
 
 <script>
 const COLORS = {
@@ -773,352 +740,440 @@ const COLORS = {
 const topics = [
   {
     id: 1,
-    title: 'What is Biodiversity?',
-    summary: 'Biodiversity means the variety of living things found in one region.',
-    mascot: 'I am Anty the Ant. I will help you notice how many kinds of living things share the same world.',
+    title: 'What Do We Eat?',
+    summary: 'India has rich food diversity. Our food choices vary by region, culture, and locally grown crops.',
+    mascot: 'Food connects us to our land and culture. Let us explore the wonderful variety of what India eats.',
     pages: [
       {
-        heading: 'Life around us is full of variety',
+        heading: 'Food is part of daily life',
         points: [
-          'Look around any park, field, pond, or forest. You will notice grasses, shrubs, trees, insects, birds, and animals living in the same area.',
-          'Even when two places are both green, they may not have the same living things. One place may have more birds, another may have more insects, and another may have special plants.'
+          'All of us eat food every day. Food is an essential component of our daily life.',
+          'When we list the food we eat over a week, we see great variety in our meals.'
         ]
       },
       {
-        heading: 'Meaning of biodiversity',
+        heading: 'Food differs across regions',
         points: [
-          'The word BIODIVERSITY is made from two ideas: “bio” means life and “diversity” means variety or difference.',
-          'So biodiversity means the variety of living organisms in a place. It includes plants, animals, and other small life forms that may not be easy to see.'
+          'India is an agricultural country with diverse soil and climate. Traditional food in each state is based on locally grown crops.',
+          'Punjab has makki di roti and sarson da saag. Karnataka has idli, dosa, and sambhar. Manipur has rice and bamboo shoot dishes.'
         ]
       },
       {
-        heading: 'Why biodiversity matters',
+        heading: 'Cooking practices have changed',
         points: [
-          'Different living things help keep nature balanced. Plants provide food and oxygen. Insects help pollination. Animals spread seeds and take part in food chains.',
-          'India is rich in biodiversity because it has mountains, forests, deserts, coasts, rivers, wetlands, and different climates.'
+          'Cooking methods have changed over time. Traditional chulhas have been replaced by modern gas stoves.',
+          'Sil-batta grinding has been replaced by electric grinders. Technology has changed how we prepare food.'
         ]
       }
     ],
-    animationType: 'forest',
-    animationCopy: 'Tap the glowing living things. Anty will ask a question, wait a moment, and then explain the answer.',
+    animationType: 'food-diversity',
+    animationCopy: 'Tap the glowing food items. Anty will ask what you notice, pause, and then explain.',
     hotspots: [
       {
-        key: 'forest-tree',
-        label: 'Tree',
-        prompt: 'What do you notice about this tall tree in the forest?',
-        answer: 'A tree is a living thing. Tall trees share space with birds, insects, flowers, and many other organisms in one habitat.',
-        detail: 'This tall tree is not standing alone. Its trunk gives support, its branches spread out, and its leaves make food using sunlight. Birds may rest on it, insects may feed on it, and tiny organisms may live in its bark. One tree can support many forms of life in the same habitat.',
+        key: 'food-roti',
+        label: 'Punjab Meal',
+        prompt: 'What do you notice about this traditional Punjabi meal?',
+        answer: 'Makki di roti and sarson da saag are traditional Punjabi dishes made from locally grown crops.',
+        detail: 'This traditional Punjabi meal shows how food is connected to locally grown crops. The wheat used for makki di roti comes from Punjab fields, and the mustard greens for sarson da saag grow well in the cold Punjab climate. This connection between local crops and traditional food is seen across India.',
         x: 0.2,
         y: 0.62,
         r: 0.14,
         revealOrder: 1
       },
       {
-        key: 'forest-bird',
-        label: 'Bird',
-        prompt: 'How does this bird add to the life in this place?',
-        answer: 'Birds are part of biodiversity too. They use wings to move, help spread seeds, and make the habitat richer.',
-        detail: 'The bird shows that biodiversity includes animals as well as plants. It can fly to find food, escape danger, and move seeds from one place to another. When a habitat has birds, insects, trees, and flowers together, we can clearly see the variety of living things.',
-        x: 0.74,
-        y: 0.28,
-        r: 0.1,
+        key: 'food-idli',
+        label: 'South Indian Meal',
+        prompt: 'What is special about this South Indian meal?',
+        answer: 'Idli, dosa, and sambhar are traditional South Indian foods made from rice and lentils.',
+        detail: 'South Indian cuisine is built around rice and ragi, which grow well in the warm, moist climate of Karnataka and Tamil Nadu. Idli and dosa are made from fermented rice and urad dal, a combination that is both nutritious and easy to digest. The coconut and sambhar reflect the local produce of the region.',
+        x: 0.5,
+        y: 0.58,
+        r: 0.12,
         revealOrder: 2
       },
       {
-        key: 'forest-flower',
-        label: 'Flower',
-        prompt: 'Why is this flower important in the forest scene?',
-        answer: 'Flowers are another kind of living thing. They attract insects and show that many different plants can live together.',
-        detail: 'The flower adds colour, but it also has a job in plant reproduction. It attracts insects that help pollination. This reminds us that biodiversity is not only about seeing many things together. It is also about how those living things help one another in nature.',
-        x: 0.56,
-        y: 0.7,
-        r: 0.1,
+        key: 'food-chulha',
+        label: 'Traditional Cooker',
+        prompt: 'How does this traditional cooker compare with modern ones?',
+        answer: 'The traditional chulha uses less fuel-efficient burning. Modern gas stoves cook faster and are easier to use.',
+        detail: 'Cooking tools have changed significantly over time. The traditional chulha was built from clay and used biomass like wood and dung cakes. Modern gas stoves are faster and cleaner. Electric grinders have also replaced the manual sil-batta. These changes reflect technological development and improved communication and transport.',
+        x: 0.78,
+        y: 0.68,
+        r: 0.12,
         revealOrder: 3
       }
     ],
     questions: [
-      { q: 'Biodiversity means:', options: ['Different school subjects', 'Variety of living things in a region', 'Only different animals'], correct: 1 },
-      { q: 'India is rich in biodiversity because it has:', options: ['Only forests', 'Only mountains', 'Many different landforms and climates'], correct: 2 }
+      { q: 'Traditional food in a region is usually based on:', options: ['Food imported from other countries', 'Locally grown crops', 'Fast food chains'], correct: 1 },
+      { q: 'An example of a change in cooking practice over time is:', options: ['Using sil-batta instead of grinder', 'Gas stoves replacing chulhas', 'Eating more junk food'], correct: 1 },
+      { q: 'Which of these is a traditional South Indian food made from rice?', options: ['Makki di roti', 'Idli', 'Sarson da saag'], correct: 1 },
+      { q: 'Why does Punjab have makki di roti as a staple?', options: ['It is imported from other countries', 'Wheat grows well in the Punjab climate', 'It is fast to cook'], correct: 1 },
+      { q: 'The chulha has been largely replaced by gas stoves because:', options: ['It was more fuel-efficient', 'Modern stoves are faster and easier to use', 'People prefer raw food'], correct: 1 }
     ]
   },
   {
     id: 2,
-    title: 'How Plants Differ',
-    summary: 'Plants can differ in stem, leaves, flowers, size, and branching pattern.',
-    mascot: 'Plants may stand still, but they have many visible differences. Let us compare them carefully.',
+    title: 'Components of Food',
+    summary: 'Our food contains carbohydrates, proteins, fats, vitamins, minerals, and roughage. Each nutrient has a specific role.',
+    mascot: 'Every bite we take contains different nutrients. Let us understand what they do for our body.',
     pages: [
       {
-        heading: 'Plants are not all the same',
+        heading: 'Energy-giving foods',
         points: [
-          'Some plants are tiny and soft while some are tall and woody. Some grow upright, some spread on the ground, and some climb with support.',
-          'By observing plants closely, we can see many useful differences that help us identify and group them.'
+          'Carbohydrates and fats provide energy. Cereals like wheat and rice, vegetables like potato, and fruits like banana are rich in carbohydrates.',
+          'Nuts, groundnuts, and oils are rich in fats. These are called energy-giving foods.'
         ]
       },
       {
-        heading: 'Stem and leaves',
+        heading: 'Body-building foods',
         points: [
-          'The stem may be soft and green, or hard and thick. A strong stem helps a plant grow tall and support branches.',
-          'Leaves may be long, broad, narrow, smooth, rough, small, or very large. Their venation and shape also differ.'
+          'Proteins help in growth and repair of the body. Pulses, beans, peas, milk, paneer, egg, fish, and meat are rich in proteins.',
+          'Sportspersons need more proteins to build and maintain strong muscles.'
         ]
       },
       {
-        heading: 'Flowers and overall form',
+        heading: 'Protective foods',
         points: [
-          'Flowers differ in colour, scent, number of petals, and size. Some are bright and easy to spot, while others are tiny.',
-          'When we study stem, leaves, flowers, and size together, we understand how one plant differs from another.'
+          'Vitamins and minerals protect our body from diseases. Vitamin C in citrus fruits prevents scurvy. Iodine in iodised salt prevents goitre.',
+          'Deficiency of nutrients over a long time leads to deficiency diseases like beriberi, rickets, and anaemia.'
         ]
       }
     ],
-    animationType: 'plants',
-    animationCopy: 'Tap each plant feature. Anty will first ask what you observe, pause, and then explain the answer.',
+    animationType: 'food-components',
+    animationCopy: 'Tap each nutrient group. Anty explains what the nutrient does and which foods contain it.',
     hotspots: [
       {
-        key: 'plants-small',
-        label: 'Small Plant',
-        prompt: 'What is special about this small plant compared with bigger ones?',
-        answer: 'This plant is short and soft. Its size and soft stem help us compare it with other plant types.',
-        detail: 'This small plant helps us notice that plants do not all grow to the same height. A soft stem and short body often mean it is more delicate and grows differently from bigger plants. Comparing this plant with the flowering plant and the tall plant makes plant diversity easier to see.',
+        key: 'nutrient-carb',
+        label: 'Carbohydrates',
+        prompt: 'What do carbohydrates give our body?',
+        answer: 'Carbohydrates are the primary source of energy. They give us the fuel to run, think, and work.',
+        detail: 'Carbohydrates are found in cereals like wheat, rice, and maize. Vegetables like potato and sweet potato also contain carbohydrates. Fruits like banana and mango are natural carbohydrate sources. When we eat these foods, our body breaks them down into glucose, which gives us immediate energy for all our activities.',
         x: 0.18,
         y: 0.72,
-        r: 0.1,
+        r: 0.12,
         revealOrder: 1
       },
       {
-        key: 'plants-flower',
-        label: 'Flower',
-        prompt: 'What clue can a flower give us about a plant?',
-        answer: 'Flowers differ in colour, size, and shape. These visible clues help us tell one plant from another.',
-        detail: 'The flower helps us compare plants using clear visual clues. We can look at its colour, petal shape, and overall size. Even when two plants grow in the same place, their flowers can look different, which helps us identify and group them.',
-        x: 0.42,
-        y: 0.68,
-        r: 0.1,
+        key: 'nutrient-protein',
+        label: 'Proteins',
+        prompt: 'What makes proteins different from carbohydrates and fats?',
+        answer: 'Proteins are body-building foods. They help grow and repair muscles, skin, and other body parts.',
+        detail: 'Proteins are found in both plant and animal sources. Plant proteins include pulses, beans, peas, and nuts. Animal proteins include milk, paneer, egg, fish, and meat. Growing children especially need adequate protein for proper growth and development. Without enough protein, the body cannot repair damaged tissues or build new cells.',
+        x: 0.5,
+        y: 0.62,
+        r: 0.12,
         revealOrder: 2
       },
       {
-        key: 'plants-tree',
-        label: 'Tall Plant',
-        prompt: 'Why does this taller plant look different from the small one?',
-        answer: 'A taller plant may have a stronger, woodier stem and a different growth pattern. That is one way plants differ.',
-        detail: 'This taller plant shows that some plants grow upward with stronger support. A woodier stem can hold more branches and leaves. When we compare it with a smaller soft plant, we understand that plant diversity includes height, stem strength, and shape.',
-        x: 0.74,
+        key: 'nutrient-vitamins',
+        label: 'Vitamins',
+        prompt: 'Why are vitamins important even in small amounts?',
+        answer: 'Vitamins protect our body from diseases even though we need only small amounts.',
+        detail: 'Vitamins like A, B1, C, and D are essential for different body functions. Vitamin A keeps eyes and skin healthy. Vitamin B1 supports heart function. Vitamin C prevents scurvy and helps heal wounds. Vitamin D helps absorb calcium for strong bones and teeth. Minerals like iron, calcium, and iodine are also needed in small amounts but are equally important for health.',
+        x: 0.8,
         y: 0.58,
-        r: 0.14,
+        r: 0.12,
         revealOrder: 3
       }
     ],
     questions: [
-      { q: 'One way plants differ is in their:', options: ['School bags', 'Stem and leaves', 'Voices'], correct: 1 },
-      { q: 'Flowers may differ in:', options: ['Colour and scent', 'Language', 'Homework'], correct: 0 }
+      { q: 'Proteins are called body-building foods because they:', options: ['Give instant energy', 'Help grow and repair the body', 'Protect from infections'], correct: 1 },
+      { q: 'A deficiency of Vitamin C can cause:', options: ['Scurvy', 'Beriberi', 'Rickets'], correct: 0 },
+      { q: 'Which of these is the main function of carbohydrates in our body?', options: ['Building muscles', 'Providing energy', 'Protecting from diseases'], correct: 1 },
+      { q: 'Iodised salt helps prevent which deficiency disease?', options: ['Scurvy', 'Goitre', 'Rickets'], correct: 1 },
+      { q: 'Roughage in food mainly helps with:', options: ['Providing energy', 'Building muscles', 'Digestion and bowel movement'], correct: 2 }
     ]
   },
   {
     id: 3,
-    title: 'How Animals Differ',
-    summary: 'Animals differ in habitat, food habits, body features, and movement.',
-    mascot: 'Animals move in many ways. Watch how each one is suited to its way of life.',
+    title: 'Testing Food Components',
+    summary: 'Simple tests can detect starch, fat, and protein in food items using iodine solution and other chemicals.',
+    mascot: 'Scientists use simple tests to find which nutrients are in our food. Let us see how these tests work.',
     pages: [
       {
-        heading: 'Different habitats',
+        heading: 'Testing for starch',
         points: [
-          'Some animals live on land, some in water, some in trees, and some in burrows. Their body parts help them survive where they live.',
-          'A fish has fins and a streamlined body, while a bird has wings and feathers for flight.'
+          'A few drops of iodine solution on food can detect starch. If the food turns blue-black, starch is present.',
+          'Bread, potato, and rice all contain starch. This simple test can show which foods are starchy.'
         ]
       },
       {
-        heading: 'Different food habits',
+        heading: 'Testing for fats',
         points: [
-          'Some animals eat plants, some eat other animals, and some eat both. Teeth, beaks, and feeding behaviour often match what they eat.',
-          'Food habits are an important clue when we compare animals.'
+          'Pressing food on paper can reveal fat. An oily patch that lets light through shows fat is present.',
+          'Nuts, oil, and butter leave oily patches. This test works even with a small amount of food.'
         ]
       },
       {
-        heading: 'Different movement',
+        heading: 'Testing for proteins',
         points: [
-          'Animals may walk, hop, fly, swim, crawl, or slither. These movements help them find food, escape danger, and reach shelter.',
-          'When we observe movement, we can understand how animals are adapted to their surroundings.'
+          'Copper sulphate and caustic soda solution can test for protein. A violet colour means protein is present.',
+          'Peanuts contain both protein and fat. Many foods contain more than one nutrient.'
         ]
       }
     ],
-    animationType: 'animals',
-    animationCopy: 'Tap each animal. Anty asks first, gives you time to think, and then explains the body feature.',
+    animationType: 'food-tests',
+    animationCopy: 'Tap each test to see how it works. Anty explains the science behind each test.',
     hotspots: [
       {
-        key: 'animal-bird',
-        label: 'Bird',
-        prompt: 'How does this bird move from place to place?',
-        answer: 'The bird uses wings and feathers for flight. Its body is suited for movement in the air.',
-        detail: 'This bird is adapted for life in the air. Wings help it lift and move, while feathers support flight and protect the body. By comparing it with a fish or a land animal, we can understand that animals have different body parts for different habitats and ways of moving.',
-        x: 0.24,
-        y: 0.26,
-        r: 0.1,
+        key: 'test-starch',
+        label: 'Iodine Test',
+        prompt: 'What does the iodine test tell us about this food?',
+        answer: 'A blue-black colour with iodine means starch is present in the food.',
+        detail: 'The iodine test is a simple and reliable test for starch. Iodine solution is pale brown in colour. When it touches starch, a chemical reaction changes it to deep blue-black. Potato, bread, rice, and wheat all contain starch and will give this positive result. Foods like cucumber and oil will not change colour.',
+        x: 0.22,
+        y: 0.62,
+        r: 0.12,
         revealOrder: 1
       },
       {
-        key: 'animal-fish',
-        label: 'Fish',
-        prompt: 'What body part helps this fish live in water?',
-        answer: 'The fish uses fins and a streamlined body to swim easily in water.',
-        detail: 'The fish is shaped to move through water with less resistance. Its fins help in steering and balance. This shows that animals living in water are built differently from animals living on land or in the air.',
-        x: 0.58,
-        y: 0.78,
+        key: 'test-fat',
+        label: 'Paper Test',
+        prompt: 'What does the paper test reveal about this food?',
+        answer: 'An oily patch on paper that lets light through shows fat is present.',
+        detail: 'The paper test for fat is simple but effective. When you press food onto paper and hold it to light, an oily patch appears transparent. This is because fat absorbs into the paper fibres differently than water would. Nuts, oil, butter, and peanuts all contain fat and produce this result. Dry foods like rice and wheat do not.',
+        x: 0.5,
+        y: 0.62,
         r: 0.12,
         revealOrder: 2
       },
       {
-        key: 'animal-cow',
-        label: 'Land Animal',
-        prompt: 'What helps this land animal move on the ground?',
-        answer: 'Strong legs and a sturdy body help land animals walk and live on land.',
-        detail: 'A land animal needs support for standing, walking, and searching for food on the ground. Its legs carry its weight and help it move across land. Looking at this animal beside the bird and fish makes animal differences easier to understand.',
-        x: 0.82,
-        y: 0.68,
-        r: 0.14,
+        key: 'test-protein',
+        label: 'Biuret Test',
+        prompt: 'What does the violet colour in the test tube tell us?',
+        answer: 'A violet colour change means protein is present in the food.',
+        detail: 'The biuret test uses copper sulphate and caustic soda to detect proteins. When protein is present, the chemicals react to produce a violet colour. This test is done carefully in a lab because the chemicals need careful handling. Milk, egg, pulses, and meat all give a positive result. The violet colour intensity can also indicate how much protein is present.',
+        x: 0.78,
+        y: 0.62,
+        r: 0.12,
         revealOrder: 3
       }
     ],
     questions: [
-      { q: 'Animals differ in their:', options: ['Habitat and movement', 'Textbook colour only', 'Class timetable'], correct: 0 },
-      { q: 'A fish is suited for water because it has:', options: ['Wheels', 'Fins and a streamlined body', 'Branches'], correct: 1 }
+      { q: 'Iodine solution turning blue-black shows:', options: ['Fat is present', 'Starch is present', 'Protein is present'], correct: 1 },
+      { q: 'An oily patch on paper that lets light through shows:', options: ['Starch is present', 'Fat is present', 'Sugar is present'], correct: 1 },
+      { q: 'The biuret test uses copper sulphate and caustic soda to detect:', options: ['Starch', 'Fat', 'Protein'], correct: 2 },
+      { q: 'A violet colour in the biuret test tells us that:', options: ['Fat is present', 'Protein is present', 'Water is present'], correct: 1 },
+      { q: 'Many foods like peanuts contain:', options: ['Only one nutrient', 'More than one nutrient', 'No nutrients at all'], correct: 1 }
     ]
   },
   {
     id: 4,
-    title: 'Grouping Plants: Herbs, Shrubs, and Trees',
-    summary: 'Plants can be grouped by size, stem type, and branching pattern.',
-    mascot: 'Grouping makes studying easier. Let us sort plants by their visible features.',
+    title: 'Balanced Diet',
+    summary: 'A balanced diet has all nutrients in the right amount, along with roughage and water, for proper growth and health.',
+    mascot: 'Eating the right mix of foods keeps us healthy. Let us learn what a balanced diet really means.',
     pages: [
       {
-        heading: 'Why grouping helps',
+        heading: 'What is a balanced diet?',
         points: [
-          'There are many kinds of plants, so scientists group them based on similarities. This makes study and identification easier.',
-          'Size, stem strength, and branch pattern are common features used for grouping simple plant forms.'
+          'A balanced diet has all essential nutrients in the right amounts, along with roughage and water.',
+          'Our nutritional needs differ by age, gender, physical activity, and health status. Children need more protein for growth.'
         ]
       },
       {
-        heading: 'Herbs and shrubs',
+        heading: 'Junk food and health',
         points: [
-          'HERBS are small plants with soft, green, thin stems. Coriander, mint, and spinach are common examples.',
-          'SHRUBS are medium-sized plants with many branches rising close to the base. Rose and hibiscus fit this group.'
+          'Junk foods are high in sugar and fat but low in proteins, vitamins, and fibre. Frequent junk food consumption leads to obesity and health problems.',
+          'Reading nutritional information on food packets helps us make healthier food choices.'
         ]
       },
       {
-        heading: 'Trees',
+        heading: 'Fortified foods',
         points: [
-          'TREES are tall and strong plants with one hard, thick main stem called a trunk. Mango, neem, and peepal are examples.',
-          'This grouping helps us compare plants quickly and describe them clearly.'
+          'Some foods have extra nutrients added during processing. Iodised salt and fortified baby foods are examples.',
+          'The Food Safety and Standards Authority of India (FSSAI) regulates food quality in India.'
         ]
       }
     ],
-    animationType: 'groups',
-    animationCopy: 'Tap the herb, shrub, and tree. Anty will ask you to observe first, then explain the grouping.',
+    animationType: 'balanced-diet',
+    animationCopy: 'Tap each food item. Anty asks what nutrients it provides and how it fits into a balanced diet.',
     hotspots: [
       {
-        key: 'group-herb',
-        label: 'Herb',
-        prompt: 'What do you notice about this small herb?',
-        answer: 'A herb is usually small and has a soft green stem.',
-        detail: 'Herbs are usually short plants with soft stems that are easy to bend. They often live for a shorter time and are common in gardens and fields. When students see a herb clearly, they can compare it with taller and woodier plants.',
-        x: 0.18,
-        y: 0.72,
-        r: 0.1,
+        key: 'balance-plate',
+        label: 'Balanced Plate',
+        prompt: 'What makes this a balanced meal?',
+        answer: 'A balanced meal includes grains, pulses, vegetables, fruits, and dairy in the right proportions.',
+        detail: 'A balanced diet means eating foods from different groups in the right amounts. Cereals give carbohydrates for energy. Pulses give proteins for growth. Vegetables and fruits give vitamins and minerals for protection. Dairy gives calcium for bones and teeth. Water and roughage help digestion. Eating only one type of food cannot give us all the nutrients we need.',
+        x: 0.28,
+        y: 0.58,
+        r: 0.14,
         revealOrder: 1
       },
       {
-        key: 'group-shrub',
-        label: 'Shrub',
-        prompt: 'How is this shrub different from the herb?',
-        answer: 'A shrub is medium-sized and has many branches close to the base.',
-        detail: 'A shrub is bigger than a herb but smaller than a tree. Its branches start close to the ground, which gives it a bushy appearance. This branching pattern is one of the easiest ways to identify shrubs.',
-        x: 0.48,
-        y: 0.68,
+        key: 'balance-junk',
+        label: 'Junk Food',
+        prompt: 'Why is this food called junk food?',
+        answer: 'Junk food has high calories from sugar and fat but very little protein, vitamins, or fibre.',
+        detail: 'Junk foods like potato wafers and candy bars give us energy but lack the nutrients we truly need. They can make us gain weight without nourishing our body. Frequent junk food eating can lead to obesity, diabetes, and heart problems. Choosing foods like roasted chana over wafers gives us more protein and fibre with fewer unhealthy calories.',
+        x: 0.56,
+        y: 0.62,
         r: 0.12,
         revealOrder: 2
       },
       {
-        key: 'group-tree',
-        label: 'Tree',
-        prompt: 'Why is this plant called a tree?',
-        answer: 'A tree is tall and has one hard, thick main stem called a trunk.',
-        detail: 'Trees are large, strong plants with a single main trunk that supports many branches. They usually live much longer than herbs and shrubs. Their height and hard stem make them easy to group separately.',
-        x: 0.78,
-        y: 0.58,
-        r: 0.14,
+        key: 'balance-fssai',
+        label: 'FSSAI Logo',
+        prompt: 'What does the FSSAI logo tell us about this food?',
+        answer: 'The FSSAI logo shows the food has been checked for safety and quality standards in India.',
+        detail: 'FSSAI, the Food Safety and Standards Authority of India, is the government body that regulates food quality. Packaged foods must show the FSSAI licence number and nutritional information. This helps consumers make informed choices. Fortified foods like iodised salt carry the FSSAI standard mark, showing they meet the required nutritional specifications.',
+        x: 0.8,
+        y: 0.68,
+        r: 0.1,
         revealOrder: 3
       }
     ],
     questions: [
-      { q: 'A herb usually has a:', options: ['Soft green stem', 'Thick trunk', 'Metal stem'], correct: 0 },
-      { q: 'A tree has a hard thick main stem called:', options: ['Leaf', 'Root hair', 'Trunk'], correct: 2 }
+      { q: 'A balanced diet provides:', options: ['Only carbohydrates', 'All essential nutrients in right amounts', 'Only proteins'], correct: 1 },
+      { q: 'Junk foods are unhealthy because they are:', options: ['High in vitamins', 'Low in nutrients but high in calories', 'Natural foods'], correct: 1 },
+      { q: 'Which government body regulates food quality in India?', options: ['NASA', 'FSSAI', 'ISRO'], correct: 1 },
+      { q: 'Iodised salt is an example of:', options: ['Junk food', 'Fortified food', 'Organic food'], correct: 1 },
+      { q: 'Our nutritional needs differ based on:', options: ['Only our age', 'Age, gender, physical activity, and health status', 'Only what we like to eat'], correct: 1 }
     ]
   },
   {
     id: 5,
-    title: 'Monocots and Dicots',
-    summary: 'Seeds and leaf venation help us identify monocots and dicots.',
-    mascot: 'Now let us look inside seeds and then back at leaves to spot an important pattern.',
+    title: 'Millets: Nutri-Cereals',
+    summary: 'Millets like jowar, bajra, and ragi are highly nutritious grains called nutri-cereals, native to India.',
+    mascot: 'Ancient grains are making a healthy comeback. Millets are small but mighty in nutrition.',
     pages: [
       {
-        heading: 'Seeds have a baby plant inside',
+        heading: 'What are millets?',
         points: [
-          'A seed contains a tiny baby plant called an embryo. It also has stored food that helps the young plant begin its growth.',
-          'The seed leaves are called COTYLEDONS. Counting them helps us group many plants.'
+          'Millets are small-grained crops like jowar, bajra, ragi, and sanwa that have been grown in India for centuries.',
+          'They are highly nutritious, rich in iron, calcium, vitamins, and dietary fibres. That is why they are called nutri-cereals.'
         ]
       },
       {
-        heading: 'Monocots',
+        heading: 'Growing millets',
         points: [
-          'MONOCOTS have one cotyledon. Rice, wheat, maize, and onion are common examples.',
-          'Their leaves often show parallel venation, where the lines run side by side.'
+          'Millets can grow in different climatic conditions and need less water than rice or wheat.',
+          'They are native to India and have been part of Indian cuisine for generations.'
         ]
       },
       {
-        heading: 'Dicots',
+        heading: 'Why eat millets?',
         points: [
-          'DICOTS have two cotyledons. Beans, peas, gram, and sunflower are examples.',
-          'Their leaves often show reticulate venation, where the veins make a net-like pattern.'
+          'Millets provide sustained energy, help digestion, and are good for heart health.',
+          'Eating locally grown millets also reduces food miles and supports local farmers.'
         ]
       }
     ],
-    animationType: 'seeds',
-    animationCopy: 'Tap the seeds and leaves. Anty asks a question, waits a bit, and then reveals the clue.',
+    animationType: 'millets',
+    animationCopy: 'Tap each millet to learn about its nutrition and benefits. Anty explains why these ancient grains are special.',
     hotspots: [
       {
-        key: 'seed-one',
-        label: 'Monocot Seed',
-        prompt: 'What does this seed tell us about a monocot?',
-        answer: 'A monocot seed has one cotyledon.',
-        detail: 'Inside a monocot seed there is one cotyledon, or seed leaf. This is an important grouping clue in science. Many monocot plants also show parallel venation in their leaves, so students can connect what is inside the seed with what they see outside on the plant.',
-        x: 0.28,
+        key: 'millet-jowar',
+        label: 'Jowar',
+        prompt: 'What is special about jowar?',
+        answer: 'Jowar is a millet rich in protein, iron, and fibre. It is a staple food in many parts of India.',
+        detail: 'Jowar is one of the most important millets grown in India. It is rich in protein, iron, and dietary fibre. It is naturally gluten-free and easy to digest. Jowar rotis and bhakris are traditional foods in Maharashtra and Karnataka. Because jowar needs less water than wheat or rice, it is also more sustainable to grow.',
+        x: 0.18,
         y: 0.68,
         r: 0.1,
         revealOrder: 1
       },
       {
-        key: 'seed-two',
-        label: 'Dicot Seed',
-        prompt: 'How is this seed different from the first one?',
-        answer: 'A dicot seed has two cotyledons.',
-        detail: 'A dicot seed has two cotyledons. This hidden difference helps us separate one major group of plants from another. Dicots often also show net-like leaf venation, so seed structure and leaf pattern work together as clues.',
+        key: 'millet-bajra',
+        label: 'Bajra',
+        prompt: 'What nutrients does bajra give us?',
+        answer: 'Bajra is rich in iron, magnesium, and fibre. It is especially good for heart health.',
+        detail: 'Bajra or pearl millet is one of the most hardy millets. It can grow in very dry conditions where other crops would fail. It is rich in iron and magnesium, which are important for blood health and energy production. In Rajasthan, bajra rotis are a traditional staple. The fibre in bajra helps digestion and keeps blood sugar levels stable.',
         x: 0.46,
-        y: 0.68,
+        y: 0.66,
         r: 0.1,
         revealOrder: 2
       },
       {
-        key: 'seed-leaf',
-        label: 'Leaf Pattern',
-        prompt: 'What do these leaves tell us about plant grouping?',
-        answer: 'Leaf venation also helps us compare plants. Monocots often show parallel venation, while dicots often show net-like venation.',
-        detail: 'Leaf venation means the pattern made by the veins in a leaf. In many monocots the veins run side by side, while in many dicots they form a branching network. This gives students an easy visible clue for plant grouping without opening the seed every time.',
-        x: 0.77,
-        y: 0.56,
-        r: 0.16,
+        key: 'millet-ragi',
+        label: 'Ragi',
+        prompt: 'Why is ragi especially good for children?',
+        answer: 'Ragi is rich in calcium and amino acids that help build strong bones and support growth in children.',
+        detail: 'Ragi or finger millet is one of the most nutritious millets. It is exceptionally rich in calcium, which is vital for growing bones and teeth. It also contains iron and amino acids that support overall development. In Karnataka, ragi mudde is a traditional and nutritious staple. Ragi flour can be used to make porridge, dosas, and cookies, making it a versatile and healthy food for children and adults alike.',
+        x: 0.74,
+        y: 0.68,
+        r: 0.1,
         revealOrder: 3
       }
     ],
     questions: [
-      { q: 'Monocots have:', options: ['One cotyledon', 'Two trunks', 'No leaves'], correct: 0 },
-      { q: 'Dicot leaves often show:', options: ['Parallel venation', 'Reticulate venation', 'No veins'], correct: 1 }
+      { q: 'Millets are called nutri-cereals because they are:', options: ['Very expensive grains', 'Rich in vitamins, minerals, and fibre', 'Imported from other countries'], correct: 1 },
+      { q: 'Unlike rice, millets:', options: ['Need more water to grow', 'Can grow in different climatic conditions with less water', 'Contain no nutrients'], correct: 1 },
+      { q: 'Bajra is a millet commonly grown in:', options: ['Wet coastal regions', 'Dry and arid regions of Rajasthan', 'Mountainous areas'], correct: 1 },
+      { q: 'Which millet is also known as finger millet?', options: ['Bajra', 'Ragi', 'Jowar'], correct: 1 },
+      { q: 'The Indian government has declared 2023 as the International Year of:', options: ['Rice', 'Wheat', 'Millets'], correct: 2 }
+    ]
+  },
+  {
+    id: 6,
+    title: 'Food Miles: From Farm to Plate',
+    summary: 'Food miles are the distance food travels from production to our plate. Reducing food miles saves cost, reduces pollution, and keeps food fresh.',
+    mascot: 'Every meal has a journey. Let us follow food from the farm all the way to our plate.',
+    pages: [
+      {
+        heading: 'The journey of food',
+        points: [
+          'Food travels from the farmer through threshing, grinding, transport, and storage before reaching our plate.',
+          'A bag of wheat travels from field to mill to shop to our kitchen. Each step takes time and effort.'
+        ]
+      },
+      {
+        heading: 'What are food miles?',
+        points: [
+          'Food miles are the total distance food travels from producer to consumer. Long food miles mean more transport cost and pollution.',
+          'Eating locally grown food reduces food miles, supports local farmers, and keeps food fresher.'
+        ]
+      },
+      {
+        heading: 'Respecting food',
+        points: [
+          'We should take only as much food as we can eat. Reducing food waste helps the environment.',
+          'Eating local and seasonal food reduces pollution, saves energy, and supports our local farmers and community.'
+        ]
+      }
+    ],
+    animationType: 'food-miles',
+    animationCopy: 'Tap each step in the food journey. Anty explains how far food travels and why eating locally matters.',
+    hotspots: [
+      {
+        key: 'miles-farm',
+        label: 'Farm',
+        prompt: 'What happens at the farm in the food journey?',
+        answer: 'The farmer sows, tends, and harvests the crop. This is where our food journey begins.',
+        detail: 'Every food item starts at a farm. A wheat farmer in Punjab prepares the field, sows the seeds, waters the crop, and waits for harvest. This process takes months of careful work. The farmer uses seed grains that germinate and grow into the plants that will eventually become flour for our chapatis. Understanding this effort helps us respect food and avoid waste.',
+        x: 0.12,
+        y: 0.68,
+        r: 0.1,
+        revealOrder: 1
+      },
+      {
+        key: 'miles-transport',
+        label: 'Transport',
+        prompt: 'Why does food need to be transported over long distances?',
+        answer: 'Food is transported from farms to mills, then to shops. Long distances add cost, pollution, and reduce freshness.',
+        detail: 'After harvest, grain is threshed and winnowed to separate the grain from the husk. Then it travels by truck to a mill for grinding. After grinding and packing, it travels again to wholesale shops and finally to retail stores. Each journey step adds to food miles, increasing transport costs and carbon emissions. The longer the journey, the more freshness is lost.',
+        x: 0.42,
+        y: 0.62,
+        r: 0.1,
+        revealOrder: 2
+      },
+      {
+        key: 'miles-plate',
+        label: 'Our Plate',
+        prompt: 'What can we do to reduce food miles?',
+        answer: 'Eating locally grown, seasonal food reduces food miles and supports local farmers.',
+        detail: 'The final step is food on our plate. We can reduce food miles by choosing locally grown fruits and vegetables, eating seasonal foods, and buying from local farmers markets. When we waste food, we waste all the effort and resources that went into growing, transporting, and preparing it. Taking only what we can eat, and valuing the effort behind every meal, is what mindful eating is all about.',
+        x: 0.74,
+        y: 0.66,
+        r: 0.12,
+        revealOrder: 3
+      }
+    ],
+    questions: [
+      { q: 'Food miles refer to:', options: ['The weight of food', 'The distance food travels from producer to consumer', 'The number of people who eat the food'], correct: 1 },
+      { q: 'To reduce food miles we should:', options: ['Buy imported food', 'Eat locally grown, seasonal food', 'Order food online from far away'], correct: 1 },
+      { q: 'Eating seasonal food helps the environment by:', options: ['Increasing food imports', 'Reducing the need for cold storage and long-distance transport', 'Forcing farmers to grow only one crop'], correct: 1 },
+      { q: 'Which of these is a benefit of eating local food?', options: ['It always tastes the same', 'It supports local farmers and reduces pollution', 'It is always more expensive'], correct: 1 },
+      { q: 'Mindful eating includes:', options: ['Taking only what we can eat and valuing the effort', 'Eating as fast as possible', 'Wasting food if we are full'], correct: 0 }
     ]
   }
 ];
@@ -1140,6 +1195,13 @@ let selectionDetailTextEl = null;
 let animationState = null;
 let pointerIsDown = false;
 let ttsEnabled = true;
+
+function stopPhaser() {
+  if (!phaserGame) return;
+  phaserGame.destroy(true);
+  phaserGame = null;
+  document.getElementById('phaser-container').style.display = 'none';
+}
 
 const screens = {
   intro: null,
@@ -1171,6 +1233,7 @@ function setup() {
 function draw() {
   background(COLORS.bg);
   if (currentScreen === 'animate') {
+    if (phaserGame) return; // Phaser handles Topic 1
     drawAnimationBackdrop();
     drawAnimationScene();
   } else {
@@ -1215,8 +1278,8 @@ function startLearning() {
 function enterLearnPhase() {
   clearContinueRevealTimer();
   stopSpeech();
+  stopPhaser();
   animationState = null;
-  document.body.classList.add('learn-fullwidth');
   const topic = topics[topicIndex];
   currentPageIndex = 0;
   renderLesson(topic);
@@ -1226,7 +1289,6 @@ function enterLearnPhase() {
 
 function enterAnimatePhase() {
   clearContinueRevealTimer();
-  document.body.classList.remove('learn-fullwidth');
   stopSpeech();
   const topic = topics[topicIndex];
   document.getElementById('animate-topic-label').textContent = `Topic ${topicIndex + 1} of ${topics.length}`;
@@ -1236,7 +1298,17 @@ function enterAnimatePhase() {
   document.getElementById('continue-btn').classList.remove('pulse-ready');
   document.getElementById('continue-btn').disabled = true;
   setAnimationInfoVisible(false);
-  startAnimationSequence(topic);
+
+  if (topicIndex === 0) {
+    // Phaser 3 handles Topic 1 animation
+    startAnimationSequence(topic);
+    startPhaserForTopic1();
+  } else {
+    // p5.js handles remaining topics
+    stopPhaser();
+    startAnimationSequence(topic);
+  }
+
   showScreen('animate');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1244,7 +1316,7 @@ function enterAnimatePhase() {
 function enterCheckPhase() {
   clearContinueRevealTimer();
   stopSpeech();
-  document.body.classList.remove('learn-fullwidth');
+  stopPhaser();
   document.getElementById('continue-btn').classList.remove('pulse-ready');
   checked = false;
   showQuestions(topics[topicIndex]);
@@ -1263,7 +1335,6 @@ function handleNextTopic() {
 
 function enterSummaryPhase() {
   stopSpeech();
-  document.body.classList.remove('learn-fullwidth');
   updateProgress(true);
   showScreen('summary');
 }
@@ -1271,7 +1342,6 @@ function enterSummaryPhase() {
 function restart() {
   clearContinueRevealTimer();
   stopSpeech();
-  document.body.classList.remove('learn-fullwidth');
   checked = false;
   topicIndex = 0;
   currentPageIndex = 0;
@@ -1294,11 +1364,9 @@ function renderLesson(topic) {
   const intro = document.createElement('section');
   intro.className = 'lesson-page lesson-page--active';
   intro.dataset.page = 0;
-
   const introHeading = document.createElement('h3');
   introHeading.textContent = 'Start with the scene';
   intro.appendChild(introHeading);
-
   const introText = document.createElement('p');
   introText.innerHTML = highlightTerms(`Most of this topic is taught in the animation. ${topic.summary} Tap the scene items, listen to Anty, and then come back here only for a short recap.`);
   intro.appendChild(introText);
@@ -1308,18 +1376,15 @@ function renderLesson(topic) {
     const section = document.createElement('section');
     section.className = 'lesson-page';
     section.dataset.page = index + 1;
-
     const h = document.createElement('h3');
     h.textContent = page.heading;
     section.appendChild(h);
-
     const condensed = page.points.slice(0, 1);
     condensed.forEach(point => {
       const p = document.createElement('p');
       p.innerHTML = highlightTerms(point);
       section.appendChild(p);
     });
-
     pagesEl.appendChild(section);
   });
 
@@ -1340,12 +1405,10 @@ function updateLessonPage() {
   pages.forEach((page, index) => {
     page.classList.toggle('lesson-page--active', index === currentPageIndex);
   });
-
   document.getElementById('page-indicator').textContent = `Page ${currentPageIndex + 1} of ${topic.pages.length}`;
   document.getElementById('prev-page-btn').disabled = currentPageIndex === 0;
   document.getElementById('next-page-btn').disabled = currentPageIndex === topic.pages.length - 1;
   document.getElementById('animate-btn').disabled = currentPageIndex !== topic.pages.length - 1;
-
   const ant = document.getElementById('ant-mascot');
   ant.style.transform = `translateX(${currentPageIndex * 10}px) scale(${1 + currentPageIndex * 0.03})`;
 }
@@ -1379,12 +1442,10 @@ function showQuestion(topic, qIndex, qTextEl, qOptionsEl) {
     nextBtn.textContent = topicIndex < topics.length - 1 ? 'Next Topic' : 'See Summary';
     return;
   }
-
   const q = topic.questions[qIndex];
   qTextEl.textContent = q.q;
   qOptionsEl.innerHTML = '';
   document.getElementById('next-topic-btn').style.display = 'none';
-
   q.options.forEach((opt, i) => {
     const btn = document.createElement('button');
     btn.className = 'q-option';
@@ -1401,20 +1462,19 @@ function selectOption(topic, qIndex, idx, btn, qTextEl, qOptionsEl, q) {
   const allBtns = qOptionsEl.querySelectorAll('.q-option');
   allBtns.forEach(b => b.disabled = true);
   btn.classList.add('selected');
-
   if (idx === q.correct) {
     btn.classList.add('correct');
     setTimeout(() => {
       checked = false;
       showQuestion(topic, qIndex + 1, qTextEl, qOptionsEl);
-    }, 2000);
+    }, 700);
   } else {
     btn.classList.add('wrong');
     allBtns[q.correct].classList.add('correct');
     setTimeout(() => {
       checked = false;
       showQuestion(topic, qIndex + 1, qTextEl, qOptionsEl);
-    }, 3500);
+    }, 1300);
   }
 }
 
@@ -1424,7 +1484,7 @@ function updateProgress(forceComplete = false) {
 }
 
 function highlightTerms(text) {
-  const terms = ['BIODIVERSITY', 'HERBS', 'SHRUBS', 'TREES', 'MONOCOTS', 'DICOTS', 'COTYLEDONS'];
+  const terms = ['CARBOHYDRATES', 'PROTEINS', 'FATS', 'VITAMINS', 'MINERALS', 'ROUGHAGE', 'BALANCED DIET', 'JUNK FOOD', 'FSSAI', 'FORTIFIED', 'BIODIVERSITY', 'MILLETS', 'NUTRI-CEREALS', 'FOOD MILES', 'IODISED SALT', 'SCOURVY', 'GOITRE', 'BERIBERI', 'RICKETS', 'ANAEMIA'];
   let out = text;
   terms.forEach(term => {
     out = out.replaceAll(term, `<span class="term-highlight">${term}</span>`);
@@ -1452,7 +1512,7 @@ function startAnimationSequence(topic) {
     bubbleStage: 'idle',
     bubbleStageStartedAt: millis(),
     answeredKeys: [],
-    autoAdvanceAt: 0,
+    autoAdvanceAt: Infinity,
     promptDelayMs: 0,
     answerHoldMs: 0,
     revealCooldownMs: 1400
@@ -1525,11 +1585,12 @@ function beginHotspotPrompt(hotspot) {
   animationState.bubbleStage = 'prompt';
   animationState.bubbleStageStartedAt = millis();
   animationState.bubbleText = hotspot.prompt;
-  animationState.autoAdvanceAt = Infinity;
+  const speechDuration = estimateSpeechDurationMs(hotspot.prompt);
+  animationState.autoAdvanceAt = millis() + speechDuration + 500;
   renderAnimationHotspotButtons();
   setBubbleText(animationState.bubbleText, true, () => {
     if (!animationState || animationState.currentHotspotKey !== hotspot.key || animationState.bubbleStage !== 'prompt') return;
-    animationState.autoAdvanceAt = millis() + 300;
+    animationState.autoAdvanceAt = millis() + 400;
   });
   setSelectionDetail(hotspot.label, hotspot.detail || hotspot.answer);
   fadeSelectionDetail(false);
@@ -1559,22 +1620,20 @@ function advanceAnimationFlow(topic) {
   if (!animationState || animationState.topicId !== topic.id) {
     startAnimationSequence(topic);
   }
-
   const hotspots = animationState.hotspots || [];
   if (!hotspots.length) {
     finishAnimationTopic();
     return animationState;
   }
-
   const now = millis();
-
   if (animationState.bubbleStage === 'prompt' && now >= animationState.autoAdvanceAt) {
     const hotspot = hotspots.find(h => h.key === animationState.currentHotspotKey);
     if (hotspot) {
       animationState.bubbleStage = 'answer';
       animationState.bubbleStageStartedAt = now;
       animationState.bubbleText = hotspot.answer;
-      animationState.autoAdvanceAt = Infinity;
+      const answerDuration = estimateSpeechDurationMs(hotspot.answer);
+      animationState.autoAdvanceAt = millis() + answerDuration + 500;
       setBubbleText(animationState.bubbleText, true, () => {
         if (!animationState || animationState.currentHotspotKey !== hotspot.key || animationState.bubbleStage !== 'answer') return;
         animationState.autoAdvanceAt = millis() + 700;
@@ -1605,7 +1664,6 @@ function advanceAnimationFlow(topic) {
       if (instruction && nextHotspot) instruction.textContent = `Next, tap ${nextHotspot.label.toLowerCase()}.`;
     }
   }
-
   const activeHotspot = hotspots.find(h => h.key === animationState.currentHotspotKey);
   const targetX = activeHotspot ? activeHotspot.x : (hotspots[Math.min(animationState.currentHotspotIndex, hotspots.length - 1)]?.x ?? 0.2);
   animationState.antProgress = constrain(targetX, 0.08, 0.92);
@@ -1682,29 +1740,33 @@ function drawAnimationScene() {
   drawAnimationHotspots(v, state);
   drawWalkingAnt(antX, groundY - 10, width < 700 ? 1.45 : 1.7);
 
-  if (topic.animationType === 'forest') {
-    drawTree(left + v.w * 0.12, groundY, 1);
-    drawTree(left + v.w * 0.3, groundY + 10, 0.9);
-    drawBird(left + v.w * 0.68, top + v.h * 0.25, 1);
-    drawBird(left + v.w * 0.8, top + v.h * 0.18, 0.92);
-    drawFlower(left + v.w * 0.54, groundY + 4, '#FF6B6B', 1);
-  } else if (topic.animationType === 'plants') {
-    drawSmallPlant(left + v.w * 0.18, groundY + 10, 1);
-    drawFlower(left + v.w * 0.42, groundY + 6, '#FFD166', 1);
-    drawTree(left + v.w * 0.72, groundY, 1);
-  } else if (topic.animationType === 'animals') {
-    drawBird(left + v.w * 0.24, top + v.h * 0.22, 1);
-    drawFish(left + v.w * 0.58, groundY + 18, 1);
-    drawCow(left + v.w * 0.82, groundY - 8, 1);
-  } else if (topic.animationType === 'groups') {
-    drawSmallPlant(left + v.w * 0.18, groundY + 10, 1);
-    drawShrub(left + v.w * 0.48, groundY + 8, 1);
-    drawTree(left + v.w * 0.78, groundY, 1);
-  } else if (topic.animationType === 'seeds') {
-    drawSeed(left + v.w * 0.28, groundY - 12, '#F4D35E', 1);
-    drawSeed(left + v.w * 0.46, groundY - 12, '#EE964B', 1);
-    drawLeaf(left + v.w * 0.7, groundY - 20, false, 1);
-    drawLeaf(left + v.w * 0.84, groundY - 20, true, 0.92);
+  const at = topic.animationType;
+  if (at === 'food-diversity') {
+    // Vertically center objects in the animation viewport
+    groundY = v.y + v.h / 2;
+    drawPunjabiMeal(left + v.w * 0.18, groundY, 1);
+    drawSouthIndianMeal(left + v.w * 0.5, groundY, 1);
+    drawChulha(left + v.w * 0.78, groundY, 1);
+  } else if (at === 'food-components') {
+    drawGrainBunch(left + v.w * 0.16, groundY + 10, '#F4D35E', 1);
+    drawPulseBunch(left + v.w * 0.46, groundY + 8, 1);
+    drawFruit(left + v.w * 0.76, groundY + 6, 1);
+  } else if (at === 'food-tests') {
+    drawTestTube(left + v.w * 0.22, groundY + 14, '#1a4a8a', 1);
+    drawTestTube(left + v.w * 0.5, groundY + 14, '#8B6914', 1);
+    drawTestTube(left + v.w * 0.78, groundY + 14, '#6a2c91', 1);
+  } else if (at === 'balanced-diet') {
+    drawPlate(left + v.w * 0.26, groundY + 8, 1);
+    drawBiscuit(left + v.w * 0.54, groundY + 10, 1);
+    drawFssaiLogo(left + v.w * 0.8, groundY + 14, 1);
+  } else if (at === 'millets') {
+    drawMilletBunch(left + v.w * 0.16, groundY + 10, '#8B6914', 1);
+    drawMilletBunch(left + v.w * 0.44, groundY + 10, '#5a4a2a', 1);
+    drawMilletBunch(left + v.w * 0.72, groundY + 10, '#7a3a1a', 1);
+  } else if (at === 'food-miles') {
+    drawFarm(left + v.w * 0.12, groundY + 4, 1);
+    drawTruck(left + v.w * 0.42, groundY + 12, 1);
+    drawPlate(left + v.w * 0.74, groundY + 8, 1);
   }
 }
 
@@ -1859,82 +1921,175 @@ function drawSmallPlant(x, y, prog = 1) {
   pop();
 }
 
-function drawFish(x, y, prog = 1) {
-  if (prog <= 0) return;
-  push();
-  translate(x + sin(frameCount * 0.04) * 10, y);
-  scale(0.65 + prog * 0.35);
-  fill(79, 195, 247, 255 * prog);
-  ellipse(0, 0, 50, 26);
-  triangle(24, 0, 42, -14, 42, 14);
-  fill(255, 255 * prog);
-  circle(-12, -4, 7);
-  pop();
+// ─── Punjabi Meal (makki di roti + sarson da saag) ───
+function drawPunjabiMeal(x, y, prog = 1) {
+  drawFoodImg(foodPunjabiMeal, x, y, 160, 110, prog);
 }
 
-function drawCow(x, y, prog = 1) {
-  if (prog <= 0) return;
-  push();
-  translate(x, y + sin(frameCount * 0.03) * 2);
-  scale(0.72 + prog * 0.28);
-  fill(245, 245, 245, 255 * prog);
-  ellipse(0, 0, 74, 42);
-  ellipse(-40, -12, 30, 24);
-  rect(-22, 18, 8, 22, 2);
-  rect(12, 18, 8, 22, 2);
-  fill(109, 76, 65, 255 * prog);
-  ellipse(-6, -4, 12, 10);
-  ellipse(16, 4, 12, 10);
-  pop();
+// ─── South Indian Meal (idli + sambar) ───
+function drawSouthIndianMeal(x, y, prog = 1) {
+  drawFoodImg(foodSouthIndianMeal, x, y, 150, 110, prog);
 }
 
-function drawShrub(x, y, prog = 1) {
+function drawGrainBunch(x, y, col, prog = 1) {
   if (prog <= 0) return;
   push();
   translate(x, y);
-  scale(0.65 + prog * 0.35);
-  fill(46, 139, 87, 255 * prog);
-  circle(0, -28, 46);
-  circle(-18, -8, 38);
-  circle(18, -8, 38);
-  fill(109, 76, 65, 255 * prog);
-  rect(-6, 0, 12, 18, 4);
-  pop();
-}
-
-function drawSeed(x, y, col, prog = 1) {
-  if (prog <= 0) return;
-  push();
-  translate(x, y + sin(frameCount * 0.04) * 4);
-  scale(0.55 + prog * 0.45);
+  scale(0.8 + prog * 0.2);
+  noStroke();
   fill(red(col), green(col), blue(col), 255 * prog);
-  ellipse(0, 0, 36, 46);
-  stroke(150, 90, 30, 255 * prog);
-  strokeWeight(2);
-  line(0, -16, 0, 16);
+  for (let i = 0; i < 8; i++) {
+    const gx = (i % 4 - 1.5) * 14;
+    const gy = Math.floor(i / 4) * -18;
+    ellipse(gx, gy, 16, 28);
+  }
   pop();
 }
 
-function drawLeaf(x, y, netLike, prog = 1) {
+function drawPulseBunch(x, y, prog = 1) {
   if (prog <= 0) return;
   push();
   translate(x, y);
-  scale(0.55 + prog * 0.45);
-  fill(124, 179, 66, 255 * prog);
-  ellipse(0, 0, 52, 96);
-  stroke(255, 255, 255, 180 * prog);
-  strokeWeight(2);
-  line(0, -40, 0, 40);
-  if (netLike) {
-    for (let i = -24; i <= 24; i += 12) {
-      line(0, i, -16, i - 8);
-      line(0, i, 16, i - 8);
-    }
-  } else {
-    for (let i = -18; i <= 18; i += 9) {
-      line(i, -32, i, 32);
+  scale(0.8 + prog * 0.2);
+  noStroke();
+  fill(139, 90, 43, 255 * prog);
+  const positions = [[-12, -10], [0, -8], [12, -10], [-6, 4], [6, 4], [0, 16]];
+  positions.forEach(([px, py]) => ellipse(px, py, 14, 12));
+  pop();
+}
+
+function drawFruit(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x + sin(frameCount * 0.03) * 4, y);
+  scale(0.8 + prog * 0.2);
+  noStroke();
+  fill(255, 200, 60, 255 * prog);
+  ellipse(0, 0, 38, 44);
+  fill(76, 175, 80, 255 * prog);
+  ellipse(2, -20, 8, 10);
+  stroke(76, 139, 50, 255 * prog);
+  strokeWeight(3);
+  line(2, -18, 2, -26);
+  pop();
+}
+
+function drawTestTube(x, y, col, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.85 + prog * 0.15);
+  noStroke();
+  fill(200, 220, 255, 150 * prog);
+  rect(-8, -50, 16, 55, 8);
+  noStroke();
+  fill(red(col), green(col), blue(col), 220 * prog);
+  rect(-6, -20, 12, 24, 0, 0, 6, 6);
+  // bubble
+  fill(255, 255, 255, 80 * prog);
+  circle(-2, -14, 5 * prog);
+  circle(2, -8, 3 * prog);
+  pop();
+}
+
+// ─── Traditional clay chulha ───
+function drawChulha(x, y, prog = 1) {
+  drawFoodImg(foodChulha, x, y, 130, 120, prog);
+}
+
+function drawBiscuit(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(220, 180, 80, 255 * prog);
+  rect(-28, -18, 56, 36, 8);
+  fill(180, 140, 50, 200 * prog);
+  for (let i = -20; i <= 20; i += 10) {
+    for (let j = -10; j <= 10; j += 10) {
+      circle(i, j, 6 * prog);
     }
   }
+  pop();
+}
+
+function drawFssaiLogo(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.6 + prog * 0.4);
+  noStroke();
+  fill(255, 150, 50, 255 * prog);
+  circle(0, 0, 60 * prog);
+  fill(255, 255, 255, 255 * prog);
+  circle(0, 0, 46 * prog);
+  fill(30, 130, 60, 255 * prog);
+  textAlign(CENTER, CENTER);
+  textSize(14 * prog);
+  textFont('Nunito');
+  text('FSSAI', 0, 0);
+  pop();
+}
+
+function drawMilletBunch(x, y, col, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(red(col), green(col), blue(col), 255 * prog);
+  for (let i = 0; i < 6; i++) {
+    const mx = (i % 3 - 1) * 16;
+    const my = Math.floor(i / 3) * -18;
+    ellipse(mx, my, 14, 20);
+  }
+  stroke(139, 90, 43, 200 * prog);
+  strokeWeight(2);
+  for (let i = 0; i < 3; i++) {
+    line((i - 1) * 16, 0, (i - 1) * 16, 14);
+  }
+  pop();
+}
+
+function drawFarm(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x, y);
+  scale(0.7 + prog * 0.3);
+  noStroke();
+  fill(76, 175, 80, 200 * prog);
+  rect(-40, -10, 80, 20);
+  fill(101, 67, 33, 255 * prog);
+  rect(-6, -40, 12, 40, 4);
+  fill(46, 139, 87, 255 * prog);
+  circle(0, -50, 40 * prog);
+  circle(-16, -38, 30 * prog);
+  circle(16, -38, 30 * prog);
+  fill(255, 220, 80, 200 * prog);
+  ellipse(-26, -20, 12, 8);
+  ellipse(26, -20, 12, 8);
+  ellipse(0, -14, 14, 8);
+  pop();
+}
+
+function drawTruck(x, y, prog = 1) {
+  if (prog <= 0) return;
+  push();
+  translate(x + sin(frameCount * 0.02) * 6, y);
+  scale(0.6 + prog * 0.4);
+  noStroke();
+  fill(100, 180, 255, 255 * prog);
+  rect(-30, -28, 40, 30, 6);
+  fill(180, 220, 255, 255 * prog);
+  rect(-30, -28, 40, 16, 6, 6, 0, 0);
+  fill(80, 140, 200, 255 * prog);
+  rect(10, -20, 22, 22, 4);
+  fill(60, 60, 60, 255 * prog);
+  circle(-18, 8, 14 * prog);
+  circle(22, 8, 14 * prog);
+  fill(200, 160, 60, 200 * prog);
+  rect(-28, -14, 36, 12, 3);
   pop();
 }
 
@@ -1944,5 +2099,6 @@ function windowResized() {
   renderAnimationHotspotButtons();
 }
 </script>
+  <script src="/static/ncert/phaser-scene.js"></script>
 </body>
 </html>

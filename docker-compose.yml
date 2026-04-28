@@ -11,6 +11,7 @@ services:
     ports:
       - "18000:8000"
     volumes:
+      - ./app/static:/app/app/static
       - media_data:/app/app/static/media
 
   seaweedfs:

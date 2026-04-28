@@ -1,0 +1,3 @@
+- [x] Convert NCERT Chapter 2 learn pages from canvas text to responsive multi-page HTML content cards with larger fonts
+- [x] Add animated ant mascot guide integrated into learn/animate/check flow
+- [x] Rebuild QA app and verify live NCERT page reflects the new responsive multi-page layout
