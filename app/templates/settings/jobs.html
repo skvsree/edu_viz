@@ -28,7 +28,26 @@
             <header class="jobs-bulk-card__header">
               <div class="jobs-bulk-card__title-row jobs-bulk-card__title-row--compact">
                 <div class="jobs-bulk-card__title-main">
-                  <div class="jobs-bulk-card__filename">{{ bulk.filename or "Bulk upload" }}</div>
+                  <div class="jobs-bulk-card__filename-row">
+                    <div class="jobs-bulk-card__filename">{{ bulk.filename or "Bulk upload" }}</div>
+                    {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] %}
+                    {% if can_retry_all %}
+                      <button
+                        type="button"
+                        class="jobs-open-retry-modal jobs-open-retry-modal--bulk"
+                        data-retry-scope="bulk"
+                        data-bulk-id="{{ job.reference_id }}"
+                        data-bulk-filename="{{ bulk.filename or 'Bulk upload' }}"
+                        data-bulk-status="{{ bulk.status or 'pending' }}"
+                        data-confirm-title="Retry all files?"
+                        data-confirm-body="This will retry all files from the original ZIP upload."
+                        data-confirm-label="Retry all"
+                        data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume"
+                      >
+                        Retry all
+                      </button>
+                    {% endif %}
+                  </div>
                   <div class="jobs-bulk-card__date">{{ bulk.created_at.strftime('%Y-%m-%d %H:%M') if bulk.created_at else '—' }}</div>
                 </div>
                 <span class="jobs-status {{ 'jobs-status--running' if bulk.status in ['pending', 'processing'] else 'jobs-status--completed' if bulk.status == 'completed' else 'jobs-status--failed' }}">
@@ -45,20 +64,6 @@
               </div>
 
               <div class="jobs-bulk-second-line">
-                {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] %}
-                {% set can_force_retry_all = bulk.status in ['pending', 'processing', 'failed', 'stopped', 'completed'] %}
-                {% if can_retry_all or can_force_retry_all %}
-                  <button
-                    type="button"
-                    class="jobs-open-retry-modal"
-                    data-retry-scope="bulk"
-                    data-bulk-id="{{ job.reference_id }}"
-                    data-bulk-filename="{{ bulk.filename or 'Bulk upload' }}"
-                    data-bulk-status="{{ bulk.status or 'pending' }}"
-                  >
-                    Retry options
-                  </button>
-                {% endif %}
                 {% if output_decks %}
                   {% for file_group in output_decks %}
                     {% set latest = file_group.latest_file %}
@@ -97,7 +102,7 @@
                             <div class="jobs-attempt-row__actions">
                               {% set can_retry_file = latest_status == 'failed' %}
                               {% set can_force_retry_file = latest_status in ['pending', 'processing', 'failed', 'completed'] %}
-                              {% if can_retry_file or can_force_retry_file %}
+                              {% if can_retry_file %}
                                 <button
                                   type="button"
                                   class="jobs-open-retry-modal"
@@ -107,10 +112,30 @@
                                   data-filename="{{ file_group.filename }}"
                                   data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}"
                                   data-file-status="{{ latest_status or 'pending' }}"
-                                  data-can-retry="{{ '1' if can_retry_file else '0' }}"
-                                  data-can-force-retry="{{ '1' if can_force_retry_file else '0' }}"
+                                  data-confirm-title="Retry failed file?"
+                                  data-confirm-body="This will retry only this failed file."
+                                  data-confirm-label="Retry file"
+                                  data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}"
                                 >
-                                  Retry options
+                                  Retry
+                                </button>
+                              {% endif %}
+                              {% if can_force_retry_file %}
+                                <button
+                                  type="button"
+                                  class="jobs-open-retry-modal jobs-open-retry-modal--force"
+                                  data-retry-scope="file-force"
+                                  data-bulk-id="{{ job.reference_id }}"
+                                  data-file-id="{{ latest.id }}"
+                                  data-filename="{{ file_group.filename }}"
+                                  data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}"
+                                  data-file-status="{{ latest_status or 'pending' }}"
+                                  data-confirm-title="Force retry this file?"
+                                  data-confirm-body="This will re-run this file even if it already completed or is still processing."
+                                  data-confirm-label="Force retry"
+                                  data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}&force=1"
+                                >
+                                  Force retry
                                 </button>
                               {% endif %}
                             </div>
@@ -137,9 +162,20 @@
                             </div>
                           </div>
                           <div class="jobs-attempt-row__actions">
-                            <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume" class="jobs-retry-form">
-                              <button type="submit" class="jobs-retry-button">Retry</button>
-                            </form>
+                            <button
+                              type="button"
+                              class="jobs-open-retry-modal jobs-open-retry-modal--bulk"
+                              data-retry-scope="bulk"
+                              data-bulk-id="{{ job.reference_id }}"
+                              data-bulk-filename="{{ bulk.filename or 'Upload' }}"
+                              data-bulk-status="{{ bulk.status or 'failed' }}"
+                              data-confirm-title="Retry all files?"
+                              data-confirm-body="This will retry all files from the original ZIP upload."
+                              data-confirm-label="Retry all"
+                              data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume"
+                            >
+                              Retry all
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -261,6 +297,13 @@
   .jobs-bulk-card__title-main {
     min-width: 0;
     flex: 1 1 auto;
+  }
+
+  .jobs-bulk-card__filename-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
   }
 
   .jobs-bulk-card__filename {
@@ -547,6 +590,12 @@
     cursor: pointer;
   }
 
+  .jobs-open-retry-modal--force {
+    border-color: rgba(124, 58, 237, 0.3);
+    background: rgba(124, 58, 237, 0.12);
+    color: #6d28d9;
+  }
+
   .jobs-open-retry-modal::before {
     content: '';
     width: 0.9rem;
@@ -624,23 +673,24 @@
 <dialog id="jobs-retry-modal" class="jobs-retry-modal">
   <form method="dialog" class="jobs-retry-modal__card stack-sm">
     <div>
-      <h2 class="jobs-retry-modal__title">Retry options</h2>
+      <h2 id="jobs-retry-modal-title" class="jobs-retry-modal__title">Confirm retry</h2>
       <div id="jobs-retry-modal-meta" class="jobs-retry-modal__meta"></div>
     </div>
 
     <div id="jobs-retry-modal-actions" class="jobs-retry-modal__actions"></div>
 
-    <button type="submit" class="jobs-retry-button jobs-retry-modal__button jobs-retry-modal__button--close">Close</button>
+    <button type="submit" class="jobs-retry-button jobs-retry-modal__button jobs-retry-modal__button--close">Cancel</button>
   </form>
 </dialog>
 
 <script>
   (function () {
     var modal = document.getElementById('jobs-retry-modal');
+    var title = document.getElementById('jobs-retry-modal-title');
     var meta = document.getElementById('jobs-retry-modal-meta');
     var actions = document.getElementById('jobs-retry-modal-actions');
 
-    if (!modal || !meta || !actions) return;
+    if (!modal || !title || !meta || !actions) return;
 
     function escapeHtml(value) {
       return String(value || '')
@@ -668,36 +718,27 @@
 
     function openRetryModal(trigger) {
       var scope = trigger.dataset.retryScope || 'file';
-      var bulkId = trigger.dataset.bulkId;
       var filename = trigger.dataset.filename || trigger.dataset.bulkFilename || 'Upload';
-      var title = trigger.dataset.title || filename;
+      var itemTitle = trigger.dataset.title || filename;
       var status = trigger.dataset.fileStatus || trigger.dataset.bulkStatus || 'pending';
-      var canRetry = trigger.dataset.canRetry === '1';
-      var canForceRetry = trigger.dataset.canForceRetry === '1';
+      var confirmTitle = trigger.dataset.confirmTitle || 'Confirm retry';
+      var confirmBody = trigger.dataset.confirmBody || 'Are you sure you want to retry this item?';
+      var confirmLabel = trigger.dataset.confirmLabel || 'Retry';
+      var actionUrl = trigger.dataset.actionUrl || '';
 
+      title.textContent = confirmTitle;
       actions.innerHTML = '';
 
       if (scope === 'bulk') {
-        meta.innerHTML = '<strong>' + escapeHtml(filename) + '</strong><br>Status: ' + escapeHtml(status);
-        if (['failed', 'stopped', 'completed'].indexOf(status) !== -1) {
-          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume', 'Retry all', ''));
-        }
-        if (['pending', 'processing', 'failed', 'stopped', 'completed'].indexOf(status) !== -1) {
-          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume?force=1', 'Force retry all', 'jobs-retry-modal__button--secondary'));
-        }
+        meta.innerHTML = '<strong>' + escapeHtml(filename) + '</strong><br>Status: ' + escapeHtml(status) + '<br>' + escapeHtml(confirmBody);
       } else {
-        var fileId = trigger.dataset.fileId;
-        meta.innerHTML = '<strong>' + escapeHtml(title) + '</strong><br>File: ' + escapeHtml(filename) + '<br>Status: ' + escapeHtml(status);
-        if (canRetry) {
-          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume?file_id=' + encodeURIComponent(fileId), 'Retry file', ''));
-        }
-        if (canForceRetry) {
-          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume?file_id=' + encodeURIComponent(fileId) + '&force=1', 'Force retry file', 'jobs-retry-modal__button--secondary'));
-        }
+        meta.innerHTML = '<strong>' + escapeHtml(itemTitle) + '</strong><br>File: ' + escapeHtml(filename) + '<br>Status: ' + escapeHtml(status) + '<br>' + escapeHtml(confirmBody);
       }
 
-      if (!actions.children.length) {
-        actions.innerHTML = '<p class="muted">No retry actions available for this item.</p>';
+      if (actionUrl) {
+        actions.appendChild(buildActionForm(actionUrl, confirmLabel, scope === 'file-force' ? 'jobs-retry-modal__button--secondary' : ''));
+      } else {
+        actions.innerHTML = '<p class="muted">No retry action available for this item.</p>';
       }
 
       modal.showModal();
