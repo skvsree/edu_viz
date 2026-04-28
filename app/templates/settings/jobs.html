@@ -45,6 +45,20 @@
               </div>
 
               <div class="jobs-bulk-second-line">
+                {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] %}
+                {% set can_force_retry_all = bulk.status in ['pending', 'processing', 'failed', 'stopped', 'completed'] %}
+                {% if can_retry_all or can_force_retry_all %}
+                  <button
+                    type="button"
+                    class="jobs-open-retry-modal"
+                    data-retry-scope="bulk"
+                    data-bulk-id="{{ job.reference_id }}"
+                    data-bulk-filename="{{ bulk.filename or 'Bulk upload' }}"
+                    data-bulk-status="{{ bulk.status or 'pending' }}"
+                  >
+                    Retry options
+                  </button>
+                {% endif %}
                 {% if output_decks %}
                   {% for file_group in output_decks %}
                     {% set latest = file_group.latest_file %}
@@ -81,15 +95,23 @@
                               {% endif %}
                             </div>
                             <div class="jobs-attempt-row__actions">
-                              {% if is_failed %}
-                                <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}" class="jobs-retry-form">
-                                  <button type="submit" class="jobs-retry-button">Retry</button>
-                                </form>
-                              {% endif %}
-                              {% if latest_status in ['pending', 'processing', 'failed'] %}
-                                <form method="post" action="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}&force=1" class="jobs-retry-form">
-                                  <button type="submit" class="jobs-retry-button jobs-retry-button--force">Force retry</button>
-                                </form>
+                              {% set can_retry_file = latest_status == 'failed' %}
+                              {% set can_force_retry_file = latest_status in ['pending', 'processing', 'failed', 'completed'] %}
+                              {% if can_retry_file or can_force_retry_file %}
+                                <button
+                                  type="button"
+                                  class="jobs-open-retry-modal"
+                                  data-retry-scope="file"
+                                  data-bulk-id="{{ job.reference_id }}"
+                                  data-file-id="{{ latest.id }}"
+                                  data-filename="{{ file_group.filename }}"
+                                  data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}"
+                                  data-file-status="{{ latest_status or 'pending' }}"
+                                  data-can-retry="{{ '1' if can_retry_file else '0' }}"
+                                  data-can-force-retry="{{ '1' if can_force_retry_file else '0' }}"
+                                >
+                                  Retry options
+                                </button>
                               {% endif %}
                             </div>
                           </div>
@@ -508,6 +530,185 @@
     }
   }
 
+  .jobs-open-retry-modal {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--accent-color);
+    border-radius: 999px;
+    padding: 0.38rem 0.8rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .jobs-open-retry-modal::before {
+    content: '';
+    width: 0.9rem;
+    height: 0.9rem;
+    border-radius: 999px;
+    border: 2px solid rgba(120, 113, 108, 0.2);
+    border-top-color: rgba(120, 113, 108, 0.9);
+    animation: rlspin 0.7s linear infinite;
+  }
+
+  .jobs-retry-modal {
+    width: min(92vw, 460px);
+    border: 1px solid color-mix(in srgb, var(--border-color) 74%, #94a3b8 26%);
+    border-radius: 18px;
+    padding: 0;
+    background: var(--card-bg);
+    color: var(--text-color);
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+  }
+
+  .jobs-retry-modal::backdrop {
+    background: rgba(15, 23, 42, 0.18);
+  }
+
+  .jobs-retry-modal__card {
+    padding: 1rem;
+  }
+
+  .jobs-retry-modal__title {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .jobs-retry-modal__meta {
+    margin-top: 0.3rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+    word-break: break-word;
+  }
+
+  .jobs-retry-modal__actions {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.9rem;
+  }
+
+  .jobs-retry-modal__form {
+    margin: 0;
+  }
+
+  .jobs-retry-modal__button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .jobs-retry-modal__button--secondary {
+    border-color: rgba(124, 58, 237, 0.3);
+    background: rgba(124, 58, 237, 0.12);
+    color: #6d28d9;
+  }
+
+  .jobs-retry-modal__button--close {
+    border-color: color-mix(in srgb, var(--border-color) 88%, transparent);
+    background: var(--surface);
+    color: var(--text-color);
+  }
+
+  @keyframes rlspin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 </style>
+
+<dialog id="jobs-retry-modal" class="jobs-retry-modal">
+  <form method="dialog" class="jobs-retry-modal__card stack-sm">
+    <div>
+      <h2 class="jobs-retry-modal__title">Retry options</h2>
+      <div id="jobs-retry-modal-meta" class="jobs-retry-modal__meta"></div>
+    </div>
+
+    <div id="jobs-retry-modal-actions" class="jobs-retry-modal__actions"></div>
+
+    <button type="submit" class="jobs-retry-button jobs-retry-modal__button jobs-retry-modal__button--close">Close</button>
+  </form>
+</dialog>
+
+<script>
+  (function () {
+    var modal = document.getElementById('jobs-retry-modal');
+    var meta = document.getElementById('jobs-retry-modal-meta');
+    var actions = document.getElementById('jobs-retry-modal-actions');
+
+    if (!modal || !meta || !actions) return;
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function buildActionForm(action, label, extraClass) {
+      var form = document.createElement('form');
+      form.method = 'post';
+      form.action = action;
+      form.className = 'jobs-retry-modal__form';
+
+      var button = document.createElement('button');
+      button.type = 'submit';
+      button.className = 'jobs-retry-button jobs-retry-modal__button' + (extraClass ? ' ' + extraClass : '');
+      button.textContent = label;
+
+      form.appendChild(button);
+      return form;
+    }
+
+    function openRetryModal(trigger) {
+      var scope = trigger.dataset.retryScope || 'file';
+      var bulkId = trigger.dataset.bulkId;
+      var filename = trigger.dataset.filename || trigger.dataset.bulkFilename || 'Upload';
+      var title = trigger.dataset.title || filename;
+      var status = trigger.dataset.fileStatus || trigger.dataset.bulkStatus || 'pending';
+      var canRetry = trigger.dataset.canRetry === '1';
+      var canForceRetry = trigger.dataset.canForceRetry === '1';
+
+      actions.innerHTML = '';
+
+      if (scope === 'bulk') {
+        meta.innerHTML = '<strong>' + escapeHtml(filename) + '</strong><br>Status: ' + escapeHtml(status);
+        if (['failed', 'stopped', 'completed'].indexOf(status) !== -1) {
+          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume', 'Retry all', ''));
+        }
+        if (['pending', 'processing', 'failed', 'stopped', 'completed'].indexOf(status) !== -1) {
+          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume?force=1', 'Force retry all', 'jobs-retry-modal__button--secondary'));
+        }
+      } else {
+        var fileId = trigger.dataset.fileId;
+        meta.innerHTML = '<strong>' + escapeHtml(title) + '</strong><br>File: ' + escapeHtml(filename) + '<br>Status: ' + escapeHtml(status);
+        if (canRetry) {
+          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume?file_id=' + encodeURIComponent(fileId), 'Retry file', ''));
+        }
+        if (canForceRetry) {
+          actions.appendChild(buildActionForm('/api/v1/bulk-ai-upload/' + encodeURIComponent(bulkId) + '/resume?file_id=' + encodeURIComponent(fileId) + '&force=1', 'Force retry file', 'jobs-retry-modal__button--secondary'));
+        }
+      }
+
+      if (!actions.children.length) {
+        actions.innerHTML = '<p class="muted">No retry actions available for this item.</p>';
+      }
+
+      modal.showModal();
+    }
+
+    document.addEventListener('click', function (event) {
+      var trigger = event.target.closest('.jobs-open-retry-modal');
+      if (!trigger) return;
+      openRetryModal(trigger);
+    });
+  })();
+</script>
 
 {% endblock %}
