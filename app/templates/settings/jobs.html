@@ -597,13 +597,15 @@
   }
 
   .jobs-open-retry-modal::before {
-    content: '';
+    content: '↻';
     width: 0.9rem;
     height: 0.9rem;
-    border-radius: 999px;
-    border: 2px solid rgba(120, 113, 108, 0.2);
-    border-top-color: rgba(120, 113, 108, 0.9);
-    animation: rlspin 0.7s linear infinite;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.92rem;
+    line-height: 1;
+    font-weight: 700;
   }
 
   .jobs-retry-modal {
@@ -663,11 +665,6 @@
     color: var(--text-color);
   }
 
-  @keyframes rlspin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 </style>
 
 <dialog id="jobs-retry-modal" class="jobs-retry-modal">
