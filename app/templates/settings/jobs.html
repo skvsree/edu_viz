@@ -682,10 +682,16 @@
   .jobs-retry-modal__button--close {
     width: auto;
     min-width: 120px;
-    margin-left: auto;
     border-color: color-mix(in srgb, var(--border-color) 88%, transparent);
     background: var(--surface);
     color: var(--text-color);
+  }
+
+  .jobs-retry-modal .modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 0;
   }
 
   [data-theme="light"] .jobs-retry-modal {
@@ -731,8 +737,8 @@
       <div id="jobs-retry-modal-actions" class="jobs-retry-modal__actions"></div>
     </div>
 
-    <footer class="modal__footer" style="padding:0;">
-      <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost jobs-retry-modal__button jobs-retry-modal__button--close" data-modal-close="jobs-retry-modal">Cancel</button>
+    <footer class="modal__footer">
+      <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost jobs-retry-modal__button--close" data-modal-close="jobs-retry-modal">Cancel</button>
     </footer>
   </div>
 </dialog>
