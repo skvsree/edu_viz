@@ -609,39 +609,59 @@
   }
 
   .jobs-retry-modal {
-    width: min(92vw, 460px);
-    border: 1px solid color-mix(in srgb, var(--border-color) 74%, #94a3b8 26%);
-    border-radius: 18px;
+    width: min(100%, 680px);
+    max-width: calc(100vw - 24px);
     padding: 0;
-    background: var(--card-bg);
-    color: var(--text-color);
-    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+    border: 0;
+    background: transparent;
+    display: none;
+  }
+
+  .jobs-retry-modal[open] {
+    display: grid;
+    place-items: center;
   }
 
   .jobs-retry-modal::backdrop {
-    background: rgba(15, 23, 42, 1);
+    background: transparent;
+    backdrop-filter: none;
   }
 
   .jobs-retry-modal__card {
-    padding: 1rem;
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 18px;
+    width: min(100%, 440px);
+    padding: 26px;
+    border: 1px solid var(--border);
+    border-radius: 28px;
+    background: var(--surface-strong);
+    box-shadow: var(--shadow);
+    color: var(--text-color);
   }
 
   .jobs-retry-modal__title {
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.1rem;
+    color: var(--text-color);
   }
 
   .jobs-retry-modal__meta {
-    margin-top: 0.3rem;
-    font-size: 0.82rem;
+    margin-top: 0.35rem;
+    font-size: 0.84rem;
+    line-height: 1.55;
     color: var(--muted);
     word-break: break-word;
   }
 
+  .jobs-retry-modal__meta strong {
+    color: var(--text-color);
+  }
+
   .jobs-retry-modal__actions {
     display: grid;
-    gap: 0.65rem;
-    margin-top: 0.9rem;
+    gap: 0.7rem;
   }
 
   .jobs-retry-modal__form {
@@ -665,18 +685,52 @@
     color: var(--text-color);
   }
 
+  [data-theme="light"] .jobs-retry-modal {
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  [data-theme="light"] .jobs-retry-modal::backdrop {
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  [data-theme="light"] .jobs-retry-modal__card {
+    background: rgba(255, 255, 255, 0.97);
+    border-color: rgba(148, 163, 184, 0.25);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
+  }
+
+  @media (max-width: 720px) {
+    .jobs-retry-modal__card {
+      width: min(100%, 100%);
+      padding: 22px;
+      border-radius: 22px;
+    }
+  }
+
 </style>
 
-<dialog id="jobs-retry-modal" class="jobs-retry-modal">
-  <form method="dialog" class="jobs-retry-modal__card stack-sm">
-    <div>
-      <h2 id="jobs-retry-modal-title" class="jobs-retry-modal__title">Confirm retry</h2>
+<dialog id="jobs-retry-modal" class="modal jobs-retry-modal" aria-labelledby="jobs-retry-modal-title">
+  <form method="dialog" class="modal__surface jobs-retry-modal__card stack-sm">
+    <header class="modal__header">
+      <h2 id="jobs-retry-modal-title" class="modal__title jobs-retry-modal__title">Confirm retry</h2>
+      <button type="submit" class="modal__close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18"></path>
+          <path d="m6 6 12 12"></path>
+        </svg>
+      </button>
+    </header>
+
+    <div class="modal__body" style="padding:0; display:grid; gap:18px;">
       <div id="jobs-retry-modal-meta" class="jobs-retry-modal__meta"></div>
+      <div id="jobs-retry-modal-actions" class="jobs-retry-modal__actions"></div>
     </div>
 
-    <div id="jobs-retry-modal-actions" class="jobs-retry-modal__actions"></div>
-
-    <button type="submit" class="jobs-retry-button jobs-retry-modal__button jobs-retry-modal__button--close">Cancel</button>
+    <footer class="modal__footer" style="padding:0;">
+      <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost jobs-retry-modal__button jobs-retry-modal__button--close">Cancel</button>
+    </footer>
   </form>
 </dialog>
 
