@@ -680,6 +680,9 @@
   }
 
   .jobs-retry-modal__button--close {
+    width: auto;
+    min-width: 120px;
+    margin-left: auto;
     border-color: color-mix(in srgb, var(--border-color) 88%, transparent);
     background: var(--surface);
     color: var(--text-color);
@@ -712,10 +715,10 @@
 </style>
 
 <dialog id="jobs-retry-modal" class="modal jobs-retry-modal" aria-labelledby="jobs-retry-modal-title">
-  <form method="dialog" class="modal__surface jobs-retry-modal__card stack-sm">
+  <div class="modal__surface jobs-retry-modal__card stack-sm">
     <header class="modal__header">
       <h2 id="jobs-retry-modal-title" class="modal__title jobs-retry-modal__title">Confirm retry</h2>
-      <button type="submit" class="modal__close" aria-label="Close">
+      <button type="button" class="modal__close" data-modal-close="jobs-retry-modal" aria-label="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
           <path d="M18 6 6 18"></path>
           <path d="m6 6 12 12"></path>
@@ -729,9 +732,9 @@
     </div>
 
     <footer class="modal__footer" style="padding:0;">
-      <button type="submit" class="browse-btn browse-btn--sm browse-btn--ghost jobs-retry-modal__button jobs-retry-modal__button--close">Cancel</button>
+      <button type="button" class="browse-btn browse-btn--sm browse-btn--ghost jobs-retry-modal__button jobs-retry-modal__button--close" data-modal-close="jobs-retry-modal">Cancel</button>
     </footer>
-  </form>
+  </div>
 </dialog>
 
 <script>
@@ -796,6 +799,14 @@
     }
 
     document.addEventListener('click', function (event) {
+      var closeButton = event.target.closest('[data-modal-close="jobs-retry-modal"]');
+      if (closeButton) {
+        if (typeof modal.close === 'function') {
+          modal.close();
+        }
+        return;
+      }
+
       var trigger = event.target.closest('.jobs-open-retry-modal');
       if (!trigger) return;
       openRetryModal(trigger);
