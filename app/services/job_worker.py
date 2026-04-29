@@ -645,12 +645,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             file_record.error_message = str(e)[:500]
             file_record.completed_at = datetime.utcnow()
             job.failed_items += 1
+            hard_fail_job = True
             if str(e) == AI_FORMAT_RETRY_FAILURE_MESSAGE:
-                hard_fail_job = True
                 hard_fail_message = (
                     f"AI returned invalid JSON after {MAX_AI_FORMAT_RETRIES} attempts. "
                     f"Stopped on file: {pdf_name}"
                 )
+            else:
+                hard_fail_message = f"Bulk upload stopped on file failure: {pdf_name} — {str(e)[:300]}"
         db.commit()
         if hard_fail_job:
             break
@@ -665,7 +667,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         else:
             bulk.status = (
                 BulkAIUploadStatus.FAILED.value
-                if job.failed_items > 0 and job.processed_items == 0
+                if job.failed_items > 0
                 else BulkAIUploadStatus.COMPLETED.value
             )
         bulk.completed_at = datetime.utcnow()
@@ -681,7 +683,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     else:
         job.status = (
             JobStatus.FAILED.value
-            if job.failed_items > 0 and job.processed_items == 0
+            if job.failed_items > 0
             else JobStatus.COMPLETED.value
         )
     job.completed_at = datetime.utcnow()
