@@ -647,6 +647,36 @@
     color: var(--text-color);
   }
 
+  .jobs-retry-modal .modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0;
+  }
+
+  .jobs-retry-modal .modal__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 999px;
+  }
+
+  .jobs-retry-modal .modal__close:hover {
+    background: color-mix(in srgb, var(--border) 18%, transparent);
+    color: var(--text-color);
+  }
+
   .jobs-retry-modal__meta {
     margin-top: 0.35rem;
     font-size: 0.84rem;
@@ -724,12 +754,7 @@
   <div class="modal__surface jobs-retry-modal__card stack-sm">
     <header class="modal__header">
       <h2 id="jobs-retry-modal-title" class="modal__title jobs-retry-modal__title">Confirm retry</h2>
-      <button type="button" class="modal__close" data-modal-close="jobs-retry-modal" aria-label="Close">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M18 6 6 18"></path>
-          <path d="m6 6 12 12"></path>
-        </svg>
-      </button>
+      <button type="button" class="modal__close" data-modal-close="jobs-retry-modal" aria-label="Close">×</button>
     </header>
 
     <div class="modal__body" style="padding:0; display:grid; gap:18px;">
