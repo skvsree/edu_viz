@@ -208,6 +208,13 @@
     border: 1px solid #93c5fd;
     background: #eff6ff;
     color: #1d4ed8;
+    border-radius: 12px;
+  }
+
+  .jobs-page__notice--error {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #b91c1c;
   }
 
   .jobs-page__card {
@@ -694,6 +701,10 @@
     gap: 0.7rem;
   }
 
+  .jobs-retry-modal__notice {
+    margin: 0;
+  }
+
   .jobs-retry-modal__form {
     margin: 0;
   }
@@ -756,6 +767,7 @@
 
     <div class="modal__body" style="padding:0; display:grid; gap:18px;">
       <div id="jobs-retry-modal-meta" class="jobs-retry-modal__meta"></div>
+      <div id="jobs-retry-modal-feedback" class="jobs-page__notice jobs-retry-modal__notice" role="status" hidden></div>
       <div id="jobs-retry-modal-actions" class="jobs-retry-modal__actions"></div>
     </div>
 
@@ -770,9 +782,10 @@
     var modal = document.getElementById('jobs-retry-modal');
     var title = document.getElementById('jobs-retry-modal-title');
     var meta = document.getElementById('jobs-retry-modal-meta');
+    var feedback = document.getElementById('jobs-retry-modal-feedback');
     var actions = document.getElementById('jobs-retry-modal-actions');
 
-    if (!modal || !title || !meta || !actions) return;
+    if (!modal || !title || !meta || !feedback || !actions) return;
 
     function escapeHtml(value) {
       return String(value || '')
@@ -781,6 +794,12 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function setFeedback(message, isError) {
+      feedback.textContent = message || '';
+      feedback.hidden = !message;
+      feedback.classList.toggle('jobs-page__notice--error', !!isError);
     }
 
     function buildActionForm(action, label, extraClass) {
@@ -793,6 +812,44 @@
       button.type = 'submit';
       button.className = 'jobs-retry-button jobs-retry-modal__button' + (extraClass ? ' ' + extraClass : '');
       button.textContent = label;
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        setFeedback('', false);
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+
+        fetch(action, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          credentials: 'same-origin'
+        })
+          .then(function (response) {
+            return response
+              .json()
+              .catch(function () {
+                return {};
+              })
+              .then(function (data) {
+                if (!response.ok) {
+                  throw new Error(data.detail || 'Retry could not be started');
+                }
+                return data;
+              });
+          })
+          .then(function () {
+            setFeedback('Retry has started. Check this popup or Jobs page for progress.', false);
+          })
+          .catch(function (error) {
+            setFeedback(error && error.message ? error.message : 'Retry could not be started', true);
+          })
+          .finally(function () {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+          });
+      });
 
       form.appendChild(button);
       return form;
@@ -809,6 +866,7 @@
       var actionUrl = trigger.dataset.actionUrl || '';
 
       title.textContent = confirmTitle;
+      setFeedback('', false);
       actions.innerHTML = '';
 
       if (scope === 'bulk') {
