@@ -52,6 +52,7 @@ MAX_WORKERS = int(os.environ.get("JOB_WORKER_THREADS", "1"))
 POLL_INTERVAL = int(os.environ.get("JOB_POLL_INTERVAL", "5"))
 JOB_LEASE_SECONDS = int(os.environ.get("JOB_LEASE_SECONDS", "60"))
 MAX_529_RETRIES = int(os.environ.get("JOB_MAX_529_RETRIES", "5"))
+MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
 _shutdown = False
 _active_jobs: set[uuid.UUID] = set()
 _active_jobs_lock = threading.Lock()
@@ -171,6 +172,24 @@ def _is_retryable_529_error(exc: Exception) -> bool:
     return bool(re.search(r"\b529\b", message) and "overloaded" in message.lower())
 
 
+def _is_retryable_ai_format_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(
+        phrase in message
+        for phrase in (
+            "invalid json",
+            "empty response",
+            "returned no choices",
+            "invalid choice payload",
+            "did not return usable flashcards or mcqs",
+        )
+    )
+
+
+def _ai_format_retry_delay(attempt: int) -> int:
+    return min(30, 2 ** attempt)
+
+
 def _generate_text_with_retry(
     provider_client, prompt: str, credential, *, log_prefix: str
 ) -> str:
@@ -191,6 +210,18 @@ def _generate_text_with_retry(
             if _is_retryable_529_error(exc):
                 raise AIGenerationError(
                     f"AI provider overloaded after {attempt} attempts; please retry later."
+                ) from exc
+            if _is_retryable_ai_format_error(exc) and attempt < MAX_AI_FORMAT_RETRIES:
+                sleep_seconds = _ai_format_retry_delay(attempt)
+                print(
+                    f"{log_prefix} retryable_ai_format attempt={attempt} sleep={sleep_seconds}s err={str(exc)[:200]}",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            if _is_retryable_ai_format_error(exc):
+                raise AIGenerationError(
+                    f"AI provider returned invalid structured output after {attempt} attempts."
                 ) from exc
             raise
 
@@ -215,6 +246,18 @@ def _generate_pack_with_retry(
             if _is_retryable_529_error(exc):
                 raise AIGenerationError(
                     f"AI provider overloaded after {attempt} attempts; please retry later."
+                ) from exc
+            if _is_retryable_ai_format_error(exc) and attempt < MAX_AI_FORMAT_RETRIES:
+                sleep_seconds = _ai_format_retry_delay(attempt)
+                print(
+                    f"{log_prefix} retryable_ai_format attempt={attempt} sleep={sleep_seconds}s err={str(exc)[:200]}",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            if _is_retryable_ai_format_error(exc):
+                raise AIGenerationError(
+                    f"AI provider returned invalid structured output after {attempt} attempts."
                 ) from exc
             raise
 
