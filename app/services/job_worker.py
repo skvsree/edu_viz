@@ -53,6 +53,9 @@ POLL_INTERVAL = int(os.environ.get("JOB_POLL_INTERVAL", "5"))
 JOB_LEASE_SECONDS = int(os.environ.get("JOB_LEASE_SECONDS", "60"))
 MAX_529_RETRIES = int(os.environ.get("JOB_MAX_529_RETRIES", "5"))
 MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
+AI_FORMAT_RETRY_FAILURE_MESSAGE = (
+    f"AI returned invalid structured output after {MAX_AI_FORMAT_RETRIES} attempts."
+)
 _shutdown = False
 _active_jobs: set[uuid.UUID] = set()
 _active_jobs_lock = threading.Lock()
@@ -220,9 +223,7 @@ def _generate_text_with_retry(
                 time.sleep(sleep_seconds)
                 continue
             if _is_retryable_ai_format_error(exc):
-                raise AIGenerationError(
-                    f"AI provider returned invalid structured output after {attempt} attempts."
-                ) from exc
+                raise AIGenerationError(AI_FORMAT_RETRY_FAILURE_MESSAGE) from exc
             raise
 
 
@@ -256,9 +257,7 @@ def _generate_pack_with_retry(
                 time.sleep(sleep_seconds)
                 continue
             if _is_retryable_ai_format_error(exc):
-                raise AIGenerationError(
-                    f"AI provider returned invalid structured output after {attempt} attempts."
-                ) from exc
+                raise AIGenerationError(AI_FORMAT_RETRY_FAILURE_MESSAGE) from exc
             raise
 
 
@@ -387,6 +386,9 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     bulk.total_files = len(file_records)
     job.total_items = len(file_records)
     db.commit()
+
+    hard_fail_job = False
+    hard_fail_message = None
 
     for file_record in file_records:
         bulk = db.get(BulkAIUpload, job.reference_id)
@@ -643,29 +645,45 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             file_record.error_message = str(e)[:500]
             file_record.completed_at = datetime.utcnow()
             job.failed_items += 1
+            if str(e) == AI_FORMAT_RETRY_FAILURE_MESSAGE:
+                hard_fail_job = True
+                hard_fail_message = (
+                    f"AI returned invalid JSON after {MAX_AI_FORMAT_RETRIES} attempts. "
+                    f"Stopped on file: {pdf_name}"
+                )
         db.commit()
+        if hard_fail_job:
+            break
 
     bulk = db.get(BulkAIUpload, job.reference_id)
     if bulk:
         bulk.processed_files = job.processed_items
         bulk.failed_files = job.failed_items
-        bulk.status = (
-            BulkAIUploadStatus.FAILED.value
-            if job.failed_items > 0 and job.processed_items == 0
-            else BulkAIUploadStatus.COMPLETED.value
-        )
+        if hard_fail_job:
+            bulk.status = BulkAIUploadStatus.FAILED.value
+            bulk.error_message = hard_fail_message
+        else:
+            bulk.status = (
+                BulkAIUploadStatus.FAILED.value
+                if job.failed_items > 0 and job.processed_items == 0
+                else BulkAIUploadStatus.COMPLETED.value
+            )
         bulk.completed_at = datetime.utcnow()
 
     print(
         f"[job-worker] job finalize job={job.id} processed={job.processed_items} "
-        f"failed={job.failed_items}",
+        f"failed={job.failed_items} hard_fail={hard_fail_job}",
         flush=True,
     )
-    job.status = (
-        JobStatus.FAILED.value
-        if job.failed_items > 0 and job.processed_items == 0
-        else JobStatus.COMPLETED.value
-    )
+    if hard_fail_job:
+        job.status = JobStatus.FAILED.value
+        job.error_message = hard_fail_message
+    else:
+        job.status = (
+            JobStatus.FAILED.value
+            if job.failed_items > 0 and job.processed_items == 0
+            else JobStatus.COMPLETED.value
+        )
     job.completed_at = datetime.utcnow()
     db.commit()
 
