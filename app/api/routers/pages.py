@@ -523,7 +523,7 @@ def _jobs_response(
                 bulk_has_active_retry.add(bulk_upload_id)
 
         for bulk_id, file_list in bulk_file_rows.items():
-            counts = {"completed": 0, "processing": 0, "failed": 0, "pending": 0}
+            counts = {"completed": 0, "processing": 0, "failed": 0, "pending": 0, "stopped": 0}
             for file_row in file_list:
                 status = (file_row.status or "").lower()
                 if status in counts:

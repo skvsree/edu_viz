@@ -23,6 +23,7 @@ class BulkAIUploadFileStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
+    STOPPED = "stopped"
 
 
 class BulkAIUpload(Base):

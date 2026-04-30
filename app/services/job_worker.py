@@ -401,6 +401,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             db.commit()
             return
 
+        db.refresh(file_record)
+        if (file_record.status or '').lower() == BulkAIUploadFileStatus.STOPPED.value:
+            job.failed_items += 1
+            db.commit()
+            continue
+
         file_started_at = datetime.utcnow()
         file_record.status = BulkAIUploadFileStatus.PROCESSING.value
         file_record.started_at = file_started_at
@@ -479,10 +485,8 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             deck = None
             if file_record.created_deck_id:
                 deck = db.get(Deck, file_record.created_deck_id)
-            if deck is None and bulk.deck_id:
-                deck = db.get(Deck, bulk.deck_id)
             if deck is None:
-                raise AIGenerationError('Missing pre-created deck for uploaded file.')
+                raise AIGenerationError('Missing per-file deck for uploaded file.')
             if title:
                 candidate_title = title[:255]
                 candidate_normalized = normalize_deck_name(candidate_title)
@@ -529,6 +533,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 flush=True,
             )
             for chunk_index, chunk in enumerate(chunks, start=1):
+                db.refresh(file_record)
+                bulk = db.get(BulkAIUpload, job.reference_id)
+                if bulk and bulk.is_auto_stop:
+                    raise AIGenerationError('Job stopped by user')
+                if (file_record.status or '').lower() == BulkAIUploadFileStatus.STOPPED.value:
+                    raise AIGenerationError('File canceled by user')
                 print(
                     f"[job-worker] chunk start job={job.id} file={pdf_name} "
                     f"chunk={chunk_index}/{len(chunks)} chunk_len={len(chunk)}",
@@ -641,7 +651,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             job.processed_items += 1
         except Exception as e:
             print(f"[job-worker] file failed job={job.id} file={pdf_name} err={str(e)[:300]}", flush=True)
-            file_record.status = BulkAIUploadFileStatus.FAILED.value
+            if str(e) == 'File canceled by user':
+                file_record.status = BulkAIUploadFileStatus.STOPPED.value
+            elif str(e) == 'Job stopped by user':
+                file_record.status = BulkAIUploadFileStatus.STOPPED.value
+            else:
+                file_record.status = BulkAIUploadFileStatus.FAILED.value
             file_record.error_message = str(e)[:500]
             file_record.completed_at = datetime.utcnow()
             job.failed_items += 1
@@ -659,7 +674,10 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     if bulk:
         bulk.processed_files = job.processed_items
         bulk.failed_files = job.failed_items
-        if hard_fail_job:
+        if bulk.is_auto_stop:
+            bulk.status = BulkAIUploadStatus.STOPPED.value
+            bulk.error_message = 'Job stopped by user'
+        elif hard_fail_job:
             bulk.status = BulkAIUploadStatus.FAILED.value
             bulk.error_message = hard_fail_message
         else:
@@ -675,7 +693,10 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         f"failed={job.failed_items} hard_fail={hard_fail_job}",
         flush=True,
     )
-    if hard_fail_job:
+    if bulk and bulk.is_auto_stop:
+        job.status = JobStatus.FAILED.value
+        job.error_message = 'Job stopped by user'
+    elif hard_fail_job:
         job.status = JobStatus.FAILED.value
         job.error_message = hard_fail_message
     else:

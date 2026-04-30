@@ -5,7 +5,7 @@
   <section class="card stack-md jobs-page__card">
     <div class="stack-xs">
       <h1>Jobs</h1>
-      <p class="muted">Each uploaded ZIP shows its files. Open a file only when you need its retry history.</p>
+      <p class="muted">Each uploaded ZIP shows one row per uploaded file. Expand a file only when you want to see its decks and retry history.</p>
     </div>
 
     {% if request.query_params.get("submitted") == "1" %}
@@ -31,6 +31,7 @@
                   <div class="jobs-bulk-card__filename-row">
                     <div class="jobs-bulk-card__filename">{{ bulk.filename or "Bulk upload" }}</div>
                     {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] %}
+                    {% set can_cancel_bulk = bulk.status in ['pending', 'processing'] %}
                     {% if can_retry_all %}
                       <button
                         type="button"
@@ -42,9 +43,27 @@
                         data-confirm-title="Retry all files?"
                         data-confirm-body="This will retry all files from the original ZIP upload."
                         data-confirm-label="Retry all"
+                        data-success-message="Retry started. Click OK to refresh job details."
                         data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume"
                       >
                         Retry all
+                      </button>
+                    {% endif %}
+                    {% if can_cancel_bulk %}
+                      <button
+                        type="button"
+                        class="jobs-open-retry-modal jobs-open-retry-modal--force"
+                        data-retry-scope="cancel-bulk"
+                        data-bulk-id="{{ job.reference_id }}"
+                        data-bulk-filename="{{ bulk.filename or 'Bulk upload' }}"
+                        data-bulk-status="{{ bulk.status or 'pending' }}"
+                        data-confirm-title="Cancel running job?"
+                        data-confirm-body="This will stop the remaining files in this running bulk upload."
+                        data-confirm-label="Cancel job"
+                        data-success-message="Job cancel requested. Click OK to refresh job details."
+                        data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/cancel"
+                      >
+                        Cancel
                       </button>
                     {% endif %}
                   </div>
@@ -65,86 +84,131 @@
 
               <div class="jobs-bulk-second-line">
                 {% if output_decks %}
-                  {% for file_group in output_decks %}
-                    {% set latest = file_group.latest_file %}
-                    {% set latest_status = (latest.status or '').lower() %}
-                    {% set is_running = latest_status in ['pending', 'processing'] %}
-                    {% set is_failed = latest_status == 'failed' %}
-                    <details class="jobs-inline-file {% if is_failed %}jobs-inline-file--failed{% elif is_running %}jobs-inline-file--running{% endif %}" {% if is_running or is_failed %}open{% endif %}>
-                      <summary class="jobs-inline-file__summary">
-                        {% if latest.created_deck_id %}
-                          <a class="jobs-inline-file__name jobs-inline-file__name--link" href="/decks/{{ latest.created_deck_id }}">{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}</a>
-                        {% else %}
-                          <span class="jobs-inline-file__name">{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}</span>
-                        {% endif %}
-                        <span class="jobs-status {{ 'jobs-status--running' if is_running else 'jobs-status--completed' if latest_status == 'completed' else 'jobs-status--failed' }}">
-                          {% if is_running %}
-                            <span class="jobs-inline-loader" aria-hidden="true"></span>
-                          {% endif %}
-                          {{ latest_status|capitalize if latest_status else 'Pending' }}
-                        </span>
-                      </summary>
-                      <div class="jobs-inline-file__body">
-                        <div class="jobs-attempt-list">
-                          <div class="jobs-attempt-row">
-                            <div class="jobs-attempt-row__main">
-                              <div class="jobs-attempt-row__meta">
-                                <span>File: {{ file_group.filename }}</span>
-                                {% if latest.created_deck_id and latest_status == 'completed' %}
-                                  <span><a class="jobs-inline-link" href="/decks/{{ latest.created_deck_id }}">Open deck</a></span>
-                                {% endif %}
-                                <span>Created: {{ latest.created_at.strftime('%Y-%m-%d %H:%M') if latest.created_at else '—' }}</span>
+                  <details class="jobs-bulk-files-details">
+                    <summary class="jobs-bulk-files-details__summary">
+                      <span class="jobs-bulk-files-details__toggle-label">Show files</span>
+                      <span class="jobs-bulk-files-details__toggle-label jobs-bulk-files-details__toggle-label--open">Hide files</span>
+                    </summary>
+                    <div class="jobs-files-table-wrap">
+                      <table class="jobs-files-table">
+                        <thead>
+                          <tr>
+                            <th>Uploaded file</th>
+                            <th>Status</th>
+                            <th>Deck</th>
+                            <th>Cards</th>
+                            <th>MCQs</th>
+                            <th>Attempts</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for file_group in output_decks %}
+                          {% set latest = file_group.latest_file %}
+                          {% set latest_status = (latest.status or '').lower() %}
+                          {% set is_running = latest_status in ['pending', 'processing'] %}
+                          {% set is_failed = latest_status == 'failed' %}
+                          {% set can_retry_file = latest_status in ['failed', 'stopped'] %}
+                          {% set can_force_retry_file = latest_status in ['pending', 'processing', 'failed', 'completed', 'stopped'] %}
+                          {% set can_cancel_file = latest_status in ['pending', 'processing'] %}
+                          <tr class="jobs-files-table__row {% if is_failed %}jobs-files-table__row--failed{% elif is_running %}jobs-files-table__row--running{% endif %}">
+                            <td>
+                              <div class="jobs-file-cell">
+                                <div class="jobs-file-cell__name">{{ file_group.filename }}</div>
+                                <div class="jobs-file-cell__deck-name">
+                                  {% if latest.created_deck_id %}
+                                    <a class="jobs-inline-link jobs-inline-link--subtle" href="/decks/{{ latest.created_deck_id }}">{{ latest.deck_name or ('Deck #' ~ latest.created_deck_id) }}</a>
+                                  {% else %}
+                                    <span class="jobs-file-cell__deck-name-muted">No deck yet</span>
+                                  {% endif %}
+                                </div>
                               </div>
-                              {% if latest.error_message %}
-                                <div class="jobs-attempt-row__error">{{ latest.error_message }}</div>
+                            </td>
+                            <td>
+                              <span class="jobs-status {{ 'jobs-status--running' if is_running else 'jobs-status--completed' if latest_status == 'completed' else 'jobs-status--failed' }}">
+                                {% if is_running %}
+                                  <span class="jobs-inline-loader" aria-hidden="true"></span>
+                                {% endif %}
+                                {{ latest_status|capitalize if latest_status else 'Pending' }}
+                              </span>
+                            </td>
+                            <td>
+                              {% if latest.created_deck_id %}
+                                <a class="jobs-inline-link" href="/decks/{{ latest.created_deck_id }}">Latest deck</a>
+                              {% else %}
+                                —
                               {% endif %}
-                            </div>
-                            <div class="jobs-attempt-row__actions">
-                              {% set can_retry_file = latest_status == 'failed' %}
-                              {% set can_force_retry_file = latest_status in ['pending', 'processing', 'failed', 'completed'] %}
-                              {% if can_retry_file %}
-                                <button
-                                  type="button"
-                                  class="jobs-open-retry-modal"
-                                  data-retry-scope="file"
-                                  data-bulk-id="{{ job.reference_id }}"
-                                  data-file-id="{{ latest.id }}"
-                                  data-filename="{{ file_group.filename }}"
-                                  data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}"
-                                  data-file-status="{{ latest_status or 'pending' }}"
-                                  data-confirm-title="Retry failed file?"
-                                  data-confirm-body="This will retry only this failed file."
-                                  data-confirm-label="Retry file"
-                                  data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}"
-                                >
-                                  Retry
-                                </button>
-                              {% endif %}
-                              {% if can_force_retry_file %}
-                                <button
-                                  type="button"
-                                  class="jobs-open-retry-modal jobs-open-retry-modal--force"
-                                  data-retry-scope="file-force"
-                                  data-bulk-id="{{ job.reference_id }}"
-                                  data-file-id="{{ latest.id }}"
-                                  data-filename="{{ file_group.filename }}"
-                                  data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('Deck ' ~ loop.index) }}"
-                                  data-file-status="{{ latest_status or 'pending' }}"
-                                  data-confirm-title="Force retry this file?"
-                                  data-confirm-body="This will re-run this file even if it already completed or is still processing."
-                                  data-confirm-label="Force retry"
-                                  data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}&force=1"
-                                >
-                                  Force retry
-                                </button>
-                              {% endif %}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </details>
-                  {% endfor %}
-                {% elif not file_groups and bulk.status == 'failed' and not bulk.error_message %}
+                            </td>
+                            <td>{{ latest.flashcards_generated or 0 }}</td>
+                            <td>{{ latest.mcqs_generated or 0 }}</td>
+                            <td>{{ file_group.jobs|length }}</td>
+                            <td>
+                              <div class="jobs-attempt-row__actions jobs-attempt-row__actions--inline">
+                                {% if can_retry_file %}
+                                  <button
+                                    type="button"
+                                    class="jobs-open-retry-modal"
+                                    data-retry-scope="file"
+                                    data-bulk-id="{{ job.reference_id }}"
+                                    data-file-id="{{ latest.id }}"
+                                    data-filename="{{ file_group.filename }}"
+                                    data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+                                    data-file-status="{{ latest_status or 'pending' }}"
+                                    data-confirm-title="Retry failed file?"
+                                    data-confirm-body="This will retry only this failed file and start with a fresh deck."
+                                    data-confirm-label="Retry file"
+                                    data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}"
+                                  >
+                                    Retry
+                                  </button>
+                                {% endif %}
+                                {% if can_force_retry_file and latest.created_deck_id %}
+                                  <button
+                                    type="button"
+                                    class="jobs-open-retry-modal jobs-open-retry-modal--force"
+                                    data-retry-scope="file-force"
+                                    data-bulk-id="{{ job.reference_id }}"
+                                    data-file-id="{{ latest.id }}"
+                                    data-filename="{{ file_group.filename }}"
+                                    data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+                                    data-file-status="{{ latest_status or 'pending' }}"
+                                    data-confirm-title="Force retry this file?"
+                                    data-confirm-body="This will delete the old generated deck content and create a fresh retry attempt for this file."
+                                    data-confirm-label="Force retry"
+                                    data-success-message="Retry started. Click OK to refresh job details."
+                                    data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?deck_id={{ latest.created_deck_id }}&force=1"
+                                  >
+                                    Force retry
+                                  </button>
+                                {% endif %}
+                                {% if can_cancel_file %}
+                                  <button
+                                    type="button"
+                                    class="jobs-open-retry-modal jobs-open-retry-modal--force"
+                                    data-retry-scope="cancel-file"
+                                    data-bulk-id="{{ job.reference_id }}"
+                                    data-file-id="{{ latest.id }}"
+                                    data-filename="{{ file_group.filename }}"
+                                    data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+                                    data-file-status="{{ latest_status or 'pending' }}"
+                                    data-confirm-title="Cancel this file?"
+                                    data-confirm-body="This will stop processing for this file."
+                                    data-confirm-label="Cancel file"
+                                    data-success-message="File cancel requested. Click OK to refresh job details."
+                                    data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/cancel?file_id={{ latest.id }}"
+                                  >
+                                    Cancel
+                                  </button>
+                                {% endif %}
+                              </div>
+                            </td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  </details>
+{% elif not file_groups and bulk.status == 'failed' and not bulk.error_message %}
                   <details class="jobs-inline-file jobs-inline-file--failed" open>
                     <summary class="jobs-inline-file__summary">
                       <span class="jobs-inline-file__name">{{ bulk.filename or 'Upload' }}</span>
@@ -404,6 +468,137 @@
     font-weight: 600;
   }
 
+  .jobs-files-table-wrap {
+    margin-top: 0.8rem;
+    overflow-x: auto;
+    border: 1px solid color-mix(in srgb, var(--border-color) 78%, #94a3b8 22%);
+    border-radius: 14px;
+    background: var(--card-bg);
+  }
+
+  .jobs-files-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 900px;
+  }
+
+  .jobs-files-table th,
+  .jobs-files-table td {
+    padding: 0.8rem 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 86%, transparent);
+    vertical-align: top;
+    text-align: left;
+  }
+
+  .jobs-files-table th {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    background: color-mix(in srgb, #eff6ff 14%, var(--card-bg));
+    white-space: nowrap;
+  }
+
+  .jobs-files-table__row--running {
+    background: color-mix(in srgb, #dbeafe 15%, var(--card-bg));
+  }
+
+  .jobs-files-table__row--failed {
+    background: color-mix(in srgb, #fee2e2 18%, var(--card-bg));
+  }
+
+  .jobs-file-cell {
+    min-width: 280px;
+  }
+
+  .jobs-file-cell__name {
+    font-weight: 700;
+    color: var(--text-color);
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .jobs-file-details {
+    margin-top: 0.55rem;
+  }
+
+  .jobs-file-details__summary {
+    cursor: pointer;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    padding: 0.34rem 0.62rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--accent-color);
+  }
+
+  .jobs-file-details__summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .jobs-file-details__summary::before {
+    content: '▸';
+    display: inline-block;
+    color: var(--muted);
+  }
+
+  .jobs-file-details[open] .jobs-file-details__summary::before {
+    content: '▾';
+  }
+
+  .jobs-file-details__toggle-label--open {
+    display: none;
+  }
+
+  .jobs-file-details[open] .jobs-file-details__toggle-label {
+    display: none;
+  }
+
+  .jobs-file-details[open] .jobs-file-details__toggle-label--open {
+    display: inline;
+  }
+
+  .jobs-file-details__history {
+    margin-top: 0.7rem;
+    padding: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+  }
+
+  .jobs-attempt-label {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+
+  .jobs-attempt-history-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 640px;
+  }
+
+  .jobs-attempt-history-table th,
+  .jobs-attempt-history-table td {
+    padding: 0.55rem 0.5rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+    font-size: 0.78rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .jobs-attempt-history-table th {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
   .jobs-inline-file__body {
     padding: 0 0.65rem 0.65rem;
     border-top: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
@@ -577,6 +772,26 @@
     .jobs-attempt-row__actions {
       align-self: flex-start;
       justify-items: start;
+    }
+
+    .jobs-files-table-wrap {
+      border-radius: 12px;
+    }
+
+    .jobs-files-table {
+      min-width: 780px;
+    }
+
+    .jobs-file-details {
+      min-width: 220px;
+    }
+
+    .jobs-file-details__history {
+      overflow-x: auto;
+    }
+
+    .jobs-attempt-history-table {
+      min-width: 560px;
     }
   }
 
@@ -842,7 +1057,7 @@
       cancelButton.hidden = false;
     }
 
-    function buildActionForm(action, label, extraClass) {
+    function buildActionForm(action, label, extraClass, successMessage) {
       var form = document.createElement('form');
       form.method = 'post';
       form.action = action;
@@ -882,7 +1097,7 @@
           })
           .then(function () {
             actions.innerHTML = '';
-            setFeedback('Retry started. Click OK to refresh job details.', false);
+            setFeedback(successMessage || 'Action completed. Click OK to refresh job details.', false);
             setFooterMode('result', window.location.pathname + window.location.search);
           })
           .catch(function (error) {
@@ -908,6 +1123,7 @@
       var confirmBody = trigger.dataset.confirmBody || 'Are you sure you want to retry this item?';
       var confirmLabel = trigger.dataset.confirmLabel || 'Retry';
       var actionUrl = trigger.dataset.actionUrl || '';
+      var successMessage = trigger.dataset.successMessage || 'Action completed. Click OK to refresh job details.';
 
       title.textContent = confirmTitle;
       setFeedback('', false);
@@ -921,7 +1137,7 @@
       }
 
       if (actionUrl) {
-        actions.appendChild(buildActionForm(actionUrl, confirmLabel, scope === 'file-force' ? 'jobs-retry-modal__button--secondary' : ''));
+        actions.appendChild(buildActionForm(actionUrl, confirmLabel, scope === 'file-force' ? 'jobs-retry-modal__button--secondary' : '', successMessage));
       } else {
         actions.innerHTML = '<p class="muted">No retry action available for this item.</p>';
       }

@@ -7,7 +7,7 @@ from pathlib import Path
 import pypdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 
 from sqlalchemy.orm import Session
 
@@ -234,6 +234,46 @@ def _clear_deck_generated_content(db: Session, deck_id):
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
 
+def _prepare_fresh_retry_attempt(
+    db: Session,
+    *,
+    bulk: BulkAIUpload,
+    user: User,
+    source_file: BulkAIUploadFile,
+) -> BulkAIUploadFile:
+    old_deck_id = source_file.created_deck_id
+    if old_deck_id:
+        _clear_deck_generated_content(db, old_deck_id)
+
+    replacement_deck = _ensure_bulk_upload_deck(
+        db,
+        user,
+        source_file.original_filename or bulk.filename,
+        None,
+    )
+
+    retry_row = BulkAIUploadFile(
+        bulk_upload_id=bulk.id,
+        original_filename=source_file.original_filename,
+        extracted_title=source_file.extracted_title,
+        extracted_description=source_file.extracted_description,
+        content_text=None,
+        storage_key=source_file.storage_key,
+        status=BulkAIUploadFileStatus.PENDING.value,
+        flashcards_generated=0,
+        mcqs_generated=0,
+        duplicate_count=0,
+        error_message=None,
+        file_size=source_file.file_size,
+        started_at=None,
+        completed_at=None,
+        created_deck_id=replacement_deck.id,
+    )
+    db.add(retry_row)
+    db.flush()
+    return retry_row
+
+
 def _ensure_bulk_upload_deck(
     db: Session,
     user: User,
@@ -299,11 +339,7 @@ def start_bulk_ai_upload(
         "id": str(bulk.id),
         "job_id": str(job.id),
         "status": bulk.status,
-        "deck_id": (
-            str(bulk.deck_id)
-            if bulk.deck_id
-            else (created_deck_ids[0] if created_deck_ids else None)
-        ),
+        "deck_id": (created_deck_ids[0] if created_deck_ids else None),
         "deck_ids": created_deck_ids,
         "total_files": bulk.total_files,
         "created_decks": len(created_deck_ids),
@@ -411,7 +447,7 @@ def get_bulk_ai_upload(
         "job_id": str(job.id) if job else None,
         "job_status": job.status if job else None,
         "status": bulk.status,
-        "deck_id": str(bulk.deck_id) if bulk.deck_id else None,
+        "deck_id": str(files[0].created_deck_id) if files and files[0].created_deck_id else None,
         "total_files": bulk.total_files,
         "processed_files": bulk.processed_files,
         "flashcards_generated": bulk.flashcards_generated,
@@ -480,21 +516,24 @@ def stop_bulk_ai_upload(
 def resume_bulk_ai_upload(
     bulk_id: str,
     file_id: str | None = None,
+    deck_id: str | None = None,
     force: bool = False,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Resume a stopped or failed bulk AI upload, optionally for one failed file only."""
+    """Resume a stopped or failed bulk AI upload, optionally for one file or one deck."""
     bulk = db.get(BulkAIUpload, bulk_id)
     if not bulk:
         raise HTTPException(status_code=404, detail="Bulk upload not found")
+    if file_id and deck_id:
+        raise HTTPException(status_code=400, detail="Use either file_id or deck_id, not both")
 
     resumable_statuses = {
         BulkAIUploadStatus.STOPPED.value,
         BulkAIUploadStatus.FAILED.value,
         BulkAIUploadStatus.COMPLETED.value,
     }
-    if file_id:
+    if file_id or deck_id:
         resumable_statuses.add(BulkAIUploadStatus.PENDING.value)
         resumable_statuses.add(BulkAIUploadStatus.PROCESSING.value)
     if bulk.status not in resumable_statuses:
@@ -508,8 +547,56 @@ def resume_bulk_ai_upload(
     if not file_records:
         raise HTTPException(status_code=404, detail="Bulk upload files not found")
 
+    deck_to_file_ids: dict[str, set[str]] = {}
+    for file_record in file_records:
+        deck_key = str(file_record.created_deck_id or "")
+        if not deck_key:
+            continue
+        deck_to_file_ids.setdefault(deck_key, set()).add(str(file_record.id))
+    shared_deck_ids = [deck for deck, ids in deck_to_file_ids.items() if len(ids) > 1]
+    if shared_deck_ids and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This bulk upload has corrupted shared-deck history from an older retry flow. "
+                "Use force retry to create a fresh attempt, or start a new upload."
+            ),
+        )
+
     target_file_records = file_records
-    if file_id:
+    if deck_id:
+        deck_matches = [f for f in file_records if str(f.created_deck_id or "") == deck_id]
+        if not deck_matches:
+            raise HTTPException(status_code=404, detail="Bulk upload deck not found")
+        latest_match = max(
+            deck_matches,
+            key=lambda item: (
+                item.created_at or datetime.min,
+                item.started_at or datetime.min,
+                item.completed_at or datetime.min,
+            ),
+        )
+        target_file_records = [latest_match]
+        retryable_statuses = {
+            BulkAIUploadFileStatus.FAILED.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+            BulkAIUploadFileStatus.STOPPED.value,
+        }
+        if force:
+            retryable_statuses.add(BulkAIUploadFileStatus.PENDING.value)
+            retryable_statuses.add(BulkAIUploadFileStatus.COMPLETED.value)
+        invalid_records = [
+            f for f in target_file_records if (f.status or "").lower() not in retryable_statuses
+        ]
+        if invalid_records:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Only failed or stuck deck files can be retried individually "
+                    "unless force retry is enabled"
+                ),
+            )
+    elif file_id:
         target_file_records = [f for f in file_records if str(f.id) == file_id]
         if not target_file_records:
             raise HTTPException(status_code=404, detail="Bulk upload file not found")
@@ -517,6 +604,7 @@ def resume_bulk_ai_upload(
         retryable_statuses = {
             BulkAIUploadFileStatus.FAILED.value,
             BulkAIUploadFileStatus.PROCESSING.value,
+            BulkAIUploadFileStatus.STOPPED.value,
         }
         if force:
             retryable_statuses.add(BulkAIUploadFileStatus.PENDING.value)
@@ -551,47 +639,58 @@ def resume_bulk_ai_upload(
             ),
         )
 
-    deck = _ensure_bulk_upload_deck(db, user, bulk.filename, None, existing_deck_id=bulk.deck_id)
-    bulk.deck_id = deck.id
-
-    if file_id:
-        target_file = target_file_records[0]
-        if target_file.created_deck_id:
-            _clear_deck_generated_content(db, target_file.created_deck_id)
+    def _mark_previous_attempt_superseded(target_file: BulkAIUploadFile) -> None:
         previous_status = (target_file.status or "").lower()
         if previous_status == BulkAIUploadFileStatus.FAILED.value:
             bulk.failed_files = max((bulk.failed_files or 0) - 1, 0)
         elif previous_status == BulkAIUploadFileStatus.COMPLETED.value:
             bulk.processed_files = max((bulk.processed_files or 0) - 1, 0)
-        target_file.status = BulkAIUploadFileStatus.PENDING.value
-        target_file.created_deck_id = target_file.created_deck_id or deck.id
-        target_file.flashcards_generated = 0
-        target_file.mcqs_generated = 0
-        target_file.duplicate_count = 0
-        target_file.error_message = None
-        target_file.started_at = None
-        target_file.completed_at = None
-        bulk.status = BulkAIUploadStatus.PENDING.value
-        bulk.is_auto_stop = False
-        bulk.error_message = None
-        bulk.completed_at = None
-        total_items = 1
-    else:
-        _clear_deck_generated_content(db, deck.id)
-        db.execute(
-            update(BulkAIUploadFile)
-            .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
-            .values(
-                status=BulkAIUploadFileStatus.PENDING.value,
-                created_deck_id=deck.id,
-                flashcards_generated=0,
-                mcqs_generated=0,
-                duplicate_count=0,
-                error_message=None,
-                started_at=None,
-                completed_at=None,
+        target_file.status = BulkAIUploadFileStatus.STOPPED.value
+        target_file.error_message = "Superseded by retry"
+        if not target_file.completed_at:
+            target_file.completed_at = datetime.utcnow()
+
+    if file_id or deck_id:
+        for target_file in target_file_records:
+            _mark_previous_attempt_superseded(target_file)
+            retry_row = _prepare_fresh_retry_attempt(
+                db,
+                bulk=bulk,
+                user=user,
+                source_file=target_file,
             )
-        )
+            file_records.append(retry_row)
+        all_statuses = [(f.status or '').lower() for f in file_records]
+        if any(status == BulkAIUploadFileStatus.PROCESSING.value for status in all_statuses):
+            bulk.status = BulkAIUploadStatus.PROCESSING.value
+        elif any(status == BulkAIUploadFileStatus.PENDING.value for status in all_statuses):
+            bulk.status = BulkAIUploadStatus.PENDING.value
+        elif any(status == BulkAIUploadFileStatus.FAILED.value for status in all_statuses):
+            bulk.status = BulkAIUploadStatus.FAILED.value
+        elif any(status == BulkAIUploadFileStatus.STOPPED.value for status in all_statuses):
+            bulk.status = BulkAIUploadStatus.STOPPED.value
+        else:
+            bulk.status = BulkAIUploadStatus.COMPLETED.value
+        bulk.is_auto_stop = any(status in {
+            BulkAIUploadFileStatus.PENDING.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+            BulkAIUploadFileStatus.STOPPED.value,
+        } for status in all_statuses)
+        if bulk.status != BulkAIUploadStatus.FAILED.value:
+            bulk.error_message = None
+        if bulk.status != BulkAIUploadStatus.COMPLETED.value:
+            bulk.completed_at = None
+        total_items = len(target_file_records)
+    else:
+        for target_file in target_file_records:
+            _mark_previous_attempt_superseded(target_file)
+            retry_row = _prepare_fresh_retry_attempt(
+                db,
+                bulk=bulk,
+                user=user,
+                source_file=target_file,
+            )
+            file_records.append(retry_row)
         bulk.status = BulkAIUploadStatus.PENDING.value
         bulk.is_auto_stop = False
         bulk.error_message = None
@@ -600,7 +699,8 @@ def resume_bulk_ai_upload(
         bulk.skipped_files = 0
         bulk.flashcards_generated = 0
         bulk.mcqs_generated = 0
-        total_items = bulk.total_files
+        bulk.completed_at = None
+        total_items = len(target_file_records)
     db.commit()
 
     job = Job(
@@ -617,6 +717,64 @@ def resume_bulk_ai_upload(
         "job_id": str(job.id),
         "status": bulk.status,
         "retried_file_id": file_id,
+        "retried_deck_id": deck_id,
+    }
+
+
+@router.post("/bulk-ai-upload/{bulk_id}/cancel")
+def cancel_bulk_ai_upload(
+    bulk_id: uuid.UUID,
+    file_id: uuid.UUID | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    bulk = db.get(BulkAIUpload, bulk_id)
+    if not bulk or bulk.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Bulk upload not found")
+
+    if file_id:
+        file_record = db.get(BulkAIUploadFile, file_id)
+        if not file_record or file_record.bulk_upload_id != bulk.id:
+            raise HTTPException(status_code=404, detail="Bulk upload file not found")
+        if file_record.status not in {
+            BulkAIUploadFileStatus.PENDING.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+        }:
+            raise HTTPException(status_code=400, detail="Only pending or running files can be canceled")
+        file_record.status = BulkAIUploadFileStatus.STOPPED.value
+        file_record.error_message = "File canceled by user"
+        file_record.completed_at = datetime.utcnow()
+        db.commit()
+        return {
+            "id": str(bulk.id),
+            "status": bulk.status,
+            "canceled_file_id": str(file_id),
+        }
+
+    bulk.is_auto_stop = True
+    bulk.error_message = "Job stop requested by user"
+    active_files = db.execute(
+        select(BulkAIUploadFile).where(
+            BulkAIUploadFile.bulk_upload_id == bulk.id,
+            BulkAIUploadFile.status.in_(
+                [
+                    BulkAIUploadFileStatus.PENDING.value,
+                    BulkAIUploadFileStatus.PROCESSING.value,
+                ]
+            ),
+        )
+    ).scalars().all()
+    stopped_at = datetime.utcnow()
+    for file_record in active_files:
+        file_record.status = BulkAIUploadFileStatus.STOPPED.value
+        file_record.error_message = "Job canceled by user"
+        file_record.completed_at = stopped_at
+    db.commit()
+    return {
+        "id": str(bulk.id),
+        "status": bulk.status,
+        "cancel_requested": True,
+        "canceled_files": len(active_files),
     }
 
 
