@@ -725,6 +725,11 @@
     min-width: 120px;
   }
 
+  .jobs-retry-modal__button--ok {
+    width: auto;
+    min-width: 120px;
+  }
+
   .jobs-retry-modal .modal__footer {
     display: flex;
     justify-content: flex-end;
@@ -784,8 +789,10 @@
     var meta = document.getElementById('jobs-retry-modal-meta');
     var feedback = document.getElementById('jobs-retry-modal-feedback');
     var actions = document.getElementById('jobs-retry-modal-actions');
+    var footer = modal.querySelector('.modal__footer');
+    var cancelButton = footer ? footer.querySelector('[data-modal-close="jobs-retry-modal"]') : null;
 
-    if (!modal || !title || !meta || !feedback || !actions) return;
+    if (!modal || !title || !meta || !feedback || !actions || !footer || !cancelButton) return;
 
     function escapeHtml(value) {
       return String(value || '')
@@ -802,6 +809,39 @@
       feedback.classList.toggle('jobs-page__notice--error', !!isError);
     }
 
+    function closeModal() {
+      if (typeof modal.close === 'function') {
+        modal.close();
+      }
+    }
+
+    function setFooterMode(mode, refreshUrl) {
+      var existingOk = footer.querySelector('.jobs-retry-modal__button--ok');
+      if (existingOk) {
+        existingOk.remove();
+      }
+
+      if (mode === 'result') {
+        cancelButton.hidden = true;
+        var okButton = document.createElement('button');
+        okButton.type = 'button';
+        okButton.className = 'browse-btn browse-btn--sm jobs-retry-modal__button--ok';
+        okButton.textContent = 'OK';
+        okButton.addEventListener('click', function () {
+          closeModal();
+          if (refreshUrl) {
+            window.location.href = refreshUrl;
+          } else {
+            window.location.reload();
+          }
+        });
+        footer.appendChild(okButton);
+        return;
+      }
+
+      cancelButton.hidden = false;
+    }
+
     function buildActionForm(action, label, extraClass) {
       var form = document.createElement('form');
       form.method = 'post';
@@ -816,6 +856,7 @@
       form.addEventListener('submit', function (event) {
         event.preventDefault();
         setFeedback('', false);
+        setFooterMode('confirm');
         button.disabled = true;
         button.setAttribute('aria-busy', 'true');
 
@@ -840,10 +881,13 @@
               });
           })
           .then(function () {
-            setFeedback('Retry has started. Check this popup or Jobs page for progress.', false);
+            actions.innerHTML = '';
+            setFeedback('Retry started. Click OK to refresh job details.', false);
+            setFooterMode('result', window.location.pathname + window.location.search);
           })
           .catch(function (error) {
             setFeedback(error && error.message ? error.message : 'Retry could not be started', true);
+            setFooterMode('confirm');
           })
           .finally(function () {
             button.disabled = false;
@@ -867,6 +911,7 @@
 
       title.textContent = confirmTitle;
       setFeedback('', false);
+      setFooterMode('confirm');
       actions.innerHTML = '';
 
       if (scope === 'bulk') {

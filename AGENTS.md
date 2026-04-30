@@ -134,6 +134,8 @@
 - UX intent: bulk upload popup should stay in the same modal during file submission and show only a simple upload progress bar/status before redirecting to `/settings/jobs`.
 - While upload submission is active, modal cancel/close actions should abort the in-flight upload request instead of silently dismissing the dialog.
 - `/settings/jobs` is the place to monitor background bulk upload progress after submission and should stay mobile-friendly.
+- Bulk `Retry all` must preserve each file row's own `created_deck_id`; resetting all files to one shared deck causes cross-file card mixing and duplicated-looking question sets across the batch.
+- Jobs retry modal UX should switch to a simple result state after any retry starts: show only retry details plus an `OK` button, and refresh the current job-details view when `OK` is clicked.
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
 - New users created during first OIDC sign-in inherit `settings.test_enabled_default`; current intended default is enabled so tests are on for brand-new users unless later overridden.
 
