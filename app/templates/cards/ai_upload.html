@@ -181,7 +181,7 @@
         <span>{{ retry_filename }}</span>
         <span class="muted">This retry button is only shown for the failed source file linked to this deck.</span>
       </div>
-      <form method="post" action="/api/v1/bulk-ai-upload/{{ retry_bulk.id }}/resume?file_id={{ retry_file.id }}">
+      <form method="post" action="/api/v1/bulk-ai-upload/{{ retry_bulk.id }}/resume?file_id={{ retry_file.child_file_id }}">
         <button type="submit" class="button button-secondary">Retry file</button>
       </form>
     </section>

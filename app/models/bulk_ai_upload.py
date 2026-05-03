@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -60,11 +60,56 @@ class BulkAIUpload(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     deck = relationship("Deck", back_populates="bulk_ai_uploads")
+    child_files = relationship(
+        "BulkAIUploadChildFile",
+        back_populates="bulk_upload",
+        cascade="all, delete-orphan",
+        order_by="BulkAIUploadChildFile.created_at",
+    )
     files = relationship(
         "BulkAIUploadFile",
         back_populates="bulk_upload",
         cascade="all, delete-orphan",
         order_by="BulkAIUploadFile.created_at",
+    )
+
+
+class BulkAIUploadChildFile(Base):
+    __tablename__ = "bulk_ai_upload_child_files"
+    __table_args__ = (
+        UniqueConstraint("bulk_upload_id", "child_key", name="uq_bulk_ai_upload_child_file_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bulk_upload_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bulk_ai_uploads.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    latest_attempt_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bulk_ai_upload_files.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+
+    child_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    bulk_upload = relationship("BulkAIUpload", back_populates="child_files")
+    latest_attempt = relationship("BulkAIUploadFile", foreign_keys=[latest_attempt_id], post_update=True)
+    attempts = relationship(
+        "BulkAIUploadFile",
+        back_populates="child_file",
+        cascade="all, delete-orphan",
+        order_by="BulkAIUploadFile.created_at",
+        foreign_keys="BulkAIUploadFile.child_file_id",
     )
 
 
@@ -77,6 +122,12 @@ class BulkAIUploadFile(Base):
         ForeignKey("bulk_ai_uploads.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
+    )
+    child_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bulk_ai_upload_child_files.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
     )
     created_deck_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -104,4 +155,5 @@ class BulkAIUploadFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
 
     bulk_upload = relationship("BulkAIUpload", back_populates="files")
+    child_file = relationship("BulkAIUploadChildFile", back_populates="attempts", foreign_keys=[child_file_id])
     created_deck = relationship("Deck")

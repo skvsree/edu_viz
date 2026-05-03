@@ -21,8 +21,10 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.models import (
     BulkAIUpload,
+    BulkAIUploadChildFile,
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
+    BulkAIUploadStatus,
     Card,
     Deck,
     Job,
@@ -497,46 +499,190 @@ def _jobs_response(
     bulk_file_counts: dict = {}
     bulk_has_active_retry: set = set()
     bulk_jobs_by_file: dict = {}
+    bulk_child_files: dict = {}
     if bulk_ids:
-        file_rows_result = db.execute(
+        child_result = db.execute(
+            select(BulkAIUploadChildFile)
+            .where(BulkAIUploadChildFile.bulk_upload_id.in_(bulk_ids))
+            .order_by(BulkAIUploadChildFile.created_at.asc())
+        )
+        child_rows = (
+            child_result.scalars().all()
+            if hasattr(child_result, "scalars")
+            else []
+        )
+        file_result = db.execute(
             select(BulkAIUploadFile)
             .where(BulkAIUploadFile.bulk_upload_id.in_(bulk_ids))
             .order_by(BulkAIUploadFile.created_at.asc())
         )
-        if hasattr(file_rows_result, "scalars"):
-            file_rows = file_rows_result.scalars().all()
-        else:
-            file_rows = file_rows_result.all()
-        if file_rows and isinstance(file_rows[0], tuple):
-            file_rows = []
+        file_rows = (
+            file_result.scalars().all()
+            if hasattr(file_result, "scalars")
+            else []
+        )
+        child_rows = [
+            row for row in child_rows if hasattr(row, "bulk_upload_id")
+        ]
+        file_rows = [
+            row for row in file_rows if hasattr(row, "bulk_upload_id")
+        ]
+        child_attempts: dict = {}
+        job_rank = {
+            BulkAIUploadFileStatus.PROCESSING.value: 5,
+            BulkAIUploadFileStatus.FAILED.value: 4,
+            BulkAIUploadFileStatus.PENDING.value: 3,
+            BulkAIUploadFileStatus.STOPPED.value: 2,
+            BulkAIUploadFileStatus.COMPLETED.value: 1,
+        }
+        latest_child_attempt_ids = {
+            str(child_row.latest_attempt_id)
+            for child_row in child_rows
+            if getattr(child_row, "latest_attempt_id", None)
+        }
+        file_rows_by_id = {str(file_row.id): file_row for file_row in file_rows}
+
         for file_row in file_rows:
             bulk_upload_id = file_row.bulk_upload_id
             bulk_file_rows.setdefault(bulk_upload_id, []).append(file_row)
+            if file_row.child_file_id:
+                child_attempts.setdefault(str(file_row.child_file_id), []).append(file_row)
             if file_row.created_deck_id:
                 deck_ids.add(file_row.created_deck_id)
-            if file_row.status == BulkAIUploadFileStatus.FAILED.value:
+            is_latest_child_attempt = (
+                file_row.child_file_id and str(file_row.id) in latest_child_attempt_ids
+            )
+            is_legacy_attempt = not file_row.child_file_id
+            if file_row.status == BulkAIUploadFileStatus.FAILED.value and (
+                is_latest_child_attempt or is_legacy_attempt
+            ):
                 bulk_failed_files.setdefault(bulk_upload_id, []).append(file_row)
             if file_row.status in {
                 BulkAIUploadFileStatus.PENDING.value,
                 BulkAIUploadFileStatus.PROCESSING.value,
-            }:
+            } and (is_latest_child_attempt or is_legacy_attempt):
                 bulk_has_active_retry.add(bulk_upload_id)
 
-        for bulk_id, file_list in bulk_file_rows.items():
+        for child_row in child_rows:
+            bulk_child_files.setdefault(child_row.bulk_upload_id, []).append(child_row)
+
+        legacy_attempt_groups: dict = {}
+        for file_row in file_rows:
+            if file_row.child_file_id:
+                continue
+            legacy_key = str(file_row.created_deck_id or file_row.id)
+            bulk_id = file_row.bulk_upload_id
+            legacy_attempt_groups.setdefault(bulk_id, {}).setdefault(legacy_key, []).append(file_row)
+
+        for bulk_id in bulk_ids:
             counts = {"completed": 0, "processing": 0, "failed": 0, "pending": 0, "stopped": 0}
-            for file_row in file_list:
-                status = (file_row.status or "").lower()
+            grouped_items = []
+
+            child_list = bulk_child_files.get(bulk_id, [])
+            for child_row in child_list:
+                attempts = child_attempts.get(str(child_row.id), [])
+                latest_row = None
+                latest_attempt_id = getattr(child_row, "latest_attempt_id", None)
+                if latest_attempt_id is not None:
+                    latest_row = file_rows_by_id.get(str(latest_attempt_id))
+                if latest_row is None:
+                    relation_latest = getattr(child_row, "latest_attempt", None)
+                    if relation_latest is not None and (
+                        latest_attempt_id is None
+                        or str(getattr(relation_latest, "id", "")) == str(latest_attempt_id)
+                    ):
+                        latest_row = relation_latest
+                if latest_row is None and attempts:
+                    latest_row = max(
+                        attempts,
+                        key=lambda item: (
+                            item.created_at or datetime.min,
+                            item.started_at or datetime.min,
+                            item.completed_at or datetime.min,
+                        ),
+                    )
+                if latest_row is None:
+                    continue
+                status = (latest_row.status or "").lower()
                 if status in counts:
                     counts[status] += 1
                 else:
                     counts["pending"] += 1
+                grouped_items.append(
+                    {
+                        "id": str(child_row.id),
+                        "filename": child_row.original_filename,
+                        "display_title": (
+                            child_row.display_title
+                            or latest_row.extracted_title
+                            or child_row.original_filename
+                        ),
+                        "child_file": child_row,
+                        "latest_file": latest_row,
+                        "jobs": sorted(
+                            attempts,
+                            key=lambda item: (
+                                job_rank.get((item.status or "").lower(), 0),
+                                item.created_at or datetime.min,
+                                item.started_at or datetime.min,
+                                item.completed_at or datetime.min,
+                            ),
+                            reverse=True,
+                        ),
+                    }
+                )
+
+            for legacy_key, attempts in legacy_attempt_groups.get(bulk_id, {}).items():
+                latest_row = max(
+                    attempts,
+                    key=lambda item: (
+                        item.created_at or datetime.min,
+                        item.started_at or datetime.min,
+                        item.completed_at or datetime.min,
+                    ),
+                )
+                status = (latest_row.status or "").lower()
+                if status in counts:
+                    counts[status] += 1
+                else:
+                    counts["pending"] += 1
+                grouped_items.append(
+                    {
+                        "id": str(latest_row.id),
+                        "filename": latest_row.original_filename,
+                        "display_title": latest_row.extracted_title or latest_row.original_filename,
+                        "child_file": None,
+                        "latest_file": latest_row,
+                        "jobs": sorted(
+                            attempts,
+                            key=lambda item: (
+                                job_rank.get((item.status or "").lower(), 0),
+                                item.created_at or datetime.min,
+                                item.started_at or datetime.min,
+                                item.completed_at or datetime.min,
+                            ),
+                            reverse=True,
+                        ),
+                    }
+                )
+
             bulk_file_counts[bulk_id] = counts
+            bulk_jobs_by_file[bulk_id] = sorted(
+                grouped_items,
+                key=lambda item: (
+                    job_rank.get((item["latest_file"].status or "").lower(), 0),
+                    item["latest_file"].created_at or datetime.min,
+                    item["latest_file"].started_at or datetime.min,
+                    item["latest_file"].completed_at or datetime.min,
+                ),
+                reverse=True,
+            )
 
             if bulk_failed_files.get(bulk_id):
                 continue
             processing_rows = [
-                file_row for file_row in file_list
-                if file_row.status == BulkAIUploadFileStatus.PROCESSING.value
+                item["latest_file"] for item in bulk_jobs_by_file.get(bulk_id, [])
+                if item["latest_file"].status == BulkAIUploadFileStatus.PROCESSING.value
             ]
             if processing_rows:
                 bulk_failed_files[bulk_id] = processing_rows
@@ -548,50 +694,25 @@ def _jobs_response(
         )
         decks = {d.id: d for d in deck_results}
 
-    job_rank = {"running": 4, "pending": 3, "failed": 2, "completed": 1}
-    for bulk_id, file_list in bulk_file_rows.items():
-        file_groups: dict = {}
-        for file_row in file_list:
-            file_groups.setdefault(file_row.original_filename, []).append(file_row)
+    bulk_output_decks = bulk_jobs_by_file
 
-        grouped_items = []
-        for filename, grouped_rows in file_groups.items():
-            latest_row = max(
-                grouped_rows,
-                key=lambda item: (
-                    item.created_at or datetime.min,
-                    item.started_at or datetime.min,
-                    item.completed_at or datetime.min,
-                ),
-            )
-            grouped_rows_sorted = sorted(
-                grouped_rows,
-                key=lambda item: (
-                    job_rank.get((item.status or "").lower(), 0),
-                    item.created_at or datetime.min,
-                    item.started_at or datetime.min,
-                    item.completed_at or datetime.min,
-                ),
-                reverse=True,
-            )
-            grouped_item = {
-                "filename": filename,
-                "latest_file": latest_row,
-                "jobs": grouped_rows_sorted,
-            }
-            grouped_items.append(grouped_item)
-
-        bulk_jobs_by_file[bulk_id] = sorted(
-            grouped_items,
-            key=lambda item: (
-                job_rank.get((item["latest_file"].status or "").lower(), 0),
-                item["latest_file"].created_at or datetime.min,
-                item["latest_file"].started_at or datetime.min,
-                item["latest_file"].completed_at or datetime.min,
-            ),
-            reverse=True,
-        )
-        bulk_output_decks[bulk_id] = bulk_jobs_by_file[bulk_id]
+    for bulk_id, bulk in bulks.items():
+        if bulk_id in bulk_failed_files:
+            continue
+        if (
+            getattr(bulk, "error_message", None)
+            and "Queued upload file missing" in str(getattr(bulk, "error_message", ""))
+        ):
+            continue
+        if bulk_id in bulk_jobs_by_file:
+            continue
+        bulk_status = str(getattr(bulk, "status", "") or "").lower()
+        if bulk_status in {
+            BulkAIUploadStatus.FAILED.value,
+            BulkAIUploadStatus.STOPPED.value,
+            BulkAIUploadStatus.COMPLETED.value,
+        }:
+            bulk_failed_files[bulk_id] = [bulk]
 
     return templates.TemplateResponse(
         "settings/jobs.html",
@@ -2442,23 +2563,32 @@ def deck_ai_upload(
         .scalars()
         .all()
     )
-    retry_file_result = db.execute(
-        select(BulkAIUploadFile)
-        .where(BulkAIUploadFile.created_deck_id == deck.id)
-        .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.FAILED.value)
-        .order_by(BulkAIUploadFile.created_at.desc())
-        .limit(1)
+    retry_candidates = (
+        db.execute(
+            select(BulkAIUploadFile)
+            .where(BulkAIUploadFile.created_deck_id == deck.id)
+            .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.FAILED.value)
+            .where(BulkAIUploadFile.child_file_id.isnot(None))
+            .order_by(BulkAIUploadFile.created_at.desc())
+        )
+        .scalars()
+        .all()
     )
-    if hasattr(retry_file_result, "scalar_one_or_none"):
-        retry_file = retry_file_result.scalar_one_or_none()
-    else:
-        retry_items = retry_file_result.scalars().all()
-        retry_file = retry_items[0] if retry_items else None
+    retry_file = None
+    for candidate in retry_candidates:
+        if not candidate.child_file_id:
+            continue
+        child_row = db.get(BulkAIUploadChildFile, candidate.child_file_id)
+        if child_row and child_row.latest_attempt_id == candidate.id:
+            retry_file = candidate
+            break
     retry_bulk = None
     retry_filename = None
-    if retry_file:
+    if retry_file and retry_file.child_file_id:
         retry_bulk = db.get(BulkAIUpload, retry_file.bulk_upload_id)
         retry_filename = retry_file.original_filename
+    else:
+        retry_file = None
     has_published_tests = _deck_has_published_tests(db, deck.id)
     return _deck_content_response(
         request,

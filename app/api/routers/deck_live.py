@@ -4,13 +4,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
 from app.core.db import get_db, SessionLocal
 from app.models import (
     BulkAIUpload,
+    BulkAIUploadChildFile,
     BulkAIUploadFile,
     Card,
     Deck,
@@ -53,6 +54,34 @@ def _deck_counts(db: Session, deck_ids: list[UUID]) -> dict[str, dict[str, int]]
     return result
 
 
+def _latest_bulk_attempt_rows(db: Session, bulk_upload_id: UUID) -> list[BulkAIUploadFile]:
+    rows = db.execute(
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.bulk_upload_id == bulk_upload_id)
+        .order_by(BulkAIUploadFile.created_at.asc())
+    ).scalars().all()
+    if not rows:
+        return []
+
+    child_ids = [row.child_file_id for row in rows if row.child_file_id]
+    child_map: dict[UUID, BulkAIUploadChildFile] = {}
+    if child_ids:
+        child_rows = db.execute(
+            select(BulkAIUploadChildFile).where(BulkAIUploadChildFile.id.in_(child_ids))
+        ).scalars().all()
+        child_map = {child.id: child for child in child_rows}
+
+    latest_rows: list[BulkAIUploadFile] = []
+    for row in rows:
+        if not row.child_file_id:
+            latest_rows.append(row)
+            continue
+        child_row = child_map.get(row.child_file_id)
+        if child_row and child_row.latest_attempt_id == row.id:
+            latest_rows.append(row)
+    return latest_rows
+
+
 def _deck_import_status(db: Session, deck_ids: list[UUID]) -> dict[str, dict[str, str | bool]]:
     if not deck_ids:
         return {}
@@ -60,29 +89,25 @@ def _deck_import_status(db: Session, deck_ids: list[UUID]) -> dict[str, dict[str
         str(deck_id): {"import_in_progress": False, "badge_text": ""}
         for deck_id in deck_ids
     }
-    rows = db.execute(
-        select(Job.id, Job.status, BulkAIUpload.deck_id, BulkAIUploadFile.created_deck_id)
+    jobs = db.execute(
+        select(Job.id, Job.reference_id, BulkAIUpload.deck_id)
         .join(BulkAIUpload, BulkAIUpload.id == Job.reference_id)
-        .outerjoin(BulkAIUploadFile, BulkAIUploadFile.bulk_upload_id == BulkAIUpload.id)
         .where(Job.job_type == "bulk_ai_upload")
         .where(Job.status.in_(["pending", "running"]))
-        .where(
-            or_(
-                BulkAIUpload.deck_id.in_(deck_ids),
-                BulkAIUploadFile.created_deck_id.in_(deck_ids),
-            )
-        )
     ).all()
-    for _job_id, _status, bulk_deck_id, created_deck_id in rows:
-        for deck_id in (bulk_deck_id, created_deck_id):
-            if deck_id is None:
-                continue
-            key = str(deck_id)
-            if key in result:
-                result[key] = {
-                    "import_in_progress": True,
-                    "badge_text": "Import in progress",
-                }
+    for _job_id, bulk_upload_id, bulk_deck_id in jobs:
+        latest_rows = _latest_bulk_attempt_rows(db, bulk_upload_id)
+        row_deck_ids = [row.created_deck_id for row in latest_rows if row.created_deck_id]
+        if bulk_deck_id in deck_ids or any(deck_id in deck_ids for deck_id in row_deck_ids):
+            for deck_id in [bulk_deck_id, *row_deck_ids]:
+                if deck_id is None:
+                    continue
+                key = str(deck_id)
+                if key in result:
+                    result[key] = {
+                        "import_in_progress": True,
+                        "badge_text": "Import in progress",
+                    }
     return result
 
 
@@ -227,11 +252,7 @@ async def job_stream(
 
                 if live_job.reference_id and live_job.job_type == "bulk_ai_upload":
                     live_bulk = live_db.get(BulkAIUpload, live_job.reference_id)
-                    files = live_db.execute(
-                        select(BulkAIUploadFile)
-                        .where(BulkAIUploadFile.bulk_upload_id == live_job.reference_id)
-                        .order_by(BulkAIUploadFile.created_at)
-                    ).scalars().all()
+                    files = _latest_bulk_attempt_rows(live_db, live_job.reference_id)
                     created_deck_ids = [f.created_deck_id for f in files if f.created_deck_id]
                     created_decks = []
                     counts = _deck_counts(live_db, created_deck_ids)
@@ -270,7 +291,7 @@ async def job_stream(
                             "error_message": f.error_message,
                         }
                         for f in files
-                        if f.status in {"processing", "completed", "failed"}
+                        if f.status in {"processing", "completed", "failed", "stopped"}
                     ]
                     payload["bulk"] = {
                         "id": str(live_bulk.id) if live_bulk else None,

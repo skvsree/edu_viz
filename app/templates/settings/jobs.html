@@ -5,7 +5,7 @@
   <section class="card stack-md jobs-page__card">
     <div class="stack-xs">
       <h1>Jobs</h1>
-      <p class="muted">Each uploaded ZIP shows one row per uploaded file. Expand a file only when you want to see its decks and retry history.</p>
+      <p class="muted">Each uploaded file has child files under it. Jobs and decks belong to those child files, and retries stay under the same child file.</p>
     </div>
 
     {% if request.query_params.get("submitted") == "1" %}
@@ -29,8 +29,8 @@
               <div class="jobs-bulk-card__title-row jobs-bulk-card__title-row--compact">
                 <div class="jobs-bulk-card__title-main">
                   <div class="jobs-bulk-card__filename-row">
-                    <div class="jobs-bulk-card__filename">{{ bulk.filename or "Bulk upload" }}</div>
-                    {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] %}
+                    <div class="jobs-bulk-card__filename">{{ bulk.filename or "Uploaded file" }}</div>
+                    {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] and 'Queued upload file missing' not in (bulk.error_message or '') %}
                     {% set can_cancel_bulk = bulk.status in ['pending', 'processing'] %}
                     {% if can_retry_all %}
                       <button
@@ -93,7 +93,7 @@
                       <table class="jobs-files-table">
                         <thead>
                           <tr>
-                            <th>Uploaded file</th>
+                            <th>Child file</th>
                             <th>Status</th>
                             <th>Deck</th>
                             <th>Cards</th>
@@ -114,7 +114,8 @@
                           <tr class="jobs-files-table__row {% if is_failed %}jobs-files-table__row--failed{% elif is_running %}jobs-files-table__row--running{% endif %}">
                             <td>
                               <div class="jobs-file-cell">
-                                <div class="jobs-file-cell__name">{{ file_group.filename }}</div>
+                                <div class="jobs-file-cell__name">{{ file_group.display_title }}</div>
+                                <div class="jobs-file-cell__deck-name-muted">{{ file_group.filename }}</div>
                                 <div class="jobs-file-cell__deck-name">
                                   {% if latest.created_deck_id %}
                                     <a class="jobs-inline-link jobs-inline-link--subtle" href="/decks/{{ latest.created_deck_id }}">{{ latest.deck_name or ('Deck #' ~ latest.created_deck_id) }}</a>
@@ -144,33 +145,37 @@
                             <td>{{ file_group.jobs|length }}</td>
                             <td>
                               <div class="jobs-attempt-row__actions jobs-attempt-row__actions--inline">
+                                {% set is_legacy_file_group = not file_group.child_file %}
                                 {% if can_retry_file %}
                                   <button
                                     type="button"
                                     class="jobs-open-retry-modal"
                                     data-retry-scope="file"
                                     data-bulk-id="{{ job.reference_id }}"
-                                    data-file-id="{{ latest.id }}"
+                                    data-file-id="{{ file_group.id }}"
                                     data-filename="{{ file_group.filename }}"
-                                    data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+                                     data-title="{{ file_group.display_title or latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+
                                     data-file-status="{{ latest_status or 'pending' }}"
                                     data-confirm-title="Retry failed file?"
-                                    data-confirm-body="This will retry only this failed file and start with a fresh deck."
+                                    data-confirm-body="{{ 'This will retry only this failed file and start with a fresh deck.' if not is_legacy_file_group else 'This legacy upload row has no child file record, so retry will restart the whole ZIP upload.' }}"
                                     data-confirm-label="Retry file"
-                                    data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/resume?file_id={{ latest.id }}"
+                                     data-action-url="{{ '/api/v1/bulk-ai-upload/' ~ job.reference_id ~ '/resume?file_id=' ~ file_group.id if not is_legacy_file_group else '/api/v1/bulk-ai-upload/' ~ job.reference_id ~ '/resume' }}"
+
                                   >
                                     Retry
                                   </button>
                                 {% endif %}
-                                {% if can_force_retry_file and latest.created_deck_id %}
+                                {% if can_force_retry_file and latest.created_deck_id and not is_legacy_file_group %}
                                   <button
                                     type="button"
                                     class="jobs-open-retry-modal jobs-open-retry-modal--force"
                                     data-retry-scope="file-force"
                                     data-bulk-id="{{ job.reference_id }}"
-                                    data-file-id="{{ latest.id }}"
+                                    data-file-id="{{ file_group.id }}"
                                     data-filename="{{ file_group.filename }}"
-                                    data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+                                     data-title="{{ file_group.display_title or latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+
                                     data-file-status="{{ latest_status or 'pending' }}"
                                     data-confirm-title="Force retry this file?"
                                     data-confirm-body="This will delete the old generated deck content and create a fresh retry attempt for this file."
@@ -181,21 +186,22 @@
                                     Force retry
                                   </button>
                                 {% endif %}
-                                {% if can_cancel_file %}
+                                {% if can_cancel_file and not is_legacy_file_group %}
                                   <button
                                     type="button"
                                     class="jobs-open-retry-modal jobs-open-retry-modal--force"
                                     data-retry-scope="cancel-file"
                                     data-bulk-id="{{ job.reference_id }}"
-                                    data-file-id="{{ latest.id }}"
+                                    data-file-id="{{ file_group.id }}"
                                     data-filename="{{ file_group.filename }}"
-                                    data-title="{{ latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+                                     data-title="{{ file_group.display_title or latest.extracted_title or latest.original_filename or bulk.filename or ('File ' ~ loop.index) }}"
+
                                     data-file-status="{{ latest_status or 'pending' }}"
                                     data-confirm-title="Cancel this file?"
                                     data-confirm-body="This will stop processing for this file."
                                     data-confirm-label="Cancel file"
                                     data-success-message="File cancel requested. Click OK to refresh job details."
-                                    data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/cancel?file_id={{ latest.id }}"
+                                    data-action-url="/api/v1/bulk-ai-upload/{{ job.reference_id }}/cancel?file_id={{ file_group.id }}"
                                   >
                                     Cancel
                                   </button>

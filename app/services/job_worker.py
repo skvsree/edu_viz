@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.core.db import SessionLocal
 from app.models import (
     BulkAIUpload,
+    BulkAIUploadChildFile,
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
     BulkAIUploadStatus,
@@ -99,6 +100,34 @@ def _looks_like_noise(line: str) -> bool:
     if re.fullmatch(r"[\d\s\-–—.:]+", line):
         return True
     return False
+
+
+def _latest_bulk_attempt_rows(db: Session, bulk_upload_id: uuid.UUID) -> list[BulkAIUploadFile]:
+    rows = db.execute(
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.bulk_upload_id == bulk_upload_id)
+        .order_by(BulkAIUploadFile.created_at.asc())
+    ).scalars().all()
+    if not rows:
+        return []
+
+    child_ids = [row.child_file_id for row in rows if row.child_file_id]
+    child_map: dict[uuid.UUID, BulkAIUploadChildFile] = {}
+    if child_ids:
+        child_rows = db.execute(
+            select(BulkAIUploadChildFile).where(BulkAIUploadChildFile.id.in_(child_ids))
+        ).scalars().all()
+        child_map = {child.id: child for child in child_rows}
+
+    latest_rows: list[BulkAIUploadFile] = []
+    for row in rows:
+        if not row.child_file_id:
+            latest_rows.append(row)
+            continue
+        child_row = child_map.get(row.child_file_id)
+        if child_row and child_row.latest_attempt_id == row.id:
+            latest_rows.append(row)
+    return latest_rows
 
 
 def _derive_best_title(lines: list[str], filename: str) -> str:
@@ -402,6 +431,10 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             return
 
         db.refresh(file_record)
+        if file_record.child_file_id:
+            child_file = db.get(BulkAIUploadChildFile, file_record.child_file_id)
+            if child_file and child_file.latest_attempt_id and child_file.latest_attempt_id != file_record.id:
+                continue
         if (file_record.status or '').lower() == BulkAIUploadFileStatus.STOPPED.value:
             job.failed_items += 1
             db.commit()
@@ -641,13 +674,21 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"duplicates={duplicate_count}",
                 flush=True,
             )
+            previous_flashcards_generated = file_record.flashcards_generated or 0
+            previous_mcqs_generated = file_record.mcqs_generated or 0
             file_record.status = BulkAIUploadFileStatus.COMPLETED.value
             file_record.flashcards_generated = flashcards_generated
             file_record.mcqs_generated = mcqs_generated
             file_record.duplicate_count = duplicate_count
             file_record.completed_at = datetime.utcnow()
-            bulk.flashcards_generated += flashcards_generated
-            bulk.mcqs_generated += mcqs_generated
+            bulk.flashcards_generated = max(
+                0,
+                (bulk.flashcards_generated or 0) - previous_flashcards_generated + flashcards_generated,
+            )
+            bulk.mcqs_generated = max(
+                0,
+                (bulk.mcqs_generated or 0) - previous_mcqs_generated + mcqs_generated,
+            )
             job.processed_items += 1
         except Exception as e:
             print(f"[job-worker] file failed job={job.id} file={pdf_name} err={str(e)[:300]}", flush=True)
@@ -672,20 +713,55 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
     bulk = db.get(BulkAIUpload, job.reference_id)
     if bulk:
-        bulk.processed_files = job.processed_items
-        bulk.failed_files = job.failed_items
+        all_rows = db.execute(
+            select(BulkAIUploadFile)
+            .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+            .order_by(BulkAIUploadFile.created_at.asc())
+        ).scalars().all()
+        latest_rows: list[BulkAIUploadFile] = []
+        for row in all_rows:
+            if not row.child_file_id:
+                latest_rows.append(row)
+                continue
+            child_row = db.get(BulkAIUploadChildFile, row.child_file_id)
+            if not child_row or not child_row.latest_attempt_id:
+                continue
+            if child_row.latest_attempt_id == row.id:
+                latest_rows.append(row)
+
+        latest_statuses = [(row.status or '').lower() for row in latest_rows]
+        bulk.processed_files = sum(
+            1 for status in latest_statuses if status == BulkAIUploadFileStatus.COMPLETED.value
+        )
+        bulk.failed_files = sum(
+            1
+            for status in latest_statuses
+            if status in {
+                BulkAIUploadFileStatus.FAILED.value,
+                BulkAIUploadFileStatus.STOPPED.value,
+            }
+        )
         if bulk.is_auto_stop:
             bulk.status = BulkAIUploadStatus.STOPPED.value
             bulk.error_message = 'Job stopped by user'
         elif hard_fail_job:
             bulk.status = BulkAIUploadStatus.FAILED.value
             bulk.error_message = hard_fail_message
+        elif any(status == BulkAIUploadFileStatus.PROCESSING.value for status in latest_statuses):
+            bulk.status = BulkAIUploadStatus.PROCESSING.value
+            bulk.error_message = None
+        elif any(status == BulkAIUploadFileStatus.PENDING.value for status in latest_statuses):
+            bulk.status = BulkAIUploadStatus.PENDING.value
+            bulk.error_message = None
+        elif any(status == BulkAIUploadFileStatus.FAILED.value for status in latest_statuses):
+            bulk.status = BulkAIUploadStatus.FAILED.value
+            bulk.error_message = None
+        elif any(status == BulkAIUploadFileStatus.STOPPED.value for status in latest_statuses):
+            bulk.status = BulkAIUploadStatus.STOPPED.value
+            bulk.error_message = 'Job stopped by user'
         else:
-            bulk.status = (
-                BulkAIUploadStatus.FAILED.value
-                if job.failed_items > 0 and job.processed_items == 0
-                else BulkAIUploadStatus.COMPLETED.value
-            )
+            bulk.status = BulkAIUploadStatus.COMPLETED.value
+            bulk.error_message = None
         bulk.completed_at = datetime.utcnow()
 
     print(
@@ -773,11 +849,11 @@ def process_job(job_id: uuid.UUID) -> None:
                         bulk.status = BulkAIUploadStatus.FAILED.value
                         bulk.error_message = str(e)[:500]
                         bulk.completed_at = datetime.utcnow()
-                        file_records = db.execute(
-                            select(BulkAIUploadFile)
-                            .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
-                            .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.PROCESSING.value)
-                        ).scalars().all()
+                        file_records = [
+                            file_record
+                            for file_record in _latest_bulk_attempt_rows(db, bulk.id)
+                            if file_record.status == BulkAIUploadFileStatus.PROCESSING.value
+                        ]
                         for file_record in file_records:
                             file_record.status = BulkAIUploadFileStatus.FAILED.value
                             file_record.error_message = str(e)[:500]

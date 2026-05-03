@@ -145,3 +145,5 @@
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
 - New users created during first OIDC sign-in inherit `settings.test_enabled_default`; current intended default is enabled so tests are on for brand-new users unless later overridden.
 
+
+- In edu_viz, the next Jobs refactor should move from repeated attempt rows to a parent/child upload schema so retries stay under one child file instead of creating confusing duplicate file rows.

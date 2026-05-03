@@ -10,6 +10,7 @@ from app.models.deck_mcq_generation_status import DeckMcqGenerationItem, DeckMcq
 from app.models.ai_upload_generation import AIUploadGeneration, AIUploadGenerationStatus
 from app.models.bulk_ai_upload import (  # noqa: F401
     BulkAIUpload,
+    BulkAIUploadChildFile,
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
     BulkAIUploadStatus,
@@ -60,4 +61,11 @@ __all__ = [
     "DeckMcqGenerationItemStatus",
     "AIUploadGeneration",
     "AIUploadGenerationStatus",
+    "BulkAIUpload",
+    "BulkAIUploadChildFile",
+    "BulkAIUploadFile",
+    "BulkAIUploadFileStatus",
+    "BulkAIUploadStatus",
+    "Job",
+    "JobStatus",
 ]

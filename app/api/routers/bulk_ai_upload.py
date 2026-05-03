@@ -15,6 +15,7 @@ from app.api.deps import current_user
 from app.core.db import get_db
 from app.models import (
     BulkAIUpload,
+    BulkAIUploadChildFile,
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
     BulkAIUploadStatus,
@@ -136,15 +137,30 @@ def enqueue_ai_upload_job(
         except StorageError as exc:
             raise HTTPException(status_code=503, detail=f"Failed to store upload file: {queued_name}") from exc
 
+        child_file = BulkAIUploadChildFile(
+            bulk_upload_id=bulk.id,
+            child_key=f"{index}:{queued_name}",
+            original_filename=queued_name,
+            display_title=Path(queued_name).stem,
+            storage_key=storage_key,
+            file_size=len(queued_bytes),
+        )
+        db.add(child_file)
+        db.flush()
+
         file_row = BulkAIUploadFile(
             bulk_upload_id=bulk.id,
+            child_file_id=child_file.id,
             original_filename=queued_name,
             content_text=None,
             storage_key=storage_key,
             status=BulkAIUploadFileStatus.PENDING.value,
             created_deck_id=deck.id,
+            file_size=len(queued_bytes),
         )
         db.add(file_row)
+        db.flush()
+        child_file.latest_attempt_id = file_row.id
 
     job = Job(
         job_type="bulk_ai_upload",
@@ -234,12 +250,58 @@ def _clear_deck_generated_content(db: Session, deck_id):
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
 
+def _latest_bulk_attempt_rows(db: Session, bulk_upload_id) -> list[BulkAIUploadFile]:
+    rows = db.execute(
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.bulk_upload_id == bulk_upload_id)
+        .order_by(BulkAIUploadFile.created_at.asc())
+    ).scalars().all()
+    if not rows:
+        return []
+
+    child_ids = [row.child_file_id for row in rows if row.child_file_id]
+    child_map: dict[uuid.UUID, BulkAIUploadChildFile] = {}
+    if child_ids:
+        child_rows = db.execute(
+            select(BulkAIUploadChildFile).where(BulkAIUploadChildFile.id.in_(child_ids))
+        ).scalars().all()
+        child_map = {child.id: child for child in child_rows}
+
+    latest_rows: list[BulkAIUploadFile] = []
+    for row in rows:
+        if not row.child_file_id:
+            latest_rows.append(row)
+            continue
+        child_row = child_map.get(row.child_file_id)
+        if child_row and child_row.latest_attempt_id == row.id:
+            latest_rows.append(row)
+    return latest_rows
+
+
+def _recompute_child_latest_attempt(
+    db: Session,
+    child_file: BulkAIUploadChildFile | None,
+) -> BulkAIUploadFile | None:
+    if child_file is None:
+        return None
+
+    latest_attempt = db.execute(
+        select(BulkAIUploadFile)
+        .where(BulkAIUploadFile.child_file_id == child_file.id)
+        .order_by(BulkAIUploadFile.created_at.desc())
+        .limit(1)
+    ).scalars().first()
+    child_file.latest_attempt_id = latest_attempt.id if latest_attempt else None
+    return latest_attempt
+
+
 def _prepare_fresh_retry_attempt(
     db: Session,
     *,
     bulk: BulkAIUpload,
     user: User,
     source_file: BulkAIUploadFile,
+    child_file: BulkAIUploadChildFile | None = None,
 ) -> BulkAIUploadFile:
     old_deck_id = source_file.created_deck_id
     if old_deck_id:
@@ -254,6 +316,7 @@ def _prepare_fresh_retry_attempt(
 
     retry_row = BulkAIUploadFile(
         bulk_upload_id=bulk.id,
+        child_file_id=child_file.id if child_file else source_file.child_file_id,
         original_filename=source_file.original_filename,
         extracted_title=source_file.extracted_title,
         extracted_description=source_file.extracted_description,
@@ -271,6 +334,10 @@ def _prepare_fresh_retry_attempt(
     )
     db.add(retry_row)
     db.flush()
+    if child_file:
+        child_file.latest_attempt_id = retry_row.id
+        if source_file.extracted_title and not child_file.display_title:
+            child_file.display_title = source_file.extracted_title
     return retry_row
 
 
@@ -436,11 +503,7 @@ def get_bulk_ai_upload(
         .limit(1)
     ).scalar_one_or_none()
 
-    files = db.execute(
-        select(BulkAIUploadFile)
-        .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
-        .order_by(BulkAIUploadFile.created_at)
-    ).scalars().all()
+    files = _latest_bulk_attempt_rows(db, bulk.id)
 
     return {
         "id": str(bulk.id),
@@ -539,6 +602,11 @@ def resume_bulk_ai_upload(
     if bulk.status not in resumable_statuses:
         raise HTTPException(status_code=400, detail="Bulk upload cannot be resumed")
 
+    child_files = db.execute(
+        select(BulkAIUploadChildFile)
+        .where(BulkAIUploadChildFile.bulk_upload_id == bulk.id)
+        .order_by(BulkAIUploadChildFile.created_at.asc())
+    ).scalars().all()
     file_records = db.execute(
         select(BulkAIUploadFile)
         .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
@@ -549,10 +617,17 @@ def resume_bulk_ai_upload(
 
     deck_to_file_ids: dict[str, set[str]] = {}
     for file_record in file_records:
-        deck_key = str(file_record.created_deck_id or "")
+        deck_key = str(getattr(file_record, "created_deck_id", None) or "")
         if not deck_key:
             continue
-        deck_to_file_ids.setdefault(deck_key, set()).add(str(file_record.id))
+        file_identity = str(
+            getattr(file_record, "child_file_id", None)
+            or getattr(file_record, "id", None)
+            or getattr(file_record, "storage_key", None)
+            or getattr(file_record, "original_filename", None)
+            or ""
+        )
+        deck_to_file_ids.setdefault(deck_key, set()).add(file_identity)
     shared_deck_ids = [deck for deck, ids in deck_to_file_ids.items() if len(ids) > 1]
     if shared_deck_ids and not force:
         raise HTTPException(
@@ -563,9 +638,17 @@ def resume_bulk_ai_upload(
             ),
         )
 
+    child_files_by_id = {
+        str(getattr(child, "id", "")): child
+        for child in child_files
+        if getattr(child, "id", None)
+    }
     target_file_records = file_records
+    target_child_files: list[BulkAIUploadChildFile] = []
     if deck_id:
-        deck_matches = [f for f in file_records if str(f.created_deck_id or "") == deck_id]
+        deck_matches = [
+            f for f in file_records if str(getattr(f, "created_deck_id", None) or "") == deck_id
+        ]
         if not deck_matches:
             raise HTTPException(status_code=404, detail="Bulk upload deck not found")
         latest_match = max(
@@ -577,6 +660,10 @@ def resume_bulk_ai_upload(
             ),
         )
         target_file_records = [latest_match]
+        target_child_files = [
+            child for child in child_files
+            if str(getattr(child, "id", None) or "") == str(getattr(latest_match, "child_file_id", None) or "")
+        ]
         retryable_statuses = {
             BulkAIUploadFileStatus.FAILED.value,
             BulkAIUploadFileStatus.PROCESSING.value,
@@ -596,11 +683,59 @@ def resume_bulk_ai_upload(
                     "unless force retry is enabled"
                 ),
             )
+        if not getattr(latest_match, "child_file_id", None) and not force:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This deck belongs to a legacy bulk row with no child file record. "
+                    "Use whole-bulk retry, or force retry if you intentionally want to retry this legacy deck."
+                ),
+            )
     elif file_id:
-        target_file_records = [f for f in file_records if str(f.id) == file_id]
+        target_child_files = [child for child in child_files if str(child.id) == file_id]
+        legacy_attempt_id_used = False
+        if target_child_files:
+            target_file_records = [target_child_files[0].latest_attempt] if target_child_files[0].latest_attempt else []
+        else:
+            target_file_records = [
+                f for f in file_records if str(getattr(f, "id", "")) == file_id
+            ]
+            if target_file_records:
+                legacy_attempt_id_used = True
+                child_match = child_files_by_id.get(
+                    str(getattr(target_file_records[0], "child_file_id", None) or "")
+                )
+                target_child_files = [child_match] if child_match else []
+        if not target_file_records:
+            legacy_group = [
+                f for f in file_records
+                if not getattr(f, "child_file_id", None)
+                and str(
+                    getattr(f, "created_deck_id", None)
+                    or getattr(f, "id", None)
+                    or ""
+                ) == file_id
+            ]
+            if legacy_group:
+                legacy_attempt_id_used = True
+                target_file_records = [
+                    max(
+                        legacy_group,
+                        key=lambda item: (
+                            item.created_at or datetime.min,
+                            item.started_at or datetime.min,
+                            item.completed_at or datetime.min,
+                        ),
+                    )
+                ]
         if not target_file_records:
             raise HTTPException(status_code=404, detail="Bulk upload file not found")
         target_file = target_file_records[0]
+        if legacy_attempt_id_used and getattr(target_file, "child_file_id", None):
+            raise HTTPException(
+                status_code=409,
+                detail="This retry target now requires child_file_id. Refresh the Jobs page and retry again.",
+            )
         retryable_statuses = {
             BulkAIUploadFileStatus.FAILED.value,
             BulkAIUploadFileStatus.PROCESSING.value,
@@ -609,7 +744,7 @@ def resume_bulk_ai_upload(
         if force:
             retryable_statuses.add(BulkAIUploadFileStatus.PENDING.value)
             retryable_statuses.add(BulkAIUploadFileStatus.COMPLETED.value)
-        if target_file.status not in retryable_statuses:
+        if getattr(target_file, "status", None) not in retryable_statuses:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -617,12 +752,20 @@ def resume_bulk_ai_upload(
                     "unless force retry is enabled"
                 ),
             )
+        if legacy_attempt_id_used and not getattr(target_file, "child_file_id", None) and not force:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "This legacy upload row has no child file record. "
+                    "Use whole-bulk retry, or force retry if you intentionally want to retry this legacy row."
+                ),
+            )
 
     missing_storage_keys = []
     storage = get_storage()
     for file_record in target_file_records:
-        if not file_record.storage_key:
-            missing_storage_keys.append(file_record.original_filename)
+        if not getattr(file_record, "storage_key", None):
+            missing_storage_keys.append(getattr(file_record, "original_filename", "Unknown file"))
             continue
         try:
             storage.open_bytes(key=file_record.storage_key)
@@ -651,13 +794,20 @@ def resume_bulk_ai_upload(
             target_file.completed_at = datetime.utcnow()
 
     if file_id or deck_id:
-        for target_file in target_file_records:
+        if not target_child_files and target_file_records:
+            for target_file in target_file_records:
+                child_match = child_files_by_id.get(str(target_file.child_file_id or ""))
+                if child_match:
+                    target_child_files.append(child_match)
+        for index, target_file in enumerate(target_file_records):
             _mark_previous_attempt_superseded(target_file)
+            child_file = target_child_files[index] if index < len(target_child_files) else None
             retry_row = _prepare_fresh_retry_attempt(
                 db,
                 bulk=bulk,
                 user=user,
                 source_file=target_file,
+                child_file=child_file,
             )
             file_records.append(retry_row)
         all_statuses = [(f.status or '').lower() for f in file_records]
@@ -682,15 +832,50 @@ def resume_bulk_ai_upload(
             bulk.completed_at = None
         total_items = len(target_file_records)
     else:
-        for target_file in target_file_records:
-            _mark_previous_attempt_superseded(target_file)
-            retry_row = _prepare_fresh_retry_attempt(
-                db,
-                bulk=bulk,
-                user=user,
-                source_file=target_file,
-            )
-            file_records.append(retry_row)
+        if child_files:
+            for child_file in child_files:
+                latest_attempt = child_file.latest_attempt
+                if latest_attempt is None:
+                    continue
+                _mark_previous_attempt_superseded(latest_attempt)
+                retry_row = _prepare_fresh_retry_attempt(
+                    db,
+                    bulk=bulk,
+                    user=user,
+                    source_file=latest_attempt,
+                    child_file=child_file,
+                )
+                file_records.append(retry_row)
+        else:
+            latest_legacy_attempts: dict[str, BulkAIUploadFile] = {}
+            for file_record in file_records:
+                legacy_key = str(file_record.created_deck_id or file_record.id)
+                previous = latest_legacy_attempts.get(legacy_key)
+                if previous is None:
+                    latest_legacy_attempts[legacy_key] = file_record
+                    continue
+                previous_rank = (
+                    previous.created_at or datetime.min,
+                    previous.started_at or datetime.min,
+                    previous.completed_at or datetime.min,
+                )
+                current_rank = (
+                    file_record.created_at or datetime.min,
+                    file_record.started_at or datetime.min,
+                    file_record.completed_at or datetime.min,
+                )
+                if current_rank > previous_rank:
+                    latest_legacy_attempts[legacy_key] = file_record
+            for latest_attempt in latest_legacy_attempts.values():
+                _mark_previous_attempt_superseded(latest_attempt)
+                retry_row = _prepare_fresh_retry_attempt(
+                    db,
+                    bulk=bulk,
+                    user=user,
+                    source_file=latest_attempt,
+                    child_file=None,
+                )
+                file_records.append(retry_row)
         bulk.status = BulkAIUploadStatus.PENDING.value
         bulk.is_auto_stop = False
         bulk.error_message = None
@@ -733,7 +918,31 @@ def cancel_bulk_ai_upload(
         raise HTTPException(status_code=404, detail="Bulk upload not found")
 
     if file_id:
-        file_record = db.get(BulkAIUploadFile, file_id)
+        child_file = db.get(BulkAIUploadChildFile, file_id)
+        file_record = None
+        if child_file and child_file.bulk_upload_id == bulk.id:
+            candidate_rows = db.execute(
+                select(BulkAIUploadFile)
+                .where(BulkAIUploadFile.child_file_id == child_file.id)
+                .where(
+                    BulkAIUploadFile.status.in_(
+                        [
+                            BulkAIUploadFileStatus.PENDING.value,
+                            BulkAIUploadFileStatus.PROCESSING.value,
+                        ]
+                    )
+                )
+                .order_by(BulkAIUploadFile.created_at.desc())
+            ).scalars().all()
+            file_record = candidate_rows[0] if candidate_rows else child_file.latest_attempt
+        else:
+            file_record = db.get(BulkAIUploadFile, file_id)
+            if file_record and file_record.bulk_upload_id == bulk.id:
+                child_file = (
+                    db.get(BulkAIUploadChildFile, file_record.child_file_id)
+                    if file_record.child_file_id
+                    else None
+                )
         if not file_record or file_record.bulk_upload_id != bulk.id:
             raise HTTPException(status_code=404, detail="Bulk upload file not found")
         if file_record.status not in {
@@ -744,31 +953,74 @@ def cancel_bulk_ai_upload(
         file_record.status = BulkAIUploadFileStatus.STOPPED.value
         file_record.error_message = "File canceled by user"
         file_record.completed_at = datetime.utcnow()
+        latest_active_statuses = {
+            BulkAIUploadFileStatus.PENDING.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+            BulkAIUploadFileStatus.STOPPED.value,
+        }
+        sibling_rows = _latest_bulk_attempt_rows(db, bulk.id)
+        sibling_statuses = [(row.status or "").lower() for row in sibling_rows]
+        if any(status == BulkAIUploadFileStatus.PROCESSING.value for status in sibling_statuses):
+            bulk.status = BulkAIUploadStatus.PROCESSING.value
+        elif any(status == BulkAIUploadFileStatus.PENDING.value for status in sibling_statuses):
+            bulk.status = BulkAIUploadStatus.PENDING.value
+        elif any(status == BulkAIUploadFileStatus.FAILED.value for status in sibling_statuses):
+            bulk.status = BulkAIUploadStatus.FAILED.value
+        elif any(status == BulkAIUploadFileStatus.STOPPED.value for status in sibling_statuses):
+            bulk.status = BulkAIUploadStatus.STOPPED.value
+        else:
+            bulk.status = BulkAIUploadStatus.COMPLETED.value
+        bulk.is_auto_stop = any(status in latest_active_statuses for status in sibling_statuses)
+        if bulk.status != BulkAIUploadStatus.FAILED.value:
+            bulk.error_message = None
+        if bulk.status != BulkAIUploadStatus.COMPLETED.value:
+            bulk.completed_at = None
+        latest_child_attempt = _recompute_child_latest_attempt(db, child_file)
         db.commit()
         return {
             "id": str(bulk.id),
             "status": bulk.status,
-            "canceled_file_id": str(file_id),
+            "canceled_file_id": str(child_file.id if child_file else file_id),
+            "latest_attempt_id": str(latest_child_attempt.id) if latest_child_attempt else None,
         }
 
     bulk.is_auto_stop = True
     bulk.error_message = "Job stop requested by user"
-    active_files = db.execute(
-        select(BulkAIUploadFile).where(
-            BulkAIUploadFile.bulk_upload_id == bulk.id,
-            BulkAIUploadFile.status.in_(
-                [
-                    BulkAIUploadFileStatus.PENDING.value,
-                    BulkAIUploadFileStatus.PROCESSING.value,
-                ]
-            ),
-        )
-    ).scalars().all()
+    active_files = [
+        file_record
+        for file_record in _latest_bulk_attempt_rows(db, bulk.id)
+        if file_record.status in {
+            BulkAIUploadFileStatus.PENDING.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+        }
+    ]
     stopped_at = datetime.utcnow()
     for file_record in active_files:
         file_record.status = BulkAIUploadFileStatus.STOPPED.value
         file_record.error_message = "Job canceled by user"
         file_record.completed_at = stopped_at
+    all_rows = _latest_bulk_attempt_rows(db, bulk.id)
+    all_statuses = [(row.status or "").lower() for row in all_rows]
+    if any(status == BulkAIUploadFileStatus.PROCESSING.value for status in all_statuses):
+        bulk.status = BulkAIUploadStatus.PROCESSING.value
+    elif any(status == BulkAIUploadFileStatus.PENDING.value for status in all_statuses):
+        bulk.status = BulkAIUploadStatus.PENDING.value
+    elif any(status == BulkAIUploadFileStatus.FAILED.value for status in all_statuses):
+        bulk.status = BulkAIUploadStatus.FAILED.value
+    elif any(status == BulkAIUploadFileStatus.STOPPED.value for status in all_statuses):
+        bulk.status = BulkAIUploadStatus.STOPPED.value
+    else:
+        bulk.status = BulkAIUploadStatus.COMPLETED.value
+    bulk.is_auto_stop = any(
+        status in {
+            BulkAIUploadFileStatus.PENDING.value,
+            BulkAIUploadFileStatus.PROCESSING.value,
+            BulkAIUploadFileStatus.STOPPED.value,
+        }
+        for status in all_statuses
+    )
+    if bulk.status != BulkAIUploadStatus.COMPLETED.value:
+        bulk.completed_at = None
     db.commit()
     return {
         "id": str(bulk.id),
