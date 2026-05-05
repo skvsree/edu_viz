@@ -139,7 +139,8 @@
 - Jobs page should show each bulk file row's own generated counts (`flashcards_generated`, `mcqs_generated`, `duplicate_count`) and offer cancel actions for pending/processing bulk jobs and file rows.
 - Jobs page bulk-job cards should use a file-first layout: one visible row per uploaded file under each ZIP/job, with deck/attempt detail hidden by default.
 - Jobs page should use a job-level `Show files` / `Hide files` toggle for each uploaded ZIP/job instead of per-file deck toggles.
-- Jobs page file rows should show the uploaded file name as the primary label, with the generated deck name only as small secondary text underneath.
+- Jobs page file rows should show the extracted chapter/book title as the primary label once available; fall back to the uploaded filename only before title extraction succeeds. Retries must keep that visible title aligned with the latest successful extracted title.
+- The generated deck name should remain small secondary text underneath the primary file title.
 - Job-level bulk cancel must propagate immediately to all pending/processing file rows so the UI and worker state agree; do not leave child file rows appearing active after a whole-job cancel.
 - Bulk AI upload must keep strict per-file deck ownership: worker generation and retry flows must use each file row's `created_deck_id` and must not fall back to a shared `bulk.deck_id` for multi-file output decks.
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.

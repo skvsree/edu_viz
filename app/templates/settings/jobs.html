@@ -112,7 +112,7 @@
                           {% set can_force_retry_file = latest_status in ['pending', 'processing', 'failed', 'completed', 'stopped'] %}
                           {% set can_cancel_file = latest_status in ['pending', 'processing'] %}
                           <tr class="jobs-files-table__row {% if is_failed %}jobs-files-table__row--failed{% elif is_running %}jobs-files-table__row--running{% endif %}">
-                            <td>
+                            <td data-label="Child file">
                               <div class="jobs-file-cell">
                                 <div class="jobs-file-cell__name">{{ file_group.display_title }}</div>
                                 <div class="jobs-file-cell__deck-name-muted">{{ file_group.filename }}</div>
@@ -125,7 +125,7 @@
                                 </div>
                               </div>
                             </td>
-                            <td>
+                            <td data-label="Status">
                               <span class="jobs-status {{ 'jobs-status--running' if is_running else 'jobs-status--completed' if latest_status == 'completed' else 'jobs-status--failed' }}">
                                 {% if is_running %}
                                   <span class="jobs-inline-loader" aria-hidden="true"></span>
@@ -133,17 +133,17 @@
                                 {{ latest_status|capitalize if latest_status else 'Pending' }}
                               </span>
                             </td>
-                            <td>
+                            <td data-label="Deck">
                               {% if latest.created_deck_id %}
                                 <a class="jobs-inline-link" href="/decks/{{ latest.created_deck_id }}">Latest deck</a>
                               {% else %}
                                 —
                               {% endif %}
                             </td>
-                            <td>{{ latest.flashcards_generated or 0 }}</td>
-                            <td>{{ latest.mcqs_generated or 0 }}</td>
-                            <td>{{ file_group.jobs|length }}</td>
-                            <td>
+                            <td data-label="Cards">{{ latest.flashcards_generated or 0 }}</td>
+                            <td data-label="MCQs">{{ latest.mcqs_generated or 0 }}</td>
+                            <td data-label="Attempts">{{ file_group.jobs|length }}</td>
+                            <td data-label="Actions">
                               <div class="jobs-attempt-row__actions jobs-attempt-row__actions--inline">
                                 {% set is_legacy_file_group = not file_group.child_file %}
                                 {% if can_retry_file %}
@@ -477,6 +477,7 @@
   .jobs-files-table-wrap {
     margin-top: 0.8rem;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
     border: 1px solid color-mix(in srgb, var(--border-color) 78%, #94a3b8 22%);
     border-radius: 14px;
     background: var(--card-bg);
@@ -766,6 +767,10 @@
       align-items: stretch;
     }
 
+    .jobs-bulk-card__filename-row {
+      align-items: flex-start;
+    }
+
     .jobs-bulk-second-line {
       gap: 0.35rem;
     }
@@ -776,20 +781,84 @@
     }
 
     .jobs-attempt-row__actions {
-      align-self: flex-start;
-      justify-items: start;
+      align-self: stretch;
+      justify-items: stretch;
+      width: 100%;
+    }
+
+    .jobs-attempt-row__actions--inline {
+      display: grid;
+      gap: 0.45rem;
+      width: 100%;
+    }
+
+    .jobs-attempt-row__actions--inline .jobs-open-retry-modal {
+      width: 100%;
+      justify-content: center;
     }
 
     .jobs-files-table-wrap {
       border-radius: 12px;
+      overflow: visible;
+      border: 0;
+      background: transparent;
+    }
+
+    .jobs-files-table,
+    .jobs-files-table thead,
+    .jobs-files-table tbody,
+    .jobs-files-table tr,
+    .jobs-files-table th,
+    .jobs-files-table td {
+      display: block;
+      width: 100%;
     }
 
     .jobs-files-table {
-      min-width: 780px;
+      min-width: 0;
+      border-collapse: separate;
+      border-spacing: 0;
     }
 
+    .jobs-files-table thead {
+      display: none;
+    }
+
+    .jobs-files-table tbody {
+      display: grid;
+      gap: 0.65rem;
+    }
+
+    .jobs-files-table__row {
+      border: 1px solid color-mix(in srgb, var(--border-color) 78%, #94a3b8 22%);
+      border-radius: 14px;
+      background: var(--card-bg);
+      overflow: hidden;
+    }
+
+    .jobs-files-table td {
+      display: grid;
+      gap: 0.22rem;
+      padding: 0.7rem 0.8rem;
+      border-bottom: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+    }
+
+    .jobs-files-table td:last-child {
+      border-bottom: 0;
+    }
+
+    .jobs-files-table td::before {
+      content: attr(data-label);
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .jobs-file-cell,
     .jobs-file-details {
-      min-width: 220px;
+      min-width: 0;
     }
 
     .jobs-file-details__history {

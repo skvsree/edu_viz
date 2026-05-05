@@ -541,10 +541,13 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
             _clear_deck_generated_content(db, deck.id)
 
+            resolved_title = (title or deck.name or file_record.original_filename or '').strip()[:255] or None
             file_record.created_deck_id = deck.id
-            file_record.extracted_title = title or deck.name
+            file_record.extracted_title = resolved_title
             file_record.extracted_description = description
             file_record.content_text = text[:50000] if text else None
+            if file_record.child_file and resolved_title:
+                file_record.child_file.display_title = resolved_title
             db.commit()
 
             flashcards_generated = 0

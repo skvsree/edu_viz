@@ -336,8 +336,8 @@ def _prepare_fresh_retry_attempt(
     db.flush()
     if child_file:
         child_file.latest_attempt_id = retry_row.id
-        if source_file.extracted_title and not child_file.display_title:
-            child_file.display_title = source_file.extracted_title
+        if source_file.extracted_title:
+            child_file.display_title = source_file.extracted_title[:255]
     return retry_row
 
 
