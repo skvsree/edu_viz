@@ -430,3 +430,76 @@ def test_resume_bulk_ai_upload_rejects_missing_storage():
             assert "original upload files are missing" in exc.detail
 
     assert db.added == []
+
+
+def test_title_prompt_warns_when_archive_and_pdf_filenames_match():
+    from app.services.ai_generation import build_title_generation_prompt
+
+    prompt = build_title_generation_prompt(
+        "Real chapter heading\nHuman Reproduction\nDetailed source content.",
+        "biology.pdf",
+        archive_filename="biology.zip",
+    )
+
+    assert "Archive filename: biology.zip" in prompt
+    assert "PDF filename: biology.pdf" in prompt
+    assert "do not copy that repeated filename as the title" in prompt
+    assert "Human Reproduction" in prompt
+
+
+def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
+    from app.api.routers.bulk_ai_upload import _prepare_fresh_retry_attempt
+    from app.models.bulk_ai_upload import BulkAIUploadFileStatus
+
+    user_id = uuid4()
+    deck_id = uuid4()
+    bulk = SimpleNamespace(id=uuid4(), filename="same.zip")
+    user = SimpleNamespace(id=user_id, organization_id=None)
+    source_file = SimpleNamespace(
+        created_deck_id=deck_id,
+        original_filename="same.pdf",
+        child_file_id=uuid4(),
+        extracted_title="Real source title",
+        extracted_description="Source summary",
+        storage_key="bulk/source.pdf",
+        file_size=123,
+    )
+    existing_deck = SimpleNamespace(
+        id=deck_id,
+        user_id=user_id,
+        is_deleted=False,
+        folder_id=uuid4(),
+    )
+
+    class RetryDB:
+        def __init__(self):
+            self.added = []
+            self.flushed = False
+
+        def get(self, model, key):
+            return existing_deck if key == deck_id else None
+
+        def add(self, value):
+            self.added.append(value)
+
+        def flush(self):
+            self.flushed = True
+
+    db = RetryDB()
+    monkeypatch.setattr(
+        "app.api.routers.bulk_ai_upload._clear_deck_generated_content",
+        lambda session, target_deck_id: None,
+    )
+
+    retry_row = _prepare_fresh_retry_attempt(
+        db,
+        bulk=bulk,
+        user=user,
+        source_file=source_file,
+    )
+
+    assert retry_row.created_deck_id == deck_id
+    assert retry_row.status == BulkAIUploadFileStatus.PENDING.value
+    assert existing_deck.folder_id is None
+    assert db.added == [retry_row]
+    assert db.flushed is True

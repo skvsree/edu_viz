@@ -475,7 +475,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             title = None
             description = None
             try:
-                title_prompt = build_title_generation_prompt(text, pdf_name)
+                archive_filename = bulk.original_filename if bulk else None
+                title_prompt = build_title_generation_prompt(
+                    text,
+                    pdf_name,
+                    archive_filename=archive_filename,
+                )
                 raw_title_response = _generate_text_with_retry(
                     provider_client,
                     title_prompt,

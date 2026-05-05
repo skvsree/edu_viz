@@ -305,9 +305,13 @@ def build_iterative_study_pack_prompt(
     )
 
 
-def build_title_generation_prompt(text: str, filename: str) -> str:
+def build_title_generation_prompt(text: str, filename: str, archive_filename: str | None = None) -> str:
     sample = (text or "")[:12000]
     safe_filename = (filename or "upload.pdf").strip()
+    safe_archive_filename = (archive_filename or "").strip()
+    archive_context = ""
+    if safe_archive_filename:
+        archive_context = f"Archive filename: {safe_archive_filename}\n"
     return (
         "Return strict JSON only with keys title and description. "
         "Choose the best deck title from the source text itself, not just the filename. "
@@ -316,10 +320,14 @@ def build_title_generation_prompt(text: str, filename: str) -> str:
         "Module, or section numbers unless they are genuinely part of the natural title text. "
         "If the PDF is one chapter from a larger book, prefer the chapter's actual "
         "title text without adding synthetic prefixes like 'Chapter 3 -'. "
-        "Use the filename only as weak fallback context. "
+        "Use filenames only as weak fallback context. "
+        "When the archive filename and inner PDF filename are the same or nearly the same, "
+        "do not copy that repeated filename as the title unless the source text clearly "
+        "confirms it is the document title. "
         "Do not include file extensions. Keep title under 255 characters. "
         "Description should be a concise 1-2 sentence summary under 500 characters. "
-        f"Filename: {safe_filename}\n\n"
+        f"{archive_context}"
+        f"PDF filename: {safe_filename}\n\n"
         "Source text:\n"
         f"{sample}"
     )

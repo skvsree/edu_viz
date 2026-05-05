@@ -306,13 +306,20 @@ def _prepare_fresh_retry_attempt(
     old_deck_id = source_file.created_deck_id
     if old_deck_id:
         _clear_deck_generated_content(db, old_deck_id)
-
-    replacement_deck = _ensure_bulk_upload_deck(
-        db,
-        user,
-        source_file.original_filename or bulk.filename,
-        None,
-    )
+        replacement_deck = _ensure_bulk_upload_deck(
+            db,
+            user,
+            source_file.original_filename or bulk.filename,
+            None,
+            existing_deck_id=old_deck_id,
+        )
+    else:
+        replacement_deck = _ensure_bulk_upload_deck(
+            db,
+            user,
+            source_file.original_filename or bulk.filename,
+            None,
+        )
 
     retry_row = BulkAIUploadFile(
         bulk_upload_id=bulk.id,

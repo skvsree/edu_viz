@@ -145,6 +145,7 @@
 - The generated deck name should remain small secondary text underneath the primary file title.
 - Job-level bulk cancel must propagate immediately to all pending/processing file rows so the UI and worker state agree; do not leave child file rows appearing active after a whole-job cancel.
 - Bulk AI upload must keep strict per-file deck ownership: worker generation and retry flows must use each file row's `created_deck_id` and must not fall back to a shared `bulk.deck_id` for multi-file output decks.
+- Retry flows should identify the target output deck by persisted deck ID (`BulkAIUploadFile.created_deck_id`) and reuse that exact deck with `existing_deck_id`; do not infer the retry target from filenames or generated display names.
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
 - New users created during first OIDC sign-in inherit `settings.test_enabled_default`; current intended default is enabled so tests are on for brand-new users unless later overridden.
 
