@@ -465,18 +465,51 @@ def _users_response(
     )
 
 
+JOBS_HISTORY_PAGE_SIZE = 10
+JOBS_ACTIVE_STATUSES = {
+    BulkAIUploadStatus.PENDING.value,
+    BulkAIUploadStatus.PROCESSING.value,
+}
+
+
+def _split_jobs_by_tab(jobs: list[Job], bulks: dict) -> tuple[list[Job], list[Job]]:
+    active_jobs: list[Job] = []
+    history_jobs: list[Job] = []
+    for job in jobs:
+        bulk = bulks.get(job.reference_id)
+        if not bulk:
+            continue
+        bulk_status = str(getattr(bulk, "status", "") or "").lower()
+        if bulk_status in JOBS_ACTIVE_STATUSES:
+            active_jobs.append(job)
+        else:
+            history_jobs.append(job)
+    return active_jobs, history_jobs
+
+
 def _jobs_response(
     request: Request,
     *,
     user: User,
     db: Session,
     status_code: int = 200,
+    active_tab: str = "active",
 ):
     _require_system_admin(user)
 
+    active_tab = (active_tab or "active").strip().lower()
+    if active_tab not in {"active", "history"}:
+        active_tab = "active"
+
+    history_page_raw = request.query_params.get("page", "1")
+    try:
+        history_page = max(1, int(history_page_raw))
+    except ValueError:
+        history_page = 1
+
     # Get recent jobs with bulk uploads
     jobs = (
-        db.execute(select(Job).order_by(Job.created_at.desc()).limit(50))
+        db.execute(select(Job).order_by(Job.created_at.desc()).limit(200))
         .scalars()
         .all()
     )
@@ -714,12 +747,32 @@ def _jobs_response(
         }:
             bulk_failed_files[bulk_id] = [bulk]
 
+    active_jobs, history_jobs = _split_jobs_by_tab(jobs, bulks)
+
+    history_total = len(history_jobs)
+    history_total_pages = (
+        (history_total + JOBS_HISTORY_PAGE_SIZE - 1) // JOBS_HISTORY_PAGE_SIZE
+        if history_total > 0
+        else 1
+    )
+    history_page = min(history_page, history_total_pages)
+    history_offset = (history_page - 1) * JOBS_HISTORY_PAGE_SIZE
+    history_jobs_page = history_jobs[
+        history_offset: history_offset + JOBS_HISTORY_PAGE_SIZE
+    ]
+
     return templates.TemplateResponse(
         "settings/jobs.html",
         {
             "request": request,
             "user": user,
             "jobs": jobs,
+            "active_jobs": active_jobs,
+            "history_jobs": history_jobs_page,
+            "active_tab": active_tab,
+            "history_page": history_page,
+            "history_total": history_total,
+            "history_total_pages": history_total_pages,
             "bulks": bulks,
             "decks": decks,
             "bulk_output_decks": bulk_output_decks,
@@ -739,7 +792,16 @@ def jobs_page(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    return _jobs_response(request, user=user, db=db)
+    query_params = getattr(request, "query_params", {}) or {}
+    get_param = (
+        query_params.get
+        if hasattr(query_params, "get")
+        else lambda _key, _default=None: _default
+    )
+    tab = (get_param("tab") or "").strip().lower()
+    if tab not in {"active", "history"}:
+        tab = "history"
+    return _jobs_response(request, user=user, db=db, active_tab=tab)
 
 
 def _tag_form_context(deck: Deck) -> dict[str, str]:

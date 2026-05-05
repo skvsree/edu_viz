@@ -134,6 +134,8 @@
 - UX intent: bulk upload popup should stay in the same modal during file submission and show only a simple upload progress bar/status before redirecting to `/settings/jobs`.
 - While upload submission is active, modal cancel/close actions should abort the in-flight upload request instead of silently dismissing the dialog.
 - `/settings/jobs` is the place to monitor background bulk upload progress after submission and should stay mobile-friendly.
+- Jobs page should be split into two tabs: an active tab for pending/processing/in-progress items with live updates, and a history tab for failed/completed items with pagination. Live polling/SSE is required only for the active tab.
+- The CSS-settle loading overlay should also cover `/settings/jobs`; if it works elsewhere but not here, fix the shared/base wiring rather than inventing a jobs-only loader.
 - Bulk `Retry all` must preserve each file row's own `created_deck_id`; resetting all files to one shared deck causes cross-file card mixing and duplicated-looking question sets across the batch.
 - Jobs retry modal UX should switch to a simple result state after any retry starts: show only retry details plus an `OK` button, and refresh the current job-details view when `OK` is clicked.
 - Jobs page should show each bulk file row's own generated counts (`flashcards_generated`, `mcqs_generated`, `duplicate_count`) and offer cancel actions for pending/processing bulk jobs and file rows.

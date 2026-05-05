@@ -14,11 +14,41 @@
       </div>
     {% endif %}
 
-    {% if not jobs %}
-      <p class="muted">No jobs yet. Upload a ZIP file from the browse page to create a bulk AI upload job.</p>
-    {% else %}
-      <div class="jobs-file-groups">
-        {% for job in jobs %}
+    {% set active_count = active_jobs|length %}
+      {% set history_count = history_total %}
+      <div class="jobs-page__tabs" role="tablist" aria-label="Job sections">
+        <a
+          href="/settings/jobs?tab=active"
+          class="jobs-page__tab{{ ' jobs-page__tab--active' if active_tab == 'active' else '' }}"
+          role="tab"
+          aria-selected="{{ 'true' if active_tab == 'active' else 'false' }}"
+        >
+          Active
+          <span class="jobs-page__tab-count">{{ active_count }}</span>
+        </a>
+        <a
+          href="/settings/jobs?tab=history"
+          class="jobs-page__tab{{ ' jobs-page__tab--active' if active_tab == 'history' else '' }}"
+          role="tab"
+          aria-selected="{{ 'true' if active_tab == 'history' else 'false' }}"
+        >
+          Failed / completed
+          <span class="jobs-page__tab-count">{{ history_count }}</span>
+        </a>
+      </div>
+
+      {% set tab_jobs = active_jobs if active_tab == "active" else history_jobs %}
+      {% if not tab_jobs %}
+        <p class="muted jobs-page__empty" data-jobs-tab="{{ active_tab }}">
+          {% if active_tab == "active" %}
+            No active jobs right now.
+          {% else %}
+            No failed or completed jobs yet.
+          {% endif %}
+        </p>
+      {% else %}
+      <div class="jobs-file-groups{% if active_tab == 'active' %} jobs-file-groups--active{% endif %}" data-jobs-tab="{{ active_tab }}">
+        {% for job in tab_jobs %}
           {% set bulk = bulks.get(job.reference_id) %}
           {% if bulk %}
           {% set file_groups = bulk_jobs_by_file.get(job.reference_id, []) %}
@@ -264,6 +294,20 @@
       </div>
     {% endif %}
 
+      {% if active_tab == "history" and history_total_pages > 1 %}
+        <nav class="jobs-pagination" aria-label="History pages">
+          <span class="jobs-pagination__summary">Page {{ history_page }} of {{ history_total_pages }}</span>
+          <div class="jobs-pagination__links">
+            {% if history_page > 1 %}
+              <a class="jobs-pagination__link" href="/settings/jobs?tab=history&page={{ history_page - 1 }}">← Previous</a>
+            {% endif %}
+            {% if history_page < history_total_pages %}
+              <a class="jobs-pagination__link" href="/settings/jobs?tab=history&page={{ history_page + 1 }}">Next →</a>
+            {% endif %}
+          </div>
+        </nav>
+      {% endif %}
+
     <div class="stack-sm jobs-page__footer">
       <p class="muted jobs-page__footnote">
         First line shows ZIP filename, date, and overall status. Second line shows one deck/status block for each uploaded file.
@@ -291,9 +335,58 @@
     padding: 0.9rem;
   }
 
+  .jobs-page__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-top: 0.2rem;
+  }
+
+  .jobs-page__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.5rem 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 78%, #94a3b8 22%);
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--muted-text);
+    background: color-mix(in srgb, var(--surface) 95%, transparent);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .jobs-page__tab--active {
+    color: var(--accent-color);
+    border-color: color-mix(in srgb, #2563eb 45%, var(--border-color));
+    background: color-mix(in srgb, #dbeafe 38%, var(--surface));
+  }
+
+  .jobs-page__tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    padding: 0 0.38rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border-color) 88%, transparent);
+    font-size: 0.73rem;
+    color: inherit;
+  }
+
+  .jobs-page__empty {
+    padding: 1rem 0;
+  }
+
   .jobs-file-groups {
     display: grid;
     gap: 0.8rem;
+  }
+
+  .jobs-file-groups--active {
+    position: relative;
   }
 
   .jobs-bulk-card {
@@ -870,6 +963,40 @@
     }
   }
 
+  .jobs-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+
+  .jobs-pagination__summary {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  .jobs-pagination__links {
+    display: flex;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+  }
+
+  .jobs-pagination__link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.44rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 78%, #94a3b8 22%);
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--accent-color);
+    background: color-mix(in srgb, var(--surface) 95%, transparent);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
   .jobs-open-retry-modal {
     appearance: none;
     display: inline-flex;
@@ -1233,6 +1360,68 @@
       if (!trigger) return;
       openRetryModal(trigger);
     });
+  })();
+</script>
+
+<script>
+  (function () {
+    if (window.location.pathname !== '/settings/jobs') return;
+
+    var currentTab = {{ active_tab|tojson }};
+    if (currentTab !== 'active') return;
+
+    var jobsContainer = document.querySelector('[data-jobs-tab="active"]');
+
+    function refreshActiveJobs() {
+      var url = new URL(window.location.href);
+      url.searchParams.set('tab', 'active');
+      fetch(url.toString(), {
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error('Failed to refresh jobs');
+          }
+          return response.text();
+        })
+        .then(function (html) {
+          var parser = new DOMParser();
+          var doc = parser.parseFromString(html, 'text/html');
+          var nextContainer = doc.querySelector('[data-jobs-tab="active"]');
+          if (!nextContainer) {
+            window.location.reload();
+            return;
+          }
+          jobsContainer = document.querySelector('[data-jobs-tab="active"]');
+          if (!jobsContainer || !jobsContainer.parentNode) {
+            window.location.reload();
+            return;
+          }
+          jobsContainer.replaceWith(nextContainer);
+          jobsContainer = nextContainer;
+        })
+        .catch(function () {
+          window.location.reload();
+        });
+    }
+
+    function connect() {
+      var source = new EventSource('/api/live/decks');
+
+      source.addEventListener('bulk-ai-upload-updated', function () {
+        refreshActiveJobs();
+      });
+
+      source.onerror = function () {
+        source.close();
+        window.setTimeout(connect, 3000);
+      };
+    }
+
+    connect();
   })();
 </script>
 

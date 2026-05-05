@@ -101,7 +101,12 @@
     <script>
       (function () {
         document.documentElement.classList.add('page-loading');
+        var pageLoadFinished = false;
         function finishPageLoad() {
+          if (pageLoadFinished) {
+            return;
+          }
+          pageLoadFinished = true;
           document.documentElement.classList.remove('page-loading');
           document.body.classList.remove('page-loading');
           document.body.classList.add('page-ready');
@@ -234,9 +239,11 @@
       </footer>
     </div>
     <script>
-      if (window.__eduVizFinishPageLoad) {
-        window.__eduVizFinishPageLoad();
-      }
+      (function () {
+        if (!window.__eduVizWaitForCssSettle && window.__eduVizFinishPageLoad) {
+          window.__eduVizFinishPageLoad();
+        }
+      })();
     </script>
     <script>
       (function () {
