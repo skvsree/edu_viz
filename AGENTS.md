@@ -6,11 +6,12 @@
 - UX direction is intentionally calm, minimal, and professional rather than "gamified".
 
 ## Branch strategy
-- `main`: stable base branch.
-- `feature/bulk-ai-upload`: current active deploy branch in `/opt/edu_viz` for bulk AI upload flow, jobs page updates, and storage-backed upload handling.
+- `main`: stable base branch AND the active deploy branch in `/opt/edu_viz`. The bulk AI upload flow, jobs page (Active/History tabs), storage-backed upload handling, parent/child file schema, and deck-ID-based retry were all merged here ahead of `feature/bulk-ai-upload`.
+- `feature/bulk-ai-upload`: **stale**. Last commit `7dbf240 chore: checkpoint pending branch changes for review` and is now superseded by `main`. Delete only after Kanboard task #55 passes live validation.
 - `feature/deck_segregation`: older branch used for role-based browse tabs, folder UX, and deck access work.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
-- Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from the branch currently used by production.
+- As of 2026-06-24, `main` is ahead of `feature/bulk-ai-upload`; HEAD on `main` is `faad437 Use deck IDs for bulk retry targets`. Other local branches exist unpushed — do not push or delete without confirmation.
+- Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from `main`.
 
 ## Stack / architecture
 - Python 3.12
@@ -127,7 +128,22 @@
 
 ## Bulk AI upload + jobs flow
 
-- Current active work in `/opt/edu_viz` is on `feature/bulk-ai-upload`; verify branch before assuming older folder/browse-only context.
+- Current active work in `/opt/edu_viz` is on `main`; the `feature/bulk-ai-upload` branch is stale and should be cleaned up only after task #55 passes live validation.
+- Jobs page is split into two tabs (Active / History) rendered by `_jobs_response()` in `app/api/routers/pages.py` and `app/templates/settings/jobs.html`. Active shows pending/processing/in-progress with live updates; History is paginated and live polling/SSE is required only for the Active tab.
+- The CSS-settle loading overlay should also cover `/settings/jobs`; if it works elsewhere but not here, fix the shared/base wiring rather than inventing a jobs-only loader. Validation selectors: `app-loading-overlay`, `Loading…`, and `window.__eduVizFinishPageLoad` (NOT `page-loading-overlay`).
+- Each bulk job must show one stable file row per uploaded file. Retries add `BulkAIUploadFile` attempts under the same `BulkAIUploadChildFile`; UI row identity comes from `child_file_id`, not filename or attempt id.
+- Bulk retry must preserve each file row's own `created_deck_id`; resetting all files to one shared deck causes cross-file card mixing and duplicated-looking question sets across the batch.
+- Job-level bulk cancel must propagate immediately to all pending/processing file rows so the UI and worker state agree; do not leave child file rows appearing active after a whole-job cancel.
+- Bulk AI upload must keep strict per-file deck ownership: worker generation and retry flows must use each file row's `created_deck_id` and must not fall back to a shared `bulk.deck_id` for multi-file output decks.
+- Retry flows identify the target output deck by persisted deck ID (`BulkAIUploadFile.created_deck_id`) and reuse that exact deck via `existing_deck_id`; do not infer the retry target from filenames or generated display names.
+- Bulk AI upload title generation must pass the archive filename (`bulk.original_filename`) into `build_title_generation_prompt()` and warn the AI not to copy repeated archive/PDF filenames unless the source text confirms them.
+- Title prompt includes both `Archive filename` and `PDF filename` context for the AI.
+- The first successful attempt writes the resolved title into both `BulkAIUploadFile.extracted_title` and `BulkAIUploadChildFile.display_title`. Fresh retries copy the prior `extracted_title` into `child_file.display_title` so retry names stay aligned.
+- Jobs page should show each bulk file row's own generated counts (`flashcards_generated`, `mcqs_generated`, `duplicate_count`) and offer cancel actions for pending/processing bulk jobs and file rows.
+- Jobs page bulk-job cards should use a file-first layout: one visible row per uploaded file under each ZIP/job, with deck/attempt detail hidden by default.
+- Jobs page should use a job-level `Show files` / `Hide files` toggle for each uploaded ZIP/job instead of per-file deck toggles.
+- Jobs page file rows should show the extracted chapter/book title as the primary label once available; fall back to the uploaded filename only before title extraction succeeds. Retries must keep that visible title aligned with the latest successful extracted title.
+- The generated deck name should remain small secondary text underneath the primary file title.
 - Bulk AI upload queuing lives in `app/api/routers/bulk_ai_upload.py` via `enqueue_ai_upload_job(...)`.
 - Uploads store source PDFs in SeaweedFS through `app/services/storage.py` when storage is available; file rows fall back to inline text only if storage save fails.
 - Single-PDF AI import can target an existing deck; ZIP uploads must create/reuse per-file decks and cannot target one existing deck.
@@ -149,5 +165,33 @@
 - Deck overview live metadata in `app/templates/decks/overview.html` should continue using server count endpoints/SSE only for count refresh, not for inferring separate processing state.
 - New users created during first OIDC sign-in inherit `settings.test_enabled_default`; current intended default is enabled so tests are on for brand-new users unless later overridden.
 
+## Parent/Child bulk upload schema (current architecture)
 
-- In edu_viz, the next Jobs refactor should move from repeated attempt rows to a parent/child upload schema so retries stay under one child file instead of creating confusing duplicate file rows.
+- Three tables (Alembic head: `0026_bulk_child_files`):
+  - `bulk_ai_uploads` (job row, one per ZIP/single-PDF upload): status, totals, provider, error_message, deck_id, user_id.
+  - `bulk_ai_upload_child_files` (one row per uploaded file inside the job): `bulk_upload_id`, `child_key`, `original_filename`, `display_title`, `storage_key`, `file_size`, `latest_attempt_id`. Unique on `(bulk_upload_id, child_key)`.
+  - `bulk_ai_upload_files` (attempt rows): `bulk_upload_id`, `child_file_id`, `original_filename`, `extracted_title`, `extracted_description`, `content_text`, `storage_key`, `status`, counts, `created_deck_id`, `error_message`, timestamps.
+- One uploaded file ⇒ exactly one `BulkAIUploadChildFile` for the lifetime of the job. Retries append new `BulkAIUploadFile` attempt rows and re-point `child_file.latest_attempt_id`.
+- The UI shows one row per `BulkAIUploadChildFile` (not per attempt). Attempt history is detail, not the primary list.
+- Models live in `app/models/bulk_ai_upload.py`; worker lives in `app/services/job_worker.py`; router in `app/api/routers/bulk_ai_upload.py`.
+- Earlier concern "next Jobs refactor should move from repeated attempt rows to a parent/child upload schema so retries stay under one child file instead of creating confusing duplicate file rows" is now resolved by this schema.
+
+## Kanboard task #55 acceptance (live validation required)
+
+Task #55 — "Validate bulk upload schema refactor live" — must be evidenced before closing. Required proof, not assumptions:
+
+1. `python3 -m compileall app tests` clean, repo tests green.
+2. App rebuilt via `docker compose build app && docker compose up -d app` so the image reflects the code.
+3. Real bulk upload (ZIP with ≥2 PDFs) submitted against the running app and observed in DB:
+   - One `bulk_ai_uploads` row.
+   - N `bulk_ai_upload_child_files` rows (one per uploaded file), unique `(bulk_upload_id, child_key)`.
+   - At least one `bulk_ai_upload_files` attempt row per child file.
+4. Real bulk retry (after at least one file fails) and observed:
+   - No new `bulk_ai_upload_child_files` rows created.
+   - New attempt rows appended with `child_file_id` re-pointed to the original child.
+   - `child_file.latest_attempt_id` updated.
+   - `BulkAIUploadFile.created_deck_id` preserved on retry (deck ID, not filename, drives the target deck).
+5. UI verification: `/settings/jobs?tab=active` shows one stable row per uploaded file across retry, with the same `display_title` (or aligned title) and the same deck reference.
+6. No synthetic / static / mock data used for the validation evidence.
+
+If any of the above fails, task #55 stays open and the failure becomes the next scoped work item.
