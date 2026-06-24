@@ -126,6 +126,17 @@
 - If AI title generation fails or returns invalid JSON, worker falls back to existing heuristic `extract_title_from_text(...)` behavior instead of failing the upload.
 - App was rebuilt with `docker compose up --build -d app` after this change because code is baked into the image.
 
+## AI model
+
+- AI provider/model string is currently hardcoded in `app/services/ai_generation.py` (study generation at line 476, title generation at line 141). There is no `AI_MODEL` env var yet.
+- As of 2026-06-24 the live model is **`MiniMax-M3`** for both the deck-title pass and the study-pack generation pass.
+- Provider config in `.env`:
+  - `AI_PROVIDER=minimax`
+  - `MINIMAX_API_KEY=sk-cp-...` (shared across all MiniMax calls)
+  - Endpoint: `https://api.minimax.io/v1/text/chatcompletion_v2`
+- The model string is the value of the JSON `model` field sent to MiniMax; do not change it without verifying the new model is actually accepted by `https://api.minimax.io/v1/text/chatcompletion_v2` first (a direct probe with a 1-token request is the quickest check).
+- `MiniMax-M2` is the previous default and is not in use; if you see it in code, that is a regression and should be replaced with `MiniMax-M3`.
+
 ## Bulk AI upload + jobs flow
 
 - Current active work in `/opt/edu_viz` is on `main`; the `feature/bulk-ai-upload` branch is stale and should be cleaned up only after task #55 passes live validation.
@@ -136,7 +147,7 @@
 - Job-level bulk cancel must propagate immediately to all pending/processing file rows so the UI and worker state agree; do not leave child file rows appearing active after a whole-job cancel.
 - Bulk AI upload must keep strict per-file deck ownership: worker generation and retry flows must use each file row's `created_deck_id` and must not fall back to a shared `bulk.deck_id` for multi-file output decks.
 - Retry flows identify the target output deck by persisted deck ID (`BulkAIUploadFile.created_deck_id`) and reuse that exact deck via `existing_deck_id`; do not infer the retry target from filenames or generated display names.
-- Bulk AI upload title generation must pass the archive filename (`bulk.original_filename`) into `build_title_generation_prompt()` and warn the AI not to copy repeated archive/PDF filenames unless the source text confirms them.
+- Bulk AI upload title generation must pass the archive filename (`bulk.filename`) into `build_title_generation_prompt()` and warn the AI not to copy repeated archive/PDF filenames unless the source text confirms them. `BulkAIUpload.filename` is the ZIP/archive name; per-file names live on `BulkAIUploadChildFile.original_filename` and `BulkAIUploadFile.original_filename`.
 - Title prompt includes both `Archive filename` and `PDF filename` context for the AI.
 - The first successful attempt writes the resolved title into both `BulkAIUploadFile.extracted_title` and `BulkAIUploadChildFile.display_title`. Fresh retries copy the prior `extracted_title` into `child_file.display_title` so retry names stay aligned.
 - Jobs page should show each bulk file row's own generated counts (`flashcards_generated`, `mcqs_generated`, `duplicate_count`) and offer cancel actions for pending/processing bulk jobs and file rows.

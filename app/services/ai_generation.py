@@ -138,7 +138,7 @@ class MinimaxStudyPackProvider:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "MiniMax-M2",
+                "model": "MiniMax-M3",
                 "messages": [
                     {
                         "role": "system",
@@ -473,7 +473,7 @@ class OpencodeStudyPackProvider:
                 "Content-Type": "application/json",
             },
             json={
-                "model": "MiniMax-M2",
+                "model": "MiniMax-M3",
                 "messages": [
                     {
                         "role": "system",

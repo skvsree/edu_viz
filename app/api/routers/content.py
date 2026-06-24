@@ -1226,7 +1226,7 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
                     "https://api.minimax.io/v1/text/chatcompletion_v2",
                     headers={"Authorization": f"Bearer {credential.secret}", "Content-Type": "application/json"},
                     json={
-                        "model": "MiniMax-M2",
+                        "model": "MiniMax-M3",
                         "messages": [
                             {
                                 "role": "system",
