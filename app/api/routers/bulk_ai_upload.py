@@ -1,4 +1,7 @@
 import io
+import logging
+import os
+import tempfile
 import uuid
 import zipfile
 from datetime import datetime
@@ -31,12 +34,34 @@ from app.models.deck import DeckAccessScope
 from app.services.access import normalize_deck_name
 from app.services.storage import StorageError, get_storage, guess_content_type
 
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter(prefix="/api/v1", tags=["bulk-ai-upload"])
 
 
 IGNORED_ZIP_PREFIXES = ("__MACOSX/",)
 IGNORED_ZIP_NAME_PREFIXES = ("._",)
+
+
+# 1 MiB spool threshold — files smaller than this stay in RAM, larger spill
+# to a temp file on disk so peak memory is bounded regardless of upload size.
+_SPOOL_MAX_BYTES = 1024 * 1024
+
+
+# Hard cap on a single upload payload. Default 500 MiB; configurable via
+# ``MAX_BULK_UPLOAD_MB`` env var so operators can dial it per host.
+_DEFAULT_MAX_BULK_UPLOAD_BYTES = 500 * 1024 * 1024
+
+
+def _max_bulk_upload_bytes() -> int:
+    raw = os.environ.get("MAX_BULK_UPLOAD_MB")
+    if raw:
+        try:
+            return max(1, int(raw)) * 1024 * 1024
+        except ValueError:
+            pass
+    return _DEFAULT_MAX_BULK_UPLOAD_BYTES
 
 
 def _should_queue_archive_member(name: str) -> bool:
@@ -51,6 +76,53 @@ def _should_queue_archive_member(name: str) -> bool:
     return normalized.lower().endswith(".pdf")
 
 
+def _spool_upload(source_file: UploadFile, *, max_bytes: int) -> tempfile.SpooledTemporaryFile:
+    """Stream an ``UploadFile`` into a memory+disk spool, enforcing a size cap.
+
+    Returns a :class:`tempfile.SpooledTemporaryFile` whose ``max_size`` keeps
+    the in-RAM buffer bounded — anything larger spills to a temp file on
+    disk. Raises ``HTTPException(413)`` when the upload exceeds ``max_bytes``.
+    """
+    spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_MAX_BYTES)
+    total = 0
+    chunk_size = 1024 * 1024  # 1 MiB
+    while True:
+        buf = source_file.file.read(chunk_size)
+        if not buf:
+            break
+        total += len(buf)
+        if total > max_bytes:
+            spool.close()
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Upload exceeds the {max_bytes // (1024 * 1024)} MiB limit."
+                ),
+            )
+        spool.write(buf)
+    if total == 0:
+        spool.close()
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    spool.seek(0)
+    return spool
+
+
+def _extract_pdf_from_zip(
+    archive: zipfile.ZipFile, member: zipfile.ZipInfo
+) -> tempfile.SpooledTemporaryFile:
+    """Extract one archive member into a memory+disk spool without buffering
+    the full archive in memory."""
+    spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_MAX_BYTES)
+    with archive.open(member) as src:
+        while True:
+            buf = src.read(1024 * 1024)
+            if not buf:
+                break
+            spool.write(buf)
+    spool.seek(0)
+    return spool
+
+
 def enqueue_ai_upload_job(
     db: Session,
     *,
@@ -62,6 +134,11 @@ def enqueue_ai_upload_job(
     """Queue AI upload work using the shared bulk upload job path.
 
     When existing_deck_id is provided, the worker reuses that deck instead of creating a new one.
+
+    The upload body is streamed through a memory+disk spool so peak memory is
+    bounded regardless of how large the ZIP or PDF is. Each member PDF is
+    uploaded to storage directly from its own spool — we never hold the full
+    extracted payload in RAM at once.
     """
     filename = source_file.filename or ""
     is_zip = filename.lower().endswith(".zip")
@@ -74,37 +151,62 @@ def enqueue_ai_upload_job(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid folder id") from exc
 
-    upload_bytes = source_file.file.read()
-    if not upload_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    # Fast-path reject oversized uploads before we read the body.
+    declared_size = getattr(source_file, "size", None)
+    max_bytes = _max_bulk_upload_bytes()
+    if declared_size is not None and declared_size > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Upload exceeds the {max_bytes // (1024 * 1024)} MiB limit.",
+        )
 
-    source_file.file.seek(0)
+    # Spool the upload body to a memory+disk buffer. Caps in-RAM at ~1 MiB
+    # regardless of how large the upload is.
+    spool = _spool_upload(source_file, max_bytes=max_bytes)
 
-    files_to_queue: list[tuple[str, bytes]] = []
+    # Collect (display_name, SpooledTemporaryFile, file_size) tuples so the
+    # queueing loop can stream each PDF straight into storage without holding
+    # the full ZIP in memory.
+    queued_members: list[tuple[str, tempfile.SpooledTemporaryFile, int]] = []
     if is_zip:
         try:
-            with zipfile.ZipFile(io.BytesIO(upload_bytes)) as archive:
+            with zipfile.ZipFile(spool) as archive:
                 for info in archive.infolist():
                     if info.is_dir():
                         continue
                     if not _should_queue_archive_member(info.filename):
                         continue
-                    with archive.open(info) as file_obj:
-                        files_to_queue.append((Path(info.filename).name, file_obj.read()))
+                    member_spool = _extract_pdf_from_zip(archive, info)
+                    queued_members.append(
+                        (Path(info.filename).name, member_spool, info.file_size)
+                    )
         except zipfile.BadZipFile as exc:
+            for _, member_spool, _ in queued_members:
+                member_spool.close()
+            spool.close()
             raise HTTPException(status_code=400, detail="Invalid ZIP file") from exc
-        if not files_to_queue:
+        if not queued_members:
+            spool.close()
             raise HTTPException(status_code=400, detail="ZIP file does not contain any PDFs")
         if existing_deck_id:
+            for _, member_spool, _ in queued_members:
+                member_spool.close()
+            spool.close()
             raise HTTPException(status_code=400, detail="ZIP upload cannot target an existing deck")
+        # We have already drained the body into queued_members. Drop the
+        # archive spool — it is no longer needed.
+        spool.close()
     else:
-        files_to_queue.append((filename, upload_bytes))
+        # Single PDF: the spool IS the file we want to queue.
+        size = spool.tell() if spool.seek(0, io.SEEK_END) else 0
+        spool.seek(0)
+        queued_members.append((filename, spool, size))
 
     bulk = BulkAIUpload(
         user_id=user.id,
         filename=filename,
         status=BulkAIUploadStatus.PENDING.value,
-        total_files=len(files_to_queue),
+        total_files=len(queued_members),
         processed_files=0,
         flashcards_generated=0,
         mcqs_generated=0,
@@ -117,7 +219,7 @@ def enqueue_ai_upload_job(
     db.flush()
 
     storage = get_storage()
-    for index, (queued_name, queued_bytes) in enumerate(files_to_queue):
+    for index, (queued_name, member_spool, file_size) in enumerate(queued_members):
         deck = _ensure_bulk_upload_deck(
             db,
             user,
@@ -128,14 +230,24 @@ def enqueue_ai_upload_job(
         storage_key = None
         try:
             object_key = f"bulk-ai-upload/{bulk.id}/{uuid.uuid4()}-{Path(queued_name).name}"
-            stored = storage.save_bytes(
+            # Stream straight into storage so we never buffer the full PDF in
+            # Python memory at the upload step.
+            stored = storage.save_stream(
                 key=object_key,
-                data=queued_bytes,
+                stream=member_spool,
                 content_type=guess_content_type(queued_name),
             )
             storage_key = stored.key
         except StorageError as exc:
-            raise HTTPException(status_code=503, detail=f"Failed to store upload file: {queued_name}") from exc
+            # Close this spool and every still-open one queued behind it so a
+            # mid-archive failure does not leak temp files.
+            member_spool.close()
+            for _, leftover_spool, _ in queued_members[index + 1:]:
+                leftover_spool.close()
+            raise HTTPException(
+                status_code=503, detail=f"Failed to store upload file: {queued_name}"
+            ) from exc
+        member_spool.close()
 
         child_file = BulkAIUploadChildFile(
             bulk_upload_id=bulk.id,
@@ -143,7 +255,7 @@ def enqueue_ai_upload_job(
             original_filename=queued_name,
             display_title=Path(queued_name).stem,
             storage_key=storage_key,
-            file_size=len(queued_bytes),
+            file_size=file_size,
         )
         db.add(child_file)
         db.flush()
@@ -156,7 +268,7 @@ def enqueue_ai_upload_job(
             storage_key=storage_key,
             status=BulkAIUploadFileStatus.PENDING.value,
             created_deck_id=deck.id,
-            file_size=len(queued_bytes),
+            file_size=file_size,
         )
         db.add(file_row)
         db.flush()
@@ -166,7 +278,7 @@ def enqueue_ai_upload_job(
         job_type="bulk_ai_upload",
         status=JobStatus.PENDING.value,
         reference_id=bulk.id,
-        total_items=len(files_to_queue),
+        total_items=len(queued_members),
         processed_items=0,
         failed_items=0,
     )

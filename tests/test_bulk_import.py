@@ -357,7 +357,9 @@ def test_enqueue_ai_upload_job_requires_storage_success():
 
     db = EnqueueDB()
     deck = SimpleNamespace(id=uuid4())
-    storage = SimpleNamespace(save_bytes=lambda **kwargs: (_ for _ in ()).throw(StorageError("boom")))
+    storage = SimpleNamespace(
+        save_stream=lambda **kwargs: (_ for _ in ()).throw(StorageError("boom"))
+    )
 
     with patch.object(bulk_ai_upload, "get_storage", return_value=storage), patch.object(
         bulk_ai_upload, "_ensure_bulk_upload_deck", return_value=deck

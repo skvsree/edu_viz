@@ -5,7 +5,7 @@ import threading
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -56,31 +56,65 @@ STATIC_DIR = BASE_DIR / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+def _build_legacy_media_index() -> dict[str, Path]:
+    """Build a single-file lookup for the legacy ``/{filename}.{ext}`` endpoint.
+
+    Walks the local media directory once so the per-request hot path is an
+    O(1) dict lookup instead of an O(N) ``iterdir()`` over every deck folder.
+    Returns an empty dict for non-local storage backends.
+    """
+    media_root = (STATIC_DIR / "media").resolve()
+    index: dict[str, Path] = {}
+    if not media_root.exists():
+        return index
+    for candidate in media_root.rglob("*"):
+        if candidate.is_file():
+            index[candidate.name] = candidate
+    return index
+
+
+_LEGACY_MEDIA_INDEX: dict[str, Path] = {}
+_LEGACY_MEDIA_INDEX_LOCK = threading.Lock()
+
+
+def _get_legacy_media_index() -> dict[str, Path]:
+    global _LEGACY_MEDIA_INDEX
+    if _LEGACY_MEDIA_INDEX:
+        return _LEGACY_MEDIA_INDEX
+    with _LEGACY_MEDIA_INDEX_LOCK:
+        if not _LEGACY_MEDIA_INDEX:
+            _LEGACY_MEDIA_INDEX = _build_legacy_media_index()
+    return _LEGACY_MEDIA_INDEX
+
+
 @app.get("/{filename}.{ext}")
 def serve_temp_media_file(filename: str, ext: str):
-    """Serve media files by original filename (e.g., /temp_file_hash.jpg)"""
+    """Serve media files by original filename (e.g., /temp_file_hash.jpg)
+
+    Uses an in-memory lookup index built lazily on first request so repeated
+    thumbnail hits stay O(1) regardless of how many decks exist on disk.
+    """
     from fastapi import HTTPException
 
     # Reject path traversal attempts
     if ".." in filename or "/" in filename or chr(92) in filename:
         raise HTTPException(status_code=400)
 
-    media_root = STATIC_DIR / "media"
-    if not media_root.exists():
+    search_name = f"{filename}.{ext}"
+    candidate = _get_legacy_media_index().get(search_name)
+    if candidate is None:
         raise HTTPException(status_code=404)
 
-    search_name = f"{filename}.{ext}"
-    for deck_dir in media_root.iterdir():
-        if deck_dir.is_dir():
-            candidate = (deck_dir / search_name).resolve()
-            # Ensure path stays within media_root
-            try:
-                candidate.relative_to(media_root.resolve())
-            except ValueError:
-                raise HTTPException(status_code=400)
-            if candidate.exists() and candidate.is_file():
-                return FileResponse(candidate, headers={"Cache-Control": "public, max-age=31536000, immutable"})
-    raise HTTPException(status_code=404)
+    # Defensive: double-check the path still sits inside the media root in case
+    # the file got replaced by something outside.
+    media_root = (STATIC_DIR / "media").resolve()
+    try:
+        candidate.relative_to(media_root)
+    except ValueError:
+        raise HTTPException(status_code=400)
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(candidate, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.get("/assets/media/{filename:path}")
@@ -90,21 +124,28 @@ def serve_legacy_media_file(filename: str):
 
 @app.get("/media/{object_key:path}")
 def serve_media_file(object_key: str):
-    """Serve media files from the configured storage backend."""
+    """Serve media files from the configured storage backend.
+
+    Streams chunks from storage instead of buffering the full payload in
+    memory, so multi-megabyte media responses do not blow up the worker.
+    """
     if ".." in object_key or chr(92) in object_key:
         raise HTTPException(status_code=400)
 
     try:
-        payload, content_type = get_storage().open_bytes(key=object_key)
+        chunk_iter, content_type, total_size = get_storage().open_stream(key=object_key)
     except FileNotFoundError:
         raise HTTPException(status_code=404)
     except StorageError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
-    return Response(
-        content=payload,
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+    if total_size is not None:
+        headers["Content-Length"] = str(total_size)
+    return StreamingResponse(
+        chunk_iter,
         media_type=content_type or "application/octet-stream",
-        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        headers=headers,
     )
 
 

@@ -5,6 +5,12 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://srs:srs@pgbouncer:5432/srs
+      # Two worker threads let two bulk-AI files process concurrently while
+      # still keeping GIL contention low. Override per host via .env if needed.
+      JOB_WORKER_THREADS: "2"
+      # 500 MiB hard cap on a single bulk-AI upload (matches the upload
+      # endpoint default). Lower this on memory-tight hosts.
+      MAX_BULK_UPLOAD_MB: "500"
     depends_on:
       - pgbouncer
       - seaweedfs

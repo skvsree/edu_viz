@@ -3,6 +3,7 @@ from __future__ import annotations
 import mimetypes
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO, Iterable, Iterator
 from urllib.parse import quote
 
 import boto3
@@ -10,6 +11,9 @@ from botocore.client import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import settings
+
+# Reasonable streaming chunk size used by all backends.
+_DEFAULT_STREAM_CHUNK = 1024 * 1024  # 1 MiB
 
 
 class StorageError(Exception):
@@ -27,6 +31,37 @@ class BaseStorage:
         raise NotImplementedError
 
     def open_bytes(self, *, key: str) -> tuple[bytes, str | None]:
+        raise NotImplementedError
+
+    def save_stream(
+        self,
+        *,
+        key: str,
+        stream: BinaryIO,
+        content_type: str | None = None,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> StoredObject:
+        """Save object from a binary stream.
+
+        Default implementation drains ``stream`` into memory once and delegates
+        to ``save_bytes``. Backends with native multipart support should
+        override this so the file is uploaded without buffering the whole blob
+        in Python.
+        """
+        data = stream.read()
+        return self.save_bytes(key=key, data=data, content_type=content_type)
+
+    def open_stream(
+        self,
+        *,
+        key: str,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> tuple[Iterable[bytes], str | None, int | None]:
+        """Open object as a stream of chunks.
+
+        Returns ``(chunk_iter, content_type, total_size)``. ``total_size`` may
+        be ``None`` when the backend cannot know the size up front.
+        """
         raise NotImplementedError
 
     def delete_prefix(self, *, prefix: str) -> int:
@@ -59,12 +94,52 @@ class LocalStorage(BaseStorage):
         path.write_bytes(data)
         return StoredObject(key=key, url=self.public_url(key=key))
 
+    def save_stream(
+        self,
+        *,
+        key: str,
+        stream: BinaryIO,
+        content_type: str | None = None,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> StoredObject:
+        path = self._path_for_key(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Stream straight to disk so memory stays bounded regardless of size.
+        with path.open("wb") as out:
+            while True:
+                buf = stream.read(chunk_size)
+                if not buf:
+                    break
+                out.write(buf)
+        return StoredObject(key=key, url=self.public_url(key=key))
+
     def open_bytes(self, *, key: str) -> tuple[bytes, str | None]:
         path = self._path_for_key(key)
         if not path.exists() or not path.is_file():
             raise FileNotFoundError(key)
         content_type, _ = mimetypes.guess_type(path.name)
         return path.read_bytes(), content_type
+
+    def open_stream(
+        self,
+        *,
+        key: str,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> tuple[Iterable[bytes], str | None, int | None]:
+        path = self._path_for_key(key)
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(key)
+        content_type, _ = mimetypes.guess_type(path.name)
+
+        def _iter() -> Iterator[bytes]:
+            with path.open("rb") as src:
+                while True:
+                    buf = src.read(chunk_size)
+                    if not buf:
+                        break
+                    yield buf
+
+        return _iter(), content_type, path.stat().st_size
 
     def delete_prefix(self, *, prefix: str) -> int:
         root = self._path_for_key(prefix)
@@ -108,6 +183,12 @@ class S3Storage(BaseStorage):
             region_name=region or None,
             config=Config(signature_version="s3v4"),
         )
+        # Transfer manager powers streaming uploads without buffering the full
+        # object in memory. Imported lazily so base clients that never upload
+        # large files do not pay the cost on startup.
+        from boto3.s3.transfer import TransferManager
+
+        self._transfer_manager = TransferManager(client=self.client)
 
     def save_bytes(self, *, key: str, data: bytes, content_type: str | None = None) -> StoredObject:
         extra_args = {}
@@ -115,6 +196,32 @@ class S3Storage(BaseStorage):
             extra_args["ContentType"] = content_type
         try:
             self.client.put_object(Bucket=self.bucket, Key=key, Body=data, **extra_args)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"Failed to store object {key}: {exc}") from exc
+        return StoredObject(key=key, url=self.public_url(key=key))
+
+    def save_stream(
+        self,
+        *,
+        key: str,
+        stream: BinaryIO,
+        content_type: str | None = None,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> StoredObject:
+        # Use the boto3 multipart upload manager so we never buffer the full
+        # object in Python memory. For tiny objects the API collapses this into
+        # a single put_object under the hood.
+        extra_args = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
+        try:
+            uploader = self._transfer_manager.upload(
+                self.bucket,
+                key,
+                stream,
+                extra_args=extra_args,
+            )
+            uploader.result()
         except (ClientError, BotoCoreError) as exc:
             raise StorageError(f"Failed to store object {key}: {exc}") from exc
         return StoredObject(key=key, url=self.public_url(key=key))
@@ -129,6 +236,34 @@ class S3Storage(BaseStorage):
         content_type = response.get("ContentType")
         body = response["Body"].read()
         return body, content_type
+
+    def open_stream(
+        self,
+        *,
+        key: str,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> tuple[Iterable[bytes], str | None, int | None]:
+        try:
+            response = self.client.get_object(Bucket=self.bucket, Key=key)
+        except self.client.exceptions.NoSuchKey as exc:
+            raise FileNotFoundError(key) from exc
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageError(f"Failed to read object {key}: {exc}") from exc
+        content_type = response.get("ContentType")
+        body = response["Body"]
+        size = response.get("ContentLength")
+
+        def _iter() -> Iterator[bytes]:
+            try:
+                while True:
+                    buf = body.read(chunk_size)
+                    if not buf:
+                        break
+                    yield buf
+            finally:
+                body.close()
+
+        return _iter(), content_type, size
 
     def delete_prefix(self, *, prefix: str) -> int:
         deleted = 0
