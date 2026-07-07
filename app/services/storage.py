@@ -221,14 +221,21 @@ class S3Storage(BaseStorage):
         # Use the boto3 multipart upload manager so we never buffer the full
         # object in Python memory. For tiny objects the API collapses this into
         # a single put_object under the hood.
+        #
+        # NOTE: TransferManager.upload() signature is (fileobj, bucket, key, ...),
+        # NOT (bucket, key, fileobj). Passing the bucket first is silently
+        # mis-routed as the fileobj, s3transfer's UploadFilenameInputManager
+        # picks the fileobj string, and os.path.getsize(<bucket name>) raises
+        # FileNotFoundError. The streaming path is exercised only here, so the
+        # bug only surfaces on actual upload requests.
         extra_args = {}
         if content_type:
             extra_args["ContentType"] = content_type
         try:
             uploader = self._transfer_manager.upload(
+                stream,
                 self.bucket,
                 key,
-                stream,
                 extra_args=extra_args,
             )
             uploader.result()
