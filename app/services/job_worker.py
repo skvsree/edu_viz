@@ -398,10 +398,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     file_query = (
         select(BulkAIUploadFile)
         .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+        # Always restrict to pending rows regardless of job.total_items.
+        # Previously the .where() below was only applied when total_items
+        # was 1, which meant multi-file bulks would pick up rows in any
+        # status (including completed/stopped) and re-process them,
+        # wasting AI tokens. See test_job_worker_file_filter.py for
+        # the regression test.
+        .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.PENDING.value)
         .order_by(BulkAIUploadFile.created_at)
     )
-    if job.total_items == 1:
-        file_query = file_query.where(BulkAIUploadFile.status == BulkAIUploadFileStatus.PENDING.value)
     file_records = db.execute(file_query).scalars().all()
     if not file_records:
         bulk.status = BulkAIUploadStatus.FAILED.value
