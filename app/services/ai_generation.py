@@ -281,8 +281,14 @@ def build_iterative_study_pack_prompt(
     }
     instruction = mode_instructions.get(mode, mode_instructions["core"])
 
-    flashcard_avoid = "\n".join(f"- {item[:180]}" for item in existing_flashcards[:40]) or "- none"
-    mcq_avoid = "\n".join(f"- {item[:180]}" for item in existing_mcqs[:40]) or "- none"
+    # The 'avoid' list is a hint to the model about recent items so
+    # it doesn't re-derive the same fact in different words. We trim
+    # to 15 most-recent items at 80 chars each (~1.2KB total) so
+    # the prompt stays small on later chunks of a long file. The
+    # post-hoc dedup loop in job_worker.py catches exact duplicates
+    # regardless, so the avoid list does not need to be exhaustive.
+    flashcard_avoid = "\n".join(f"- {item[:80]}" for item in existing_flashcards[:15]) or "- none"
+    mcq_avoid = "\n".join(f"- {item[:80]}" for item in existing_mcqs[:15]) or "- none"
 
     return (
         "You are preparing dense study material for Indian medical entrance exam revision. "

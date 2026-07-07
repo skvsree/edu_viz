@@ -398,10 +398,15 @@ def _run_chunk_modes_parallel(
             prompt = build_iterative_study_pack_prompt(
                 chunk_text,
                 mode=mode,
+                # Trim to 15 most-recent items to keep the prompt
+                # small. The prompt builder slices to 15 anyway, so
+                # we avoid materialising full lists in Python first.
                 existing_flashcards=[
-                    item.front for item in aggregate.flashcards
+                    item.front for item in aggregate.flashcards[-15:]
                 ],
-                existing_mcqs=[item.question for item in aggregate.mcqs],
+                existing_mcqs=[
+                    item.question for item in aggregate.mcqs[-15:]
+                ],
                 max_flashcards=max_flashcards,
                 max_mcqs=max_mcqs,
             )
