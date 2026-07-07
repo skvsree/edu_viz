@@ -358,6 +358,94 @@ def _clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
 
+def _run_chunk_modes_parallel(
+    *,
+    provider,
+    credential,
+    chunk_text: str,
+    aggregate,
+    modes: tuple[str, ...],
+    max_flashcards: int,
+    max_mcqs: int,
+    log_prefix: str,
+    executor: ThreadPoolExecutor,
+) -> tuple:
+    """Run the 3 extraction modes (core/mechanisms/traps) for a single
+    chunk in parallel via the supplied executor.
+
+    The 3 modes are independent — they ask the model the same source
+    text with different "lens" instructions — so they can run
+    concurrently. Wall time per chunk drops from ~3x single-call
+    latency to ~1x.
+
+    Returns (merged_chunk_pack, failed_modes_set). The caller is
+    responsible for de-duplicating merged_chunk_pack against
+    `aggregate` and earlier chunks via the existing dedup loop.
+
+    The "already covered" list in each prompt contains only
+    `aggregate` items, NOT in-flight results from sibling modes.
+    Cross-mode duplicates are caught by the caller's dedup pass
+    (existing_flashcards / existing_mcqs sets).
+    """
+
+    def _run_mode(mode: str):
+        """Worker for a single mode submission. Returns (mode, pack_or_None, err)."""
+        try:
+            print(
+                f"{log_prefix} ai pass start mode={mode}",
+                flush=True,
+            )
+            prompt = build_iterative_study_pack_prompt(
+                chunk_text,
+                mode=mode,
+                existing_flashcards=[
+                    item.front for item in aggregate.flashcards
+                ],
+                existing_mcqs=[item.question for item in aggregate.mcqs],
+                max_flashcards=max_flashcards,
+                max_mcqs=max_mcqs,
+            )
+            pass_pack = _generate_pack_with_retry(
+                provider,
+                prompt,
+                credential,
+                log_prefix=f"{log_prefix} mode={mode}",
+            )
+            print(
+                f"{log_prefix} ai pass ok mode={mode} "
+                f"flashcards={len(pass_pack.flashcards)} mcqs={len(pass_pack.mcqs)}",
+                flush=True,
+            )
+            return (mode, pass_pack, None)
+        except AIGenerationError as e:
+            print(
+                f"{log_prefix} ai pass failed mode={mode} err={str(e)[:200]}",
+                flush=True,
+            )
+            return (mode, None, e)
+        except Exception as e:
+            # Catch-all: a single broken mode must not abort the whole chunk.
+            print(
+                f"{log_prefix} ai pass crashed mode={mode} err={str(e)[:200]}",
+                flush=True,
+            )
+            return (mode, None, e)
+
+    failed_modes: set[str] = set()
+    packs_to_merge: list = []
+    futures = [executor.submit(_run_mode, mode) for mode in modes]
+    for fut in futures:
+        mode, pack, err = fut.result()
+        if err is not None:
+            failed_modes.add(mode)
+            continue
+        if pack is not None:
+            packs_to_merge.append(pack)
+
+    chunk_pack = merge_study_packs(*packs_to_merge) if packs_to_merge else merge_study_packs()
+    return chunk_pack, failed_modes
+
+
 def record_chunk_progress(
     *,
     db: Session,
@@ -497,6 +585,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
         pdf_name = file_record.original_filename or bulk.filename or 'upload.pdf'
         pdf_data = upload_bytes
+        mode_executor = None  # assigned inside the try block
 
         try:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
@@ -597,6 +686,16 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             existing_flashcards: set[tuple[str, str]] = set()
             existing_mcqs: set[str] = set()
 
+            # Per-file mode executor: 3 workers so the 3 extraction
+            # modes within each chunk can run concurrently. Created
+            # per-file (not per-chunk) so the worker pool overhead is
+            # amortized across all chunks in a file. Closed at the
+            # end of the per-file block via the with-statement below.
+            mode_executor = ThreadPoolExecutor(
+                max_workers=len(modes),
+                thread_name_prefix=f"modes-{pdf_name[:20]}",
+            )
+
             print(
                 f"[job-worker] generation start job={job.id} file={pdf_name} "
                 f"chunks={len(chunks)} provider={credential.provider}",
@@ -614,49 +713,28 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     f"chunk={chunk_index}/{len(chunks)} chunk_len={len(chunk)}",
                     flush=True,
                 )
-                chunk_pack = merge_study_packs()
-                for mode in modes:
+                chunk_pack, failed_modes = _run_chunk_modes_parallel(
+                    provider=provider_client,
+                    credential=credential,
+                    chunk_text=chunk,
+                    aggregate=aggregate,
+                    modes=modes,
+                    max_flashcards=18,
+                    max_mcqs=18,
+                    log_prefix=(
+                        f"[job-worker] ai pass job={job.id} file={pdf_name} "
+                        f"chunk={chunk_index}/{len(chunks)}"
+                    ),
+                    executor=mode_executor,
+                )
+
+                if failed_modes:
                     print(
-                        f"[job-worker] ai pass start job={job.id} file={pdf_name} "
-                        f"chunk={chunk_index}/{len(chunks)} mode={mode}",
+                        f"[job-worker] chunk job={job.id} file={pdf_name} "
+                        f"chunk={chunk_index}/{len(chunks)} partial_modes_failed="
+                        f"{','.join(sorted(failed_modes))} (continuing with successful modes)",
                         flush=True,
                     )
-                    prompt = build_iterative_study_pack_prompt(
-                        chunk,
-                        mode=mode,
-                        existing_flashcards=[
-                            item.front
-                            for item in merge_study_packs(aggregate, chunk_pack).flashcards
-                        ],
-                        existing_mcqs=[item.question for item in merge_study_packs(aggregate, chunk_pack).mcqs],
-                        max_flashcards=18,
-                        max_mcqs=18,
-                    )
-                    try:
-                        pass_pack = _generate_pack_with_retry(
-                            provider_client,
-                            prompt,
-                            credential,
-                            log_prefix=(
-                                f"[job-worker] ai pass job={job.id} file={pdf_name} "
-                                f"chunk={chunk_index}/{len(chunks)} mode={mode}"
-                            ),
-                        )
-                        print(
-                            f"[job-worker] ai pass ok job={job.id} file={pdf_name} "
-                            f"chunk={chunk_index}/{len(chunks)} mode={mode} "
-                            f"flashcards={len(pass_pack.flashcards)} mcqs={len(pass_pack.mcqs)}",
-                            flush=True,
-                        )
-                    except AIGenerationError as e:
-                        print(
-                            f"[job-worker] ai pass failed job={job.id} file={pdf_name} "
-                            f"chunk={chunk_index}/{len(chunks)} mode={mode} "
-                            f"err={str(e)[:200]}",
-                            flush=True,
-                        )
-                        continue
-                    chunk_pack = merge_study_packs(chunk_pack, pass_pack)
 
                 new_cards: list[Card] = []
                 chunk_flashcard_count = 0
@@ -728,6 +806,10 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             if not flashcards_generated and not mcqs_generated:
                 raise AIGenerationError('AI provider did not return usable flashcards or MCQs.')
 
+            # mode_executor is shut down in the outer finally block
+            # below so the per-file worker threads are joined whether
+            # the file succeeded, failed, or raised mid-chunk.
+
             print(
                 f"[job-worker] file completed job={job.id} file={pdf_name} "
                 f"flashcards={flashcards_generated} mcqs={mcqs_generated} "
@@ -768,6 +850,13 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     f"AI returned invalid JSON after {MAX_AI_FORMAT_RETRIES} attempts. "
                     f"Stopped on file: {pdf_name}"
                 )
+        finally:
+            # Always shut down the per-file mode executor so its 3
+            # worker threads are joined — whether the file succeeded,
+            # failed, or raised mid-chunk. Without this, a failed file
+            # would leak 3 threads per failed file.
+            if mode_executor is not None:
+                mode_executor.shutdown(wait=True)
         db.commit()
         if hard_fail_job:
             break
