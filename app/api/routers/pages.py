@@ -747,8 +747,10 @@ def _jobs_response(
         }:
             bulk_failed_files[bulk_id] = [bulk]
 
+    # Group jobs by reference_id (bulk) so the template renders one
+    # card per upload, not one per Job. Multiple retries of the same
+    # bulk collapse into a single card with a "X retries" indicator.
     active_jobs, history_jobs = _split_jobs_by_tab(jobs, bulks)
-
     history_total = len(history_jobs)
     history_total_pages = (
         (history_total + JOBS_HISTORY_PAGE_SIZE - 1) // JOBS_HISTORY_PAGE_SIZE
@@ -758,8 +760,51 @@ def _jobs_response(
     history_page = min(history_page, history_total_pages)
     history_offset = (history_page - 1) * JOBS_HISTORY_PAGE_SIZE
     history_jobs_page = history_jobs[
-        history_offset: history_offset + JOBS_HISTORY_PAGE_SIZE
-    ]
+        history_offset:history_offset + JOBS_HISTORY_PAGE_SIZE]
+    history_bulk_ids = {j.reference_id for j in history_jobs_page if j.reference_id}
+
+    # Build per-bulk job summaries for the template. Each entry has
+    # the latest job, the count of jobs, and the bulk itself.
+    def _summarise(jobs_for_bulk):
+        if not jobs_for_bulk:
+            return None
+        return sorted(
+            jobs_for_bulk,
+            key=lambda j: j.created_at or datetime.min,
+            reverse=True,
+        )[0]
+
+    jobs_by_bulk: dict = {}
+    for j in jobs:
+        if j.reference_id and j.reference_id in bulks:
+            jobs_by_bulk.setdefault(j.reference_id, []).append(j)
+
+    active_tab_bulks = []
+    seen_active_bulk_ids = set()
+    for j in active_jobs:
+        if j.reference_id and j.reference_id not in seen_active_bulk_ids:
+            seen_active_bulk_ids.add(j.reference_id)
+            active_tab_bulks.append(
+                {
+                    "bulk_id": j.reference_id,
+                    "bulk": bulks[j.reference_id],
+                    "latest_job": _summarise(jobs_by_bulk.get(j.reference_id, [])),
+                    "job_count": len(jobs_by_bulk.get(j.reference_id, [])),
+                }
+            )
+    history_tab_bulks = []
+    seen_history_bulk_ids = set()
+    for j in history_jobs_page:
+        if j.reference_id and j.reference_id not in seen_history_bulk_ids:
+            seen_history_bulk_ids.add(j.reference_id)
+            history_tab_bulks.append(
+                {
+                    "bulk_id": j.reference_id,
+                    "bulk": bulks[j.reference_id],
+                    "latest_job": j,
+                    "job_count": len(jobs_by_bulk.get(j.reference_id, [])),
+                }
+            )
 
     return templates.TemplateResponse(
         "settings/jobs.html",
@@ -773,6 +818,9 @@ def _jobs_response(
             "history_page": history_page,
             "history_total": history_total,
             "history_total_pages": history_total_pages,
+            "history_bulk_ids": history_bulk_ids,
+            "active_tab_bulks": active_tab_bulks,
+            "history_tab_bulks": history_tab_bulks,
             "bulks": bulks,
             "decks": decks,
             "bulk_output_decks": bulk_output_decks,

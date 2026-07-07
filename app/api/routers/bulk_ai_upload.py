@@ -1109,6 +1109,38 @@ def resume_bulk_ai_upload(
         total_items = len(target_file_records)
     db.commit()
 
+    # Single-file / single-deck retries should NOT spawn a new Job row.
+    # Otherwise the /settings/jobs page shows a new "card for the full
+    # zip" on every file-level retry, even though only one file is
+    # actually being re-processed. Reuse the bulk's most recent
+    # existing Job (active or otherwise) and just reset its status.
+    if file_id or deck_id:
+        existing_job = db.execute(
+            select(Job)
+            .where(Job.reference_id == bulk.id)
+            .where(Job.job_type == "bulk_ai_upload")
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        ).scalars().first()
+        if existing_job is not None:
+            existing_job.status = JobStatus.PENDING.value
+            existing_job.error_message = None
+            existing_job.started_at = None
+            existing_job.completed_at = None
+            existing_job.processed_items = 0
+            existing_job.failed_items = 0
+            existing_job.total_items = total_items
+            db.commit()
+            return {
+                "id": str(bulk.id),
+                "job_id": str(existing_job.id),
+                "status": bulk.status,
+                "retried_file_id": file_id,
+                "retried_deck_id": deck_id,
+            }
+        # No existing job — fall through and create one (legitimate
+        # state: a bulk that lost its job row but still has files).
+
     job = Job(
         job_type="bulk_ai_upload",
         reference_id=bulk.id,
