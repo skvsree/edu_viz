@@ -1408,16 +1408,34 @@
         });
     }
 
+    // Live updates: subscribe to /api/v1/live/bulk-ai-uploads/stream
+    // (SSE). It emits 'bulk-ai-upload-updated' events whenever a
+    // visible bulk's running counters change. Falls back to a 3s
+    // polling loop if the SSE connection drops.
     function connect() {
-      var source = new EventSource('/api/live/decks');
-
-      source.addEventListener('bulk-ai-upload-updated', function () {
+      if (window.__bulkJobsSse) {
+        try { window.__bulkJobsSse.close(); } catch (e) {}
+      }
+      window.__bulkJobsSse = new EventSource('/api/v1/live/bulk-ai-uploads/stream');
+      window.__bulkJobsSse.addEventListener('bulk-ai-upload-updated', function () {
         refreshActiveJobs();
       });
-
-      source.onerror = function () {
-        source.close();
-        window.setTimeout(connect, 3000);
+      window.__bulkJobsSse.onerror = function () {
+        if (window.__bulkJobsSse) window.__bulkJobsSse.close();
+        if (!window.__bulkJobsPollId) {
+          window.__bulkJobsPollId = window.setInterval(function () {
+            refreshActiveJobs();
+          }, 3000);
+        }
+        // Try to reconnect the SSE after a short pause.
+        window.setTimeout(connect, 5000);
+      };
+      // Once SSE is open, the polling fallback is no longer needed.
+      window.__bulkJobsSse.onopen = function () {
+        if (window.__bulkJobsPollId) {
+          window.clearInterval(window.__bulkJobsPollId);
+          window.__bulkJobsPollId = null;
+        }
       };
     }
 

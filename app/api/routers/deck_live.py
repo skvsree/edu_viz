@@ -13,6 +13,7 @@ from app.models import (
     BulkAIUpload,
     BulkAIUploadChildFile,
     BulkAIUploadFile,
+    BulkAIUploadStatus,
     Card,
     Deck,
     Job,
@@ -337,3 +338,93 @@ def dashboard_favorites_meta(
     counts = _deck_counts(db, visible_ids)
     imports = _deck_import_status(db, visible_ids)
     return JSONResponse({"counts": counts, "imports": imports})
+
+
+# Fields the live SSE emitter watches. Changes in any of these trigger
+# a 'bulk-ai-upload-updated' event so the jobs page can re-render
+# running counters without polling the page itself.
+_BULK_LIVE_WATCH_FIELDS = (
+    "status",
+    "processed_files",
+    "flashcards_generated",
+    "mcqs_generated",
+)
+
+
+def bulk_state_dict(bulk: "BulkAIUpload") -> dict:
+    """Project a BulkAIUpload row to the JSON payload the live SSE
+    endpoint emits. Returns id + watch fields, with None counts
+    normalised to 0 so the comparison helper does not have to.
+    """
+    return {
+        "id": str(bulk.id),
+        "status": bulk.status,
+        "processed_files": int(bulk.processed_files or 0),
+        "total_files": int(bulk.total_files or 0),
+        "flashcards_generated": int(bulk.flashcards_generated or 0),
+        "mcqs_generated": int(bulk.mcqs_generated or 0),
+    }
+
+
+def bulk_state_changed(before: dict, after: dict) -> bool:
+    """Return True if `after` differs from `before` in any field the
+    live SSE stream cares about. id and total_files are intentionally
+    excluded: id is the row key (never changes), total_files is set
+    once at upload time and never moves during processing.
+    """
+    return any(before.get(k) != after.get(k) for k in _BULK_LIVE_WATCH_FIELDS)
+
+
+def _visible_bulk_uploads(db: Session, user: User) -> list["BulkAIUpload"]:
+    """Return the BulkAIUpload rows the user is allowed to see, scoped
+    to the ones currently in flight (so we do not poll old completed
+    rows forever)."""
+    stmt = select(BulkAIUpload).where(
+        BulkAIUpload.status.in_(
+            (BulkAIUploadStatus.PENDING.value, BulkAIUploadStatus.PROCESSING.value)
+        )
+    )
+    if user.role != "system_admin":
+        stmt = stmt.where(BulkAIUpload.user_id == user.id)
+    stmt = stmt.order_by(BulkAIUpload.created_at.desc()).limit(20)
+    return list(db.execute(stmt).scalars().all())
+
+
+@router.get("/bulk-ai-uploads/stream")
+async def bulk_ai_uploads_stream(
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """SSE stream that emits a 'bulk-ai-upload-updated' event whenever
+    the running counters of any visible bulk-AI upload change. Closes
+    automatically when the client disconnects.
+    """
+    last_states: dict[str, dict] = {}
+
+    async def event_generator():
+        nonlocal last_states
+        while True:
+            live_db = SessionLocal()
+            try:
+                bulks = _visible_bulk_uploads(live_db, user)
+                current_ids = {str(b.id) for b in bulks}
+                # Drop any last-state entries for bulks that have left
+                # the in-flight window so the dict does not grow.
+                stale_ids = [k for k in last_states if k not in current_ids]
+                for stale_id in stale_ids:
+                    last_states.pop(stale_id, None)
+                for bulk in bulks:
+                    state = bulk_state_dict(bulk)
+                    previous = last_states.get(state["id"])
+                    if previous is None or bulk_state_changed(previous, state):
+                        last_states[state["id"]] = state
+                        yield f"event: bulk-ai-upload-updated\ndata: {json.dumps(state)}\n\n"
+            finally:
+                live_db.close()
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

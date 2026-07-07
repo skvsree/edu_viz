@@ -358,6 +358,30 @@ def _clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
 
+def record_chunk_progress(
+    *,
+    db: Session,
+    file_record: BulkAIUploadFile,
+    bulk: BulkAIUpload,
+    chunk_flashcards: int,
+    chunk_mcqs: int,
+) -> None:
+    """Update file + bulk card counters after a chunk of AI generation.
+
+    Called once per chunk so live UI consumers (SSE / polling) see
+    running totals instead of waiting for the whole file to finish.
+    The bulk row uses a delta (new - previous) so repeated calls for
+    the same file accumulate correctly even after a mid-file crash.
+    """
+    new_file_flashcards = (file_record.flashcards_generated or 0) + chunk_flashcards
+    new_file_mcqs = (file_record.mcqs_generated or 0) + chunk_mcqs
+    file_record.flashcards_generated = new_file_flashcards
+    file_record.mcqs_generated = new_file_mcqs
+    bulk.flashcards_generated = max(0, (bulk.flashcards_generated or 0) + chunk_flashcards)
+    bulk.mcqs_generated = max(0, (bulk.mcqs_generated or 0) + chunk_mcqs)
+    db.commit()
+
+
 def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
     """Process queued upload bytes and create one deck per PDF with AI-generated cards."""
@@ -630,6 +654,8 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     chunk_pack = merge_study_packs(chunk_pack, pass_pack)
 
                 new_cards: list[Card] = []
+                chunk_flashcard_count = 0
+                chunk_mcq_count = 0
                 for item in chunk_pack.flashcards:
                     key = (normalize_generated_text(item.front), normalize_generated_text(item.back))
                     if key in existing_flashcards:
@@ -637,6 +663,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         continue
                     existing_flashcards.add(key)
                     flashcards_generated += 1
+                    chunk_flashcard_count += 1
                     new_cards.append(
                         Card(
                             deck_id=deck.id,
@@ -653,6 +680,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         continue
                     existing_mcqs.add(key)
                     mcqs_generated += 1
+                    chunk_mcq_count += 1
                     new_cards.append(
                         Card(
                             deck_id=deck.id,
@@ -668,8 +696,27 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     db.add_all(new_cards)
                     db.flush()
                     db.add_all([CardState(card_id=card.id) for card in new_cards])
-                    db.commit()
+                # Persist per-chunk progress so live UI consumers (SSE /
+                # polling) see running totals instead of waiting for the
+                # whole file to finish. record_chunk_progress commits the
+                # counter update to the DB. The bulk row may have been
+                # deleted by a concurrent admin action; in that case we
+                # only update the file row so progress is not lost.
+                if bulk is not None:
+                    record_chunk_progress(
+                        db=db,
+                        file_record=file_record,
+                        bulk=bulk,
+                        chunk_flashcards=chunk_flashcard_count,
+                        chunk_mcqs=chunk_mcq_count,
+                    )
                 else:
+                    file_record.flashcards_generated = (
+                        (file_record.flashcards_generated or 0) + chunk_flashcard_count
+                    )
+                    file_record.mcqs_generated = (
+                        (file_record.mcqs_generated or 0) + chunk_mcq_count
+                    )
                     db.commit()
                 aggregate = merge_study_packs(aggregate, chunk_pack)
 
@@ -682,21 +729,22 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"duplicates={duplicate_count}",
                 flush=True,
             )
-            previous_flashcards_generated = file_record.flashcards_generated or 0
-            previous_mcqs_generated = file_record.mcqs_generated or 0
+            # bulk + file counters are already correct from per-chunk
+            # record_chunk_progress calls; just stamp final status and
+            # the duplicate count.
             file_record.status = BulkAIUploadFileStatus.COMPLETED.value
             file_record.flashcards_generated = flashcards_generated
             file_record.mcqs_generated = mcqs_generated
             file_record.duplicate_count = duplicate_count
             file_record.completed_at = datetime.utcnow()
-            bulk.flashcards_generated = max(
-                0,
-                (bulk.flashcards_generated or 0) - previous_flashcards_generated + flashcards_generated,
-            )
-            bulk.mcqs_generated = max(
-                0,
-                (bulk.mcqs_generated or 0) - previous_mcqs_generated + mcqs_generated,
-            )
+            if bulk is not None:
+                # Safety net: if the per-chunk calls did not run (e.g. the
+                # file had zero chunks because text was empty), make sure
+                # the bulk reflects the final totals instead of zero.
+                if bulk.flashcards_generated is None or bulk.flashcards_generated < flashcards_generated:
+                    bulk.flashcards_generated = flashcards_generated
+                if bulk.mcqs_generated is None or bulk.mcqs_generated < mcqs_generated:
+                    bulk.mcqs_generated = mcqs_generated
             job.processed_items += 1
         except Exception as e:
             print(f"[job-worker] file failed job={job.id} file={pdf_name} err={str(e)[:300]}", flush=True)

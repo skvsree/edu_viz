@@ -275,3 +275,61 @@ def test_jobs_page_hides_retry_for_missing_storage_bulk():
     body = render_body(response)
     assert response.status_code == 200
     assert f'/api/v1/bulk-ai-upload/{bulk_id}/resume' not in body
+
+
+def test_jobs_page_active_tab_does_not_use_broken_sse_endpoint():
+    """The active-jobs tab must not call /api/live/decks (404) and must not
+    register a listener for an event the backend never emits. Both create
+    404 spam and a window.location.reload() loop, which makes the page feel
+    like counts are stuck.
+
+    Regression guard: the page should refresh via a polling loop or a real
+    SSE endpoint, not a non-existent /api/live/decks URL.
+    """
+    admin = SimpleNamespace(
+        id=uuid4(),
+        role=ROLE_SYSTEM_ADMIN,
+        organization_id=None,
+        email="root@example.com",
+        identity_sub="root-sub",
+    )
+    job = SimpleNamespace(
+        id=uuid4(),
+        job_type="bulk_ai_upload",
+        status="processing",
+        total_items=14,
+        processed_items=0,
+        failed_items=0,
+        created_at=None,
+        completed_at=None,
+        reference_id=uuid4(),
+    )
+    # JobsSettingsDB consumes one list per execute() call. Pass one job
+    # (for the Job query) and empty lists for the subsequent bulk/deck
+    # queries so the page renders without blowing up.
+    db = JobsSettingsDB([[job], [], [], []])
+
+    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+
+    body = render_body(response)
+    assert response.status_code == 200
+    # The broken URL was /api/live/decks (missing v1 segment). The page
+    # should not open an EventSource on that URL. Look for the code
+    # pattern rather than the bare URL since explanatory comments may
+    # legitimately mention the path.
+    assert "new EventSource('/api/live/decks')" not in body, (
+        "jobs.html is opening an EventSource on /api/live/decks which 404s. "
+        "Replace with a polling loop or a real /api/v1/live/... SSE endpoint."
+    )
+    # The page should subscribe to the real /api/v1/live/ SSE endpoint
+    # that the deck_live router exposes for bulk-AI uploads.
+    assert "/api/v1/live/bulk-ai-uploads/stream" in body, (
+        "jobs.html should subscribe to /api/v1/live/bulk-ai-uploads/stream "
+        "to receive real 'bulk-ai-upload-updated' SSE events."
+    )
+    # The page should still register a listener for the named event so
+    # the live stream actually triggers a refresh.
+    assert "addEventListener('bulk-ai-upload-updated'" in body, (
+        "jobs.html should addEventListener for 'bulk-ai-upload-updated' so "
+        "the live SSE stream triggers refreshActiveJobs()."
+    )
