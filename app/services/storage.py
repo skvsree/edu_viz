@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import BinaryIO, Iterable, Iterator
 from urllib.parse import quote
 
-import boto3
-from botocore.client import Config
-from botocore.exceptions import BotoCoreError, ClientError
+# boto3 + botocore are imported lazily inside S3Storage so deployments using
+# the local backend (and any test/CLI runs that never touch S3) do not pay
+# the ~30 MiB botocore service-catalog cost at import time.
 
 from app.core.config import settings
 
@@ -175,6 +175,12 @@ class S3Storage(BaseStorage):
     ):
         self.bucket = bucket
         self.public_base_url = public_base_url.rstrip("/") if public_base_url else None
+        # Lazy boto3 + botocore import: only paid when an S3-compatible
+        # backend is actually selected. Avoids loading the ~30 MiB AWS
+        # service catalog on startup for local-storage deployments.
+        import boto3
+        from botocore.client import Config
+
         self.client = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
@@ -191,6 +197,8 @@ class S3Storage(BaseStorage):
         self._transfer_manager = TransferManager(client=self.client)
 
     def save_bytes(self, *, key: str, data: bytes, content_type: str | None = None) -> StoredObject:
+        from botocore.exceptions import BotoCoreError, ClientError
+
         extra_args = {}
         if content_type:
             extra_args["ContentType"] = content_type
@@ -208,6 +216,8 @@ class S3Storage(BaseStorage):
         content_type: str | None = None,
         chunk_size: int = _DEFAULT_STREAM_CHUNK,
     ) -> StoredObject:
+        from botocore.exceptions import BotoCoreError, ClientError
+
         # Use the boto3 multipart upload manager so we never buffer the full
         # object in Python memory. For tiny objects the API collapses this into
         # a single put_object under the hood.
@@ -227,6 +237,8 @@ class S3Storage(BaseStorage):
         return StoredObject(key=key, url=self.public_url(key=key))
 
     def open_bytes(self, *, key: str) -> tuple[bytes, str | None]:
+        from botocore.exceptions import BotoCoreError, ClientError
+
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
         except self.client.exceptions.NoSuchKey as exc:
@@ -243,6 +255,8 @@ class S3Storage(BaseStorage):
         key: str,
         chunk_size: int = _DEFAULT_STREAM_CHUNK,
     ) -> tuple[Iterable[bytes], str | None, int | None]:
+        from botocore.exceptions import BotoCoreError, ClientError
+
         try:
             response = self.client.get_object(Bucket=self.bucket, Key=key)
         except self.client.exceptions.NoSuchKey as exc:
@@ -286,6 +300,8 @@ class S3Storage(BaseStorage):
         return deleted
 
     def ensure_ready(self) -> None:
+        from botocore.exceptions import ClientError
+
         try:
             self.client.head_bucket(Bucket=self.bucket)
         except ClientError:
