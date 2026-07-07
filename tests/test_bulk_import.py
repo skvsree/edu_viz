@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+from datetime import datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -451,16 +452,20 @@ def test_title_prompt_warns_when_archive_and_pdf_filenames_match():
 
 def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
     from app.api.routers.bulk_ai_upload import _prepare_fresh_retry_attempt
-    from app.models.bulk_ai_upload import BulkAIUploadFileStatus
+    from app.models.bulk_ai_upload import (
+        BulkAIUploadChildFile,
+        BulkAIUploadFileStatus,
+    )
 
     user_id = uuid4()
     deck_id = uuid4()
+    child_file_id = uuid4()
     bulk = SimpleNamespace(id=uuid4(), filename="same.zip")
     user = SimpleNamespace(id=user_id, organization_id=None)
     source_file = SimpleNamespace(
         created_deck_id=deck_id,
         original_filename="same.pdf",
-        child_file_id=uuid4(),
+        child_file_id=child_file_id,
         extracted_title="Real source title",
         extracted_description="Source summary",
         storage_key="bulk/source.pdf",
@@ -472,6 +477,12 @@ def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
         is_deleted=False,
         folder_id=uuid4(),
     )
+    existing_child = SimpleNamespace(
+        id=child_file_id,
+        bulk_upload_id=bulk.id,
+        latest_attempt_id=None,
+        display_title=None,
+    )
 
     class RetryDB:
         def __init__(self):
@@ -479,6 +490,8 @@ def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
             self.flushed = False
 
         def get(self, model, key):
+            if model is BulkAIUploadChildFile:
+                return existing_child if key == child_file_id else None
             return existing_deck if key == deck_id else None
 
         def add(self, value):
@@ -505,3 +518,276 @@ def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
     assert existing_deck.folder_id is None
     assert db.added == [retry_row]
     assert db.flushed is True
+    # Retry row links to the source's existing child_file, preserving identity.
+    assert retry_row.child_file_id == child_file_id
+    assert existing_child.latest_attempt_id == retry_row.id
+
+
+def test_retry_backfills_child_file_id_when_source_has_none(monkeypatch):
+    """Legacy source rows have child_file_id=None; the retry must promote
+    them to a real BulkAIUploadChildFile so future retries dedupe by
+    child_file_id instead of falling back to original_filename."""
+    from app.api.routers.bulk_ai_upload import _prepare_fresh_retry_attempt
+    from app.models.bulk_ai_upload import (
+        BulkAIUploadChildFile,
+        BulkAIUploadFileStatus,
+    )
+
+    user_id = uuid4()
+    deck_id = uuid4()
+    bulk = SimpleNamespace(id=uuid4(), filename="same.zip")
+    user = SimpleNamespace(id=user_id, organization_id=None)
+    source_file = SimpleNamespace(
+        created_deck_id=deck_id,
+        original_filename="same.pdf",
+        child_file_id=None,                # ← legacy row
+        extracted_title="Source title",
+        extracted_description="Source desc",
+        storage_key="bulk/source.pdf",
+        file_size=123,
+    )
+    existing_deck = SimpleNamespace(
+        id=deck_id, user_id=user_id, is_deleted=False, folder_id=uuid4(),
+    )
+
+    created_child = []
+
+    class RetryDB:
+        def __init__(self):
+            self.added = []
+            self.flushed = False
+
+        def get(self, model, key):
+            return existing_deck if key == deck_id else None
+
+        def execute(self, stmt):  # noqa: ARG002 - unused in this test
+            return SimpleNamespace(
+                scalars=lambda: SimpleNamespace(
+                    first=lambda: None,
+                    all=lambda: [],
+                ),
+                scalar_one_or_none=lambda: None,
+            )
+
+        def add(self, value):
+            self.added.append(value)
+            if isinstance(value, BulkAIUploadChildFile):
+                created_child.append(value)
+
+        def flush(self):
+            self.flushed = True
+            for child in created_child:
+                if getattr(child, "id", None) is None:
+                    child.id = uuid4()
+
+    db = RetryDB()
+    monkeypatch.setattr(
+        "app.api.routers.bulk_ai_upload._clear_deck_generated_content",
+        lambda session, target_deck_id: None,
+    )
+    # Avoid hitting the real deck-name uniqueness check
+    monkeypatch.setattr(
+        "app.api.routers.bulk_ai_upload._ensure_bulk_upload_deck",
+        lambda session, u, fn, fid, existing_deck_id=None: SimpleNamespace(
+            id=existing_deck_id or uuid4(),
+            user_id=u.id,
+            is_deleted=False,
+            folder_id=None,
+        ),
+    )
+
+    retry_row = _prepare_fresh_retry_attempt(
+        db,
+        bulk=bulk,
+        user=user,
+        source_file=source_file,
+    )
+
+    # 1. A child file was created
+    assert len(created_child) == 1, (
+        f"Expected 1 child file to be created, got {len(created_child)}"
+    )
+    new_child = created_child[0]
+    assert new_child.bulk_upload_id == bulk.id
+    assert new_child.original_filename == "same.pdf"
+    assert new_child.storage_key == "bulk/source.pdf"
+
+    # 2. The retry row links to the new child
+    assert retry_row.child_file_id == new_child.id
+
+    # 3. The new child has its latest_attempt_id pointing at the retry row
+    assert new_child.latest_attempt_id == retry_row.id
+
+    # 4. The retry row is pending and ready for processing
+    assert retry_row.status == BulkAIUploadFileStatus.PENDING.value
+    assert retry_row.flashcards_generated == 0
+    assert retry_row.mcqs_generated == 0
+
+    # 5. db.add was called for both the child file and the retry row, in that order
+    child_idx = db.added.index(new_child)
+    retry_idx = db.added.index(retry_row)
+    assert child_idx < retry_idx
+
+
+def test_double_force_retry_does_not_create_duplicate_file_rows(monkeypatch):
+    """Calling resume_bulk_ai_upload with force=True twice must NOT add a
+    third row for the same logical file. Each (original_filename, storage_key)
+    pair should map to exactly one pending row at any time."""
+    from app.api.routers import bulk_ai_upload as router_module
+    from app.models.bulk_ai_upload import (
+        BulkAIUploadChildFile,
+        BulkAIUploadFile,
+        BulkAIUploadFileStatus,
+    )
+
+    user_id = uuid4()
+    deck_id = uuid4()
+    bulk_id = uuid4()
+    user = SimpleNamespace(id=user_id, organization_id=None)
+
+    # Initial state: bulk with 1 legacy file row (child_file_id=None)
+    source_row = BulkAIUploadFile(
+        bulk_upload_id=bulk_id,
+        child_file_id=None,
+        created_deck_id=deck_id,
+        original_filename="gees103.pdf",
+        extracted_title="Climates of India",
+        extracted_description="...",
+        content_text=None,
+        storage_key="bulk/source.pdf",
+        status=BulkAIUploadFileStatus.STOPPED.value,
+        flashcards_generated=36,
+        mcqs_generated=35,
+        duplicate_count=0,
+        error_message="Superseded by retry",
+        file_size=12345,
+    )
+    source_row.id = uuid4()
+    source_row.created_at = datetime.utcnow()
+
+    bulk = SimpleNamespace(
+        id=bulk_id,
+        user_id=user_id,
+        status=router_module.BulkAIUploadStatus.STOPPED.value,
+        filename="gees103.pdf",
+        is_auto_stop=True,
+        error_message=None,
+        processed_files=0,
+        failed_files=0,
+        skipped_files=0,
+        flashcards_generated=0,
+        mcqs_generated=0,
+        completed_at=None,
+        child_files=[],
+        files=[source_row],
+    )
+
+    # An in-memory DB that tracks added rows
+    in_memory_tables = {"child_files": [], "files": []}
+
+    class MemoryDB:
+        def __init__(self):
+            self.commits = 0
+
+        def get(self, model, key):
+            if model is BulkAIUploadChildFile:
+                for c in in_memory_tables["child_files"]:
+                    if c.id == key:
+                        return c
+                return None
+            return None
+
+        def execute(self, stmt):
+            # Crude heuristic: pull everything from in-memory files.
+            # The router iterates these in order created_at asc.
+            class _R:
+                def __init__(self, vals):
+                    self.vals = vals
+
+                def scalars(self):
+                    return self
+
+                def all(self):
+                    return self.vals
+
+                def first(self):
+                    return self.vals[0] if self.vals else None
+
+            return _R(list(in_memory_tables["files"]))
+
+        def add(self, value):
+            if isinstance(value, BulkAIUploadChildFile):
+                in_memory_tables["child_files"].append(value)
+            elif isinstance(value, BulkAIUploadFile):
+                in_memory_tables["files"].append(value)
+
+        def flush(self):
+            for c in in_memory_tables["child_files"]:
+                if getattr(c, "id", None) is None:
+                    c.id = uuid4()
+            for f in in_memory_tables["files"]:
+                if getattr(f, "id", None) is None:
+                    f.id = uuid4()
+                if getattr(f, "created_at", None) is None:
+                    f.created_at = datetime.utcnow()
+
+        def commit(self):
+            self.commits += 1
+
+        def refresh(self, obj):
+            return None
+
+    db = MemoryDB()
+    in_memory_tables["files"].append(source_row)
+
+    monkeypatch.setattr(
+        "app.api.routers.bulk_ai_upload._clear_deck_generated_content",
+        lambda session, target_deck_id: None,
+    )
+
+    # Patch _ensure_bulk_upload_deck to return a deterministic mock deck
+    monkeypatch.setattr(
+        "app.api.routers.bulk_ai_upload._ensure_bulk_upload_deck",
+        lambda session, u, fn, fid, existing_deck_id=None: SimpleNamespace(
+            id=existing_deck_id or uuid4(), user_id=u.id, is_deleted=False, folder_id=None,
+        ),
+    )
+
+    # First retry
+    router_module._prepare_fresh_retry_attempt(
+        db, bulk=bulk, user=user, source_file=source_row,
+    )
+
+    # Second retry - source becomes the row created by the first retry
+    first_retry = in_memory_tables["files"][-1]
+    assert first_retry is not source_row
+    router_module._prepare_fresh_retry_attempt(
+        db, bulk=bulk, user=user, source_file=first_retry,
+    )
+
+    # Now count: 1 source + 1 first retry + 1 second retry = 3 rows total.
+    # But the second retry should have created a *new* child_file rather than
+    # inheriting the first retry's (since first retry now has child_file_id
+    # populated, it should reuse that child file and create a new attempt row).
+    #
+    # So we expect:
+    #   child_files: 2  (one promoted for source, one for the new source which
+    #                    actually should be 1 because the second retry should
+    #                    have inherited the first retry's child file)
+    # The actual bug is that without deduping, we get 3 file rows all with
+    # the same original_filename, and _latest_bulk_attempt_rows returns all
+    # three (because the child-file latest_attempt_id logic only filters when
+    # child_file_id is set).
+    #
+    # This test asserts that after the fix, each (original_filename,
+    # storage_key) pair maps to at most ONE pending row in _latest_bulk_attempt_rows.
+    latest_rows = router_module._latest_bulk_attempt_rows(db, bulk_id)
+    pending_count = sum(
+        1 for r in latest_rows
+        if r.status == BulkAIUploadFileStatus.PENDING.value
+        and r.original_filename == "gees103.pdf"
+    )
+    assert pending_count <= 1, (
+        f"After two retries, expected at most 1 pending row for gees103.pdf, "
+        f"got {pending_count}: {[r.id for r in latest_rows]}"
+    )

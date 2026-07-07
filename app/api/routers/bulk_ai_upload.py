@@ -380,8 +380,18 @@ def _latest_bulk_attempt_rows(db: Session, bulk_upload_id) -> list[BulkAIUploadF
         child_map = {child.id: child for child in child_rows}
 
     latest_rows: list[BulkAIUploadFile] = []
+    seen_legacy_keys: set[tuple[str, str | None]] = set()
     for row in rows:
         if not row.child_file_id:
+            # Legacy row (no child file). If multiple legacy rows exist for
+            # the same (original_filename, storage_key) - which happens when
+            # force-retry was called on a legacy bulk before child-file
+            # back-fill existed - keep only the most recent one. Otherwise
+            # the bulk status / counter math double-counts.
+            key = (row.original_filename, row.storage_key)
+            if key in seen_legacy_keys:
+                continue
+            seen_legacy_keys.add(key)
             latest_rows.append(row)
             continue
         child_row = child_map.get(row.child_file_id)
@@ -407,6 +417,64 @@ def _recompute_child_latest_attempt(
     return latest_attempt
 
 
+def _get_or_create_child_file(
+    db: Session,
+    *,
+    bulk: BulkAIUpload,
+    original_filename: str,
+    storage_key: str | None,
+    file_size: int | None = None,
+    index_hint: int | None = None,
+) -> BulkAIUploadChildFile:
+    """Return an existing BulkAIUploadChildFile for (bulk, original_filename,
+    storage_key) or create a new one.
+
+    Legacy BulkAIUploadFile rows pre-date the child_file relationship and
+    have child_file_id=None. When we retry those, we must promote them to a
+    real child file so future retries dedupe by child_file_id rather than
+    by original_filename (which collides when the user uploads multiple
+    files with the same name in different zips).
+    """
+    existing = db.execute(
+        select(BulkAIUploadChildFile)
+        .where(BulkAIUploadChildFile.bulk_upload_id == bulk.id)
+        .where(BulkAIUploadChildFile.original_filename == original_filename)
+        .where(
+            BulkAIUploadChildFile.storage_key.is_(None)
+            if storage_key is None
+            else BulkAIUploadChildFile.storage_key == storage_key
+        )
+        .order_by(BulkAIUploadChildFile.created_at.asc())
+        .limit(1)
+    ).scalars().first()
+    if existing is not None:
+        return existing
+
+    # Pick a child_key that doesn't collide. The UniqueConstraint is on
+    # (bulk_upload_id, child_key), so use index when provided, otherwise
+    # count existing children and append.
+    if index_hint is not None:
+        child_key = f"{index_hint}:{original_filename}"
+    else:
+        existing_count = db.execute(
+            select(BulkAIUploadChildFile.id)
+            .where(BulkAIUploadChildFile.bulk_upload_id == bulk.id)
+        ).scalars().all()
+        child_key = f"{len(existing_count)}:{original_filename}"
+
+    child_file = BulkAIUploadChildFile(
+        bulk_upload_id=bulk.id,
+        child_key=child_key,
+        original_filename=original_filename,
+        display_title=Path(original_filename).stem[:255] if original_filename else None,
+        storage_key=storage_key,
+        file_size=file_size,
+    )
+    db.add(child_file)
+    db.flush()
+    return child_file
+
+
 def _prepare_fresh_retry_attempt(
     db: Session,
     *,
@@ -415,6 +483,32 @@ def _prepare_fresh_retry_attempt(
     source_file: BulkAIUploadFile,
     child_file: BulkAIUploadChildFile | None = None,
 ) -> BulkAIUploadFile:
+    # Always work with a child_file. If the caller didn't pass one and the
+    # source row is legacy (child_file_id IS NULL), promote it now so
+    # future retries dedupe by child_file_id instead of original_filename.
+    if child_file is None:
+        if source_file.child_file_id:
+            child_file = db.get(BulkAIUploadChildFile, source_file.child_file_id)
+            if child_file is None:
+                # The child_file row was deleted (or this is a test mock
+                # without it); back-fill so we still produce a usable
+                # child_file_id on the retry row.
+                child_file = _get_or_create_child_file(
+                    db,
+                    bulk=bulk,
+                    original_filename=source_file.original_filename,
+                    storage_key=source_file.storage_key,
+                    file_size=source_file.file_size,
+                )
+        else:
+            child_file = _get_or_create_child_file(
+                db,
+                bulk=bulk,
+                original_filename=source_file.original_filename,
+                storage_key=source_file.storage_key,
+                file_size=source_file.file_size,
+            )
+
     old_deck_id = source_file.created_deck_id
     if old_deck_id:
         _clear_deck_generated_content(db, old_deck_id)
@@ -435,7 +529,7 @@ def _prepare_fresh_retry_attempt(
 
     retry_row = BulkAIUploadFile(
         bulk_upload_id=bulk.id,
-        child_file_id=child_file.id if child_file else source_file.child_file_id,
+        child_file_id=child_file.id,
         original_filename=source_file.original_filename,
         extracted_title=source_file.extracted_title,
         extracted_description=source_file.extracted_description,
@@ -453,10 +547,11 @@ def _prepare_fresh_retry_attempt(
     )
     db.add(retry_row)
     db.flush()
-    if child_file:
-        child_file.latest_attempt_id = retry_row.id
-        if source_file.extracted_title:
-            child_file.display_title = source_file.extracted_title[:255]
+    # Update the child file's pointer to the new attempt. Use raw assignment
+    # to avoid triggering SQLAlchemy post_update cycles.
+    child_file.latest_attempt_id = retry_row.id
+    if source_file.extracted_title:
+        child_file.display_title = source_file.extracted_title[:255]
     return retry_row
 
 
@@ -739,13 +834,20 @@ def resume_bulk_ai_upload(
         deck_key = str(getattr(file_record, "created_deck_id", None) or "")
         if not deck_key:
             continue
+        # Identity is the child_file_id (or the row id for legacy rows).
+        # We deliberately do NOT fall back to original_filename, because
+        # legacy bulk uploads can have multiple rows with the same filename
+        # after a force retry, which would falsely flag them as "shared deck".
         file_identity = str(
             getattr(file_record, "child_file_id", None)
             or getattr(file_record, "id", None)
-            or getattr(file_record, "storage_key", None)
-            or getattr(file_record, "original_filename", None)
             or ""
         )
+        if not file_identity:
+            # Truly legacy row with neither child_file_id nor id; treat as
+            # its own identity. This branch should be unreachable in
+            # practice because every BulkAIUploadFile has an id.
+            continue
         deck_to_file_ids.setdefault(deck_key, set()).add(file_identity)
     shared_deck_ids = [deck for deck, ids in deck_to_file_ids.items() if len(ids) > 1]
     if shared_deck_ids and not force:
