@@ -1042,11 +1042,18 @@ def resume_bulk_ai_upload(
             bulk.status = BulkAIUploadStatus.STOPPED.value
         else:
             bulk.status = BulkAIUploadStatus.COMPLETED.value
-        bulk.is_auto_stop = any(status in {
-            BulkAIUploadFileStatus.PENDING.value,
-            BulkAIUploadFileStatus.PROCESSING.value,
-            BulkAIUploadFileStatus.STOPPED.value,
-        } for status in all_statuses)
+        # For single-file / single-deck retries, is_auto_stop must be
+        # FALSE so the worker doesn't bail out at the top of
+        # process_bulk_ai_upload (see job_worker.py:546). The user just
+        # asked to retry, not to stop. is_auto_stop is a user-intent
+        # flag — it should only be True when the user hit the Stop or
+        # Cancel button. Recomputing it from all_statuses was the
+        # original bug: superseded retry rows are status=stopped and
+        # the active target row may even be status=processing (a
+        # stuck prior run), both of which falsely set the flag and
+        # caused the worker to short-circuit before processing the
+        # new attempt.
+        bulk.is_auto_stop = False
         if bulk.status != BulkAIUploadStatus.FAILED.value:
             bulk.error_message = None
         if bulk.status != BulkAIUploadStatus.COMPLETED.value:
