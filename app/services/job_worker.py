@@ -89,7 +89,6 @@ def _looks_like_noise(line: str) -> bool:
         return True
     noise_prefixes = (
         "unit ",
-        "lesson ",
         "page ",
         "www.",
         "http://",
@@ -130,57 +129,99 @@ def _latest_bulk_attempt_rows(db: Session, bulk_upload_id: uuid.UUID) -> list[Bu
     return latest_rows
 
 
+_SECTION_LABELS = ("chapter", "lesson")
+
+
+def _format_section_number(raw: str) -> str:
+    """Return the section number padded for natural sort.
+
+    Roman numerals are uppercased ("II" stays "II"). Pure digits are
+    zero-padded to at least two digits so `Lesson 02` sorts before
+    `Lesson 10` in listings. If the number can't be safely parsed as a
+    positive integer (e.g. mixed text), the original string is returned
+    unchanged.
+    """
+    candidate = (raw or "").strip()
+    if not candidate:
+        return candidate
+    if re.fullmatch(r"[ivxlcdm]+", candidate, re.IGNORECASE):
+        return candidate.upper()
+    if candidate.isdigit():
+        return candidate.zfill(2)
+    try:
+        value = int(candidate)
+    except ValueError:
+        return candidate
+    return str(value).zfill(2)
+
+
+def _match_section_line(line: str) -> tuple[str, str, str] | None:
+    """Detect "Chapter N - Title" / "Lesson N - Title" style lines.
+
+    Returns ``(label, formatted_number, rest)`` or ``None`` when the line
+    is not a recognisable section header. `label` is lowercased,
+    `formatted_number` is zero-padded for natural sort.
+    """
+    for label in _SECTION_LABELS:
+        pattern = (
+            rf"^{label}\s+([0-9]+|[ivxlcdm]+)\b"
+            rf"(?:\s*[:\-–—.]\s*|\s+)(.+)$"
+        )
+        match = re.match(pattern, line, re.IGNORECASE)
+        if match:
+            return label, _format_section_number(match.group(1)), _clean_title_line(match.group(2))
+        pattern_bare = rf"^{label}\s+([0-9]+|[ivxlcdm]+)\b$"
+        match = re.match(pattern_bare, line, re.IGNORECASE)
+        if match:
+            return label, _format_section_number(match.group(1)), ""
+    return None
+
+
 def _derive_best_title(lines: list[str], filename: str) -> str:
     cleaned = [_clean_title_line(line) for line in lines[:40]]
     candidates = [line for line in cleaned if not _looks_like_noise(line)]
     if not candidates:
         return Path(filename).stem[:250]
 
-    chapter_line = None
-    chapter_number = None
-    chapter_title_part = None
+    matched_label = None
+    matched_number = None
+    title_part = None
+    matched_line = None
+    # Try structured "Chapter N - Title" / "Lesson N - Title" first so
+    # we keep the section number for natural sort.
     for line in candidates[:20]:
-        match = re.match(
-            r"^chapter\s+([0-9]+|[ivxlcdm]+)\b(?:\s*[:\-–—.]\s*|\s+)(.+)$",
-            line,
-            re.IGNORECASE,
-        )
+        match = _match_section_line(line)
         if match:
-            chapter_number = (
-                match.group(1).upper()
-                if re.fullmatch(r"[ivxlcdm]+", match.group(1), re.IGNORECASE)
-                else match.group(1)
-            )
-            chapter_title_part = _clean_title_line(match.group(2))
-            chapter_line = line
-            break
-        match = re.match(r"^chapter\s+([0-9]+|[ivxlcdm]+)\b$", line, re.IGNORECASE)
-        if match:
-            chapter_match = match.group(1)
-            chapter_number = (
-                chapter_match.upper()
-                if re.fullmatch(r"[ivxlcdm]+", chapter_match, re.IGNORECASE)
-                else chapter_match
-            )
-            chapter_line = line
+            label, number, _title_part_candidate = match
+            matched_label = label
+            matched_number = number
+            matched_line = line
+            if _title_part_candidate:
+                title_part = _title_part_candidate
+                break
             continue
-        if chapter_number and not chapter_title_part and line.lower() != chapter_line.lower():
-            chapter_title_part = line
+        if matched_label and matched_number and not title_part and line.lower() != matched_line.lower():
+            title_part = line
             break
 
     book_title = None
     for line in candidates[:12]:
         lowered = line.lower()
-        if lowered.startswith("chapter "):
+        if any(lowered.startswith(f"{label} ") for label in _SECTION_LABELS):
             continue
         book_title = line
         break
 
-    if chapter_number:
-        full_title = chapter_title_part or book_title or Path(filename).stem
-        return f"Chapter {chapter_number} - {full_title}"[:250]
+    if matched_label and matched_number:
+        full_title = title_part or book_title or Path(filename).stem
+        return f"{matched_label.capitalize()} {matched_number} - {full_title}"[:250]
 
     return (book_title or Path(filename).stem)[:250]
+
+
+# Backwards-compatible alias used by older tests/callers.
+def _derive_best_title_legacy_chapter_check(lines, filename):  # pragma: no cover - legacy shim
+    return _derive_best_title(lines, filename)
 
 
 def extract_title_from_text(text: str, filename: str) -> tuple[str, str | None]:

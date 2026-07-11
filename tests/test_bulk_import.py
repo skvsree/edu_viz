@@ -791,3 +791,75 @@ def test_double_force_retry_does_not_create_duplicate_file_rows(monkeypatch):
         f"After two retries, expected at most 1 pending row for gees103.pdf, "
         f"got {pending_count}: {[r.id for r in latest_rows]}"
     )
+
+
+def test_title_prompt_supports_lesson_number_format():
+    """Lesson N - Title formatting must be allowed (with zero-padded natural sort)
+    so decks line up in /settings/jobs in numeric order."""
+    from app.services.ai_generation import build_title_generation_prompt
+
+    prompt = build_title_generation_prompt(
+        "Lesson 1 - Cells\nDetailed body.",
+        "lesson1.pdf",
+    )
+
+    assert "Lesson {N}" in prompt
+    assert "two digits" in prompt or "leading zero" in prompt
+    # And the prompt must not still forbid "Lesson" as a label
+    assert (
+        "Do not prefix the title with labels like Chapter, Lesson"
+        not in prompt
+    )
+
+
+def test_derive_best_title_handles_lesson_number_with_natural_sort():
+    """The heuristic fallback must format Lesson N - Title with a
+    zero-padded number so listings sort Lesson 02 before Lesson 10."""
+    from app.services.job_worker import extract_title_from_text
+
+    # Basic case: lesson number on the same line
+    title, _ = extract_title_from_text(
+        "\n".join(["Biology", "Lesson 1 - Cells", "Body text."]),
+        "biology.pdf",
+    )
+    assert title == "Lesson 01 - Cells", title
+
+    # Two-digit natural sort: Lesson 10 must NOT be sorted before Lesson 2
+    title, _ = extract_title_from_text(
+        "\n".join(["Math", "Lesson 10 - Probability"]),
+        "math.pdf",
+    )
+    assert title == "Lesson 10 - Probability", title
+
+    title, _ = extract_title_from_text(
+        "\n".join(["Math", "Lesson 2 - Probability"]),
+        "math.pdf",
+    )
+    assert title == "Lesson 02 - Probability", title
+
+    # Roman numerals preserved as-is, uppercased
+    title, _ = extract_title_from_text(
+        "\n".join(["History", "Lesson iv - Renaissance"]),
+        "history.pdf",
+    )
+    assert title == "Lesson IV - Renaissance", title
+
+    # Two-line split: "Lesson N" on its own line, real title below
+    title, _ = extract_title_from_text(
+        "\n".join(["Biology", "Lesson 1", "Cells and their structure."]),
+        "biology.pdf",
+    )
+    assert title == "Lesson 01 - Cells and their structure.", title
+
+    # Chapter regressions still pass (same path handles both labels)
+    title, _ = extract_title_from_text(
+        "\n".join(["General textbook", "Chapter 3 - Reproduction"]),
+        "bio.pdf",
+    )
+    assert title == "Chapter 03 - Reproduction", title
+
+    title, _ = extract_title_from_text(
+        "\n".join(["Math", "Chapter xi - Geometry"]),
+        "math.pdf",
+    )
+    assert title == "Chapter XI - Geometry", title
