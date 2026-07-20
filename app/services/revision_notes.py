@@ -646,17 +646,46 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
     #   * Heuristic payload (first line as subtitle, rest as bullets) -
     #     rendered normally.
     any_ai_used = any(getattr(t, "ai_used", False) for t in doc.topics)
-    for topic in doc.topics:
+    last_topic_idx = len(doc.topics) - 1
+    for idx, topic in enumerate(doc.topics):
+        # Build the whole topic as one KeepTogether block.
+        # Reportlab KeepTogether semantics: try to fit the entire block on
+        # the current page. If it fits, render as one unit. If it doesn't,
+        # move it to the next page as one unit. The block is never split
+        # across pages.
+        topic_flows = []
         for flow in P.topic_banner(topic.title, topic.subtitle):
-            story.append(flow)
+            topic_flows.append(flow)
         if getattr(topic, "ai_used", False) and topic.ai_bullets:
-            story.append(
+            topic_flows.append(
                 P.Paragraph(
                     "<i>Key points — verbatim from your source:</i>",
                     P.SMALL_MUTED,
                 )
             )
-            story.append(_verbatim_bullets_flowable(topic.ai_bullets))
+            # Add each AI bullet as its own flowable so KeepTogether can
+            # move the whole block atomically. The previous version wrapped
+            # bullets-only in KeepTogether, which caused the banner to
+            # orphan at the bottom of one page with bullets on the next.
+            quote_style = P.ParagraphStyle(
+                "verbatim_quote",
+                parent=P.BODY,
+                leftIndent=14,
+                rightIndent=4,
+                fontSize=9.8,
+                leading=13.5,
+                spaceAfter=3,
+            )
+            for b in topic.ai_bullets:
+                text = (b or "").strip()
+                if not text:
+                    continue
+                topic_flows.append(
+                    P.Paragraph(
+                        f'&ldquo;{P.sanitise_text(text)}&rdquo;',
+                        quote_style,
+                    )
+                )
         else:
             payload = getattr(topic, "_payload", {})
             flat_lines = _flatten_payload(payload)
@@ -666,15 +695,22 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
                 short = [ln for ln in flat_lines if len(ln) <= 220]
                 long = [ln for ln in flat_lines if len(ln) > 220]
                 if short:
-                    story.append(P.bullets(short))
+                    topic_flows.append(P.bullets(short))
                 for ln in long:
-                    story.append(P.Paragraph(ln, P.BODY))
-        story.append(Spacer(1, 0.2 * cm))
+                    topic_flows.append(P.Paragraph(ln, P.BODY))
+        if idx != last_topic_idx:
+            topic_flows.append(Spacer(1, 0.2 * cm))
+        from reportlab.platypus import KeepTogether
+        story.append(KeepTogether(topic_flows))
 
     # ---------- Quick-recall footer (no fill, hairline box) ----------
+    # Wrap the entire tail (rule + recall heading + recall box + final sentence)
+    # in KeepTogether so they either all fit together on the current page, or
+    # all move together to the next page - prevents the orphan where the
+    # last topic's bullets sit on page N while Recall + final sentence sit
+    # alone on page N+1.
     if doc.topics:
-        story.append(P.section_rule())
-        story.append(P.Paragraph("Quick recall", P.H3))
+        from reportlab.platypus import KeepTogether
         recall_lines = [f"• {t.title}" for t in doc.topics]
         recall_box = P.Table(
             [[P.Paragraph(line, P.CALLOUT)] for line in recall_lines],
@@ -691,19 +727,11 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
                 ]
             )
         )
-        story.append(recall_box)
-
-    # ---------- Final sentence ----------
-    # Wrap in KeepTogether so it doesn't orphan to a half-empty page
-    # if the topic section ends near a page break.
-    if doc.final_sentence:
-        from reportlab.platypus import KeepTogether
-        story.append(Spacer(1, 0.3 * cm))
-        story.append(
-            KeepTogether([
-                P.Paragraph(f"<i>{doc.final_sentence}</i>", P.SMALL_MUTED)
-            ])
-        )
+        tail = [P.section_rule(), P.Paragraph("Quick recall", P.H3), recall_box]
+        if doc.final_sentence:
+            tail.append(Spacer(1, 0.3 * cm))
+            tail.append(P.Paragraph(f"<i>{doc.final_sentence}</i>", P.SMALL_MUTED))
+        story.append(KeepTogether(tail))
 
     # ---------- Build with footer ----------
     # Decide the honesty footer text once per render based on whether
