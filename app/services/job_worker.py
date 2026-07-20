@@ -1178,6 +1178,7 @@ def _enqueue_revision_notes_job(
     *,
     bulk: BulkAIUpload,
     file_record: BulkAIUploadFile,
+    section_titles: list[str] | None = None,
 ) -> None:
     """After a file successfully produces cards, queue a revision-notes PDF
     build for the underlying child file.
@@ -1185,6 +1186,11 @@ def _enqueue_revision_notes_job(
     Idempotent: at most one ready note per child. If a previous failed
     attempt exists, mark it stale and create a fresh row so the worker
     can safely rerun.
+
+    ``section_titles`` is passed through to the worker so the rendered
+    PDF uses the book's real sub-section titles instead of the chunked
+    ``Section N`` fallback. Stored on the new ``BulkAIUploadRevisionNote``
+    row so the worker can retrieve it independently.
     """
     if not file_record.child_file_id or not bulk.deck_id:
         return
@@ -1217,6 +1223,17 @@ def _enqueue_revision_notes_job(
     db.add(note)
     db.flush()
 
+    # Persist section_titles on the note via the JSONB column added in
+    # alembic 0028. Older rows that pre-date the column will simply get
+    # None and fall back to the chunked heuristic for the chapter.
+    if section_titles:
+        # Set attribute even if column was added later - SQLAlchemy
+        # will write it on flush. We set it before commit.
+        try:
+            setattr(note, "section_titles", section_titles)
+        except Exception:  # pragma: no cover - column may not exist yet
+            pass
+
     job = Job(
         job_type="revision_notes",
         reference_id=note.id,
@@ -1240,9 +1257,17 @@ def process_revision_notes(db: Session, job: Job) -> None:
         generate_revision_notes_for_child,
     )
 
+    # Pull section_titles (set by callers when the deck has a known TOC)
+    # so the renderer can label topics with real sub-section names
+    # instead of the chunked-fallback "Section N" placeholders.
+    section_titles = getattr(note, "section_titles", None)
+
     try:
         updated = generate_revision_notes_for_child(
-            db, child_file_id=note.child_file_id, note=note
+            db,
+            child_file_id=note.child_file_id,
+            note=note,
+            section_titles=section_titles,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception(

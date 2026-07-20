@@ -13,7 +13,7 @@ from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -76,6 +76,12 @@ class BulkAIUploadRevisionNote(Base):
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     topic_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Sub-section titles from the book's table of contents. When set, the
+    # renderer uses these to label chunked-fallback topics instead of the
+    # generic "Section N" placeholder. Optional - older rows may have NULL.
+    section_titles: Mapped[list[str] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

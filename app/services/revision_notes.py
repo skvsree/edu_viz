@@ -970,12 +970,21 @@ def generate_revision_notes_for_child(
     note: BulkAIUploadRevisionNote,
     credential_provider_name: str | None = None,
     credential=None,
+    section_titles: list[str] | None = None,
 ) -> BulkAIUploadRevisionNote:
     """Render the revision-notes PDF for a child and persist it.
 
     Optional ``credential_provider_name`` and ``credential`` enable the
     AI-as-selector pass. When omitted, the function falls back to
     heuristic-only bullets for every topic.
+
+    Optional ``section_titles`` (a list of human-readable sub-section
+    titles from the book's table of contents) overrides the chunked
+    "Section 1, Section 2..." fallback produced by ``heuristic_topics``
+    when it can't detect real headings in flowing prose. The list is
+    paired 1:1 with detected topics by index; titles for chunked
+    topics are replaced in order. Topics whose heuristic already
+    produced a real title (not "Section N") are left alone.
     """
     from app.models import BulkAIUploadChildFile
 
@@ -1024,6 +1033,16 @@ def generate_revision_notes_for_child(
         if not t.sections:
             continue
         topics.append(t)
+
+    # Replace chunked-fallback "Section N" titles with real section titles
+    # from the book's TOC (when supplied). Real detected titles are kept.
+    if section_titles:
+        title_cursor = 0
+        for t in topics:
+            if t.title.startswith("Section ") and title_cursor < len(section_titles):
+                t.title = section_titles[title_cursor]
+                title_cursor += 1
+
     if not topics:
         note.status = BulkRevisionNoteStatus.FAILED.value
         note.error_message = "Could not extract topics from source text"
