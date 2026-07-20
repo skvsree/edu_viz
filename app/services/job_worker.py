@@ -3,7 +3,10 @@ Job worker service for processing background jobs.
 Run as: python -m app.services.job_worker
 """
 
+from __future__ import annotations
+
 import io
+import logging
 import os
 import re
 import signal
@@ -25,7 +28,9 @@ from app.models import (
     BulkAIUploadChildFile,
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
+    BulkAIUploadRevisionNote,
     BulkAIUploadStatus,
+    BulkRevisionNoteStatus,
     Card,
     CardState,
     Deck,
@@ -57,6 +62,7 @@ MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
 AI_FORMAT_RETRY_FAILURE_MESSAGE = (
     f"AI returned invalid structured output after {MAX_AI_FORMAT_RETRIES} attempts."
 )
+logger = logging.getLogger(__name__)
 _shutdown = False
 _active_jobs: set[uuid.UUID] = set()
 _active_jobs_lock = threading.Lock()
@@ -870,6 +876,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             file_record.mcqs_generated = mcqs_generated
             file_record.duplicate_count = duplicate_count
             file_record.completed_at = datetime.utcnow()
+            # Enqueue revision-notes PDF generation for this child file.
+            # The note_row is a long-lived tracker; the revision-notes
+            # job is a separate Job that produces the actual bytes.
+            if file_record.child_file_id:
+                _enqueue_revision_notes_job(
+                    db,
+                    bulk=bulk,
+                    file_record=file_record,
+                )
             if bulk is not None:
                 # Safety net: if the per-chunk calls did not run (e.g. the
                 # file had zero chunks because text was empty), make sure
@@ -1025,6 +1040,8 @@ def process_job(job_id: uuid.UUID) -> None:
 
         if job.job_type == "bulk_ai_upload":
             process_bulk_ai_upload(db, job)
+        elif job.job_type == "revision_notes":
+            process_revision_notes(db, job)
         else:
             job.status = JobStatus.FAILED.value
             job.error_message = f"Unknown job type: {job.job_type}"
@@ -1153,7 +1170,104 @@ def signal_handler(signum, frame):
     _shutdown = True
 
 
+# ---------------------------------------------------------------------------
+# Revision-notes pipeline
+# ---------------------------------------------------------------------------
+def _enqueue_revision_notes_job(
+    db: Session,
+    *,
+    bulk: BulkAIUpload,
+    file_record: BulkAIUploadFile,
+) -> None:
+    """After a file successfully produces cards, queue a revision-notes PDF
+    build for the underlying child file.
+
+    Idempotent: at most one ready note per child. If a previous failed
+    attempt exists, mark it stale and create a fresh row so the worker
+    can safely rerun.
+    """
+    if not file_record.child_file_id or not bulk.deck_id:
+        return
+    child_id = file_record.child_file_id
+
+    existing = (
+        db.query(BulkAIUploadRevisionNote)
+        .filter(BulkAIUploadRevisionNote.child_file_id == child_id)
+        .order_by(BulkAIUploadRevisionNote.created_at.desc())
+        .first()
+    )
+    if existing and existing.status == BulkRevisionNoteStatus.READY.value:
+        # Already have a usable PDF for this child - nothing to do.
+        return
+    if existing:
+        # Mark stale so we don't accidentally overwrite a fresh run
+        existing.status = BulkRevisionNoteStatus.FAILED.value
+        existing.error_message = (
+            (existing.error_message or "") + " | superseded by new run"
+        )[:1000]
+        db.flush()
+
+    note = BulkAIUploadRevisionNote(
+        bulk_upload_id=bulk.id,
+        child_file_id=child_id,
+        source_file_id=file_record.id,
+        deck_id=bulk.deck_id,
+        status=BulkRevisionNoteStatus.PENDING.value,
+    )
+    db.add(note)
+    db.flush()
+
+    job = Job(
+        job_type="revision_notes",
+        reference_id=note.id,
+        status=JobStatus.PENDING.value,
+        total_items=1,
+        processed_items=0,
+    )
+    db.add(job)
+    db.commit()
+
+
+def process_revision_notes(db: Session, job: Job) -> None:
+    """Render a revision-notes PDF for one note row, persist + mark ready."""
+    note = db.get(BulkAIUploadRevisionNote, job.reference_id)
+    if not note:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Revision note not found"
+        db.commit()
+        return
+    from app.services.revision_notes import (
+        generate_revision_notes_for_child,
+    )
+
+    try:
+        updated = generate_revision_notes_for_child(
+            db, child_file_id=note.child_file_id, note=note
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "process_revision_notes: failed note=%s", note.id
+        )
+        job.status = JobStatus.FAILED.value
+        job.error_message = f"Render failed: {exc}"[:500]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    if updated.status == BulkRevisionNoteStatus.READY.value:
+        job.processed_items = 1
+        job.status = JobStatus.COMPLETED.value
+        job.completed_at = datetime.utcnow()
+    else:
+        job.status = JobStatus.FAILED.value
+        job.error_message = (updated.error_message or "render failed")[:500]
+        job.completed_at = datetime.utcnow()
+    db.commit()
+
+
 if __name__ == "__main__":
+    # Module-level logger (avoid NameError when this file is imported but
+    # process_revision_notes is never called).
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
