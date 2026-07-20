@@ -157,7 +157,12 @@ def select_topic_recall_bullets(
     if not source_paragraphs:
         return [], False
     total_chars = sum(len(p) for p in source_paragraphs)
-    if total_chars < 200:
+    # AI selector needs enough material to be useful. Sub-100 char
+    # sources are typically mnemonic lines or one-word headings; the
+    # verbatim validator would also reject anything that short. We use
+    # a soft threshold so we don't waste tokens on topics that have
+    # only headings.
+    if total_chars < 100:
         # Too short to be worth an AI call
         return [], False
 
@@ -255,9 +260,34 @@ def _split_paragraphs(text: str) -> list[str]:
     return out
 
 
+_HEADING_BLOCKLIST = {
+    # Common article/connector words that, when present alongside an
+    # otherwise-title-cased line, indicate it's a SUBTITLE/PHRASE rather
+    # than a heading. A heading can have several of these (e.g. "Iron
+    # Age and the Second Urbanisation"), so we use a soft rule: reject
+    # only when >50% of words are common connectors, AND the line has
+    # at least one strong connector (and/with/from/into).
+    "the", "of", "and", "for", "with", "from", "into", "to", "a", "an",
+    "in", "on", "at", "by", "is", "are", "was", "were", "be", "been",
+    "being", "have", "has", "had", "do", "does", "did", "will", "would",
+    "shall", "should", "may", "might", "must", "can", "could",
+}
+_STRONG_CONNECTORS = {"and", "with", "from", "into", "for", "of"}
+
+
 def _looks_like_heading(line: str) -> bool:
     """A line that is short, mostly title-case or all-caps, no terminal
-    punctuation — likely a heading."""
+    punctuation — likely a heading.
+
+    Three filters, applied in order:
+
+    1. Length & punctuation: 4-90 chars, no terminal `.?!:`
+    2. Title-case: ≥half the words start with uppercase
+    3. Not a phrase: rejects lines where >50% of words are common
+       connectors AND at least one strong connector is present
+       (otherwise legitimate headings like "Innovations of the Age"
+       would be wrongly dropped).
+    """
     line = (line or "").strip()
     if not (4 <= len(line) <= 90):
         return False
@@ -266,9 +296,99 @@ def _looks_like_heading(line: str) -> bool:
     words = line.split()
     if len(words) < 2:
         return False
-    # Title-cased words count
     title_caps = sum(1 for w in words if w[:1].isupper())
-    return title_caps >= max(2, len(words) // 2)
+    if title_caps < max(2, len(words) // 2):
+        return False
+    cleaned = [w.lower().strip(",.;:!?\"'()") for w in words]
+    blocklist_hits = sum(1 for w in cleaned if w in _HEADING_BLOCKLIST)
+    strong_hits = sum(1 for w in cleaned if w in _STRONG_CONNECTORS)
+    # Reject if >=60% common connectors AND at least one strong connector.
+    # 0.6 lets through "Innovations of the Age" (2/4=0.5) while still
+    # filtering "From a 'dark age' back to cities" (3/6 strong).
+    if (blocklist_hits / max(len(words), 1) >= 0.6) and strong_hits >= 1:
+        return False
+    return True
+
+
+def _bucket_by_heading(source_text: str) -> dict[Optional[str], list[str]]:
+    """Walk paragraphs and bucket them under detected headings.
+
+    Handles two shapes:
+
+    1. Heading + body in the same paragraph (markdown-ish).
+    2. Heading on its own line, body in the next paragraph (NCERT-style).
+
+    Returns a dict keyed by heading (None for the unnamed pre-heading
+    bucket). Each value is the list of body paragraphs that belong to
+    that heading. Headings with empty bodies get folded into the next
+    heading so the topic list doesn't fragment into one-liner stubs.
+    """
+    paragraphs = _split_paragraphs(source_text)
+    classified: list[tuple[str, str]] = []
+    for para in paragraphs:
+        first_line = para.split("\n", 1)[0].strip()
+        is_h = _looks_like_heading(first_line)
+        if is_h and len(para) > len(first_line) + 80:
+            rest = para[len(first_line):].strip()
+            classified.append(("h", first_line))
+            classified.append(("b", rest))
+        elif is_h:
+            classified.append(("h", first_line))
+        else:
+            classified.append(("b", para))
+
+    raw: list[tuple[Optional[str], str]] = []
+    i = 0
+    while i < len(classified):
+        kind, txt = classified[i]
+        if kind == "h":
+            body = ""
+            if i + 1 < len(classified) and classified[i + 1][0] == "b":
+                body = classified[i + 1][1]
+                i += 2
+            else:
+                i += 1
+            raw.append((txt, body))
+        else:
+            raw.append((None, txt))
+            i += 1
+
+    # Fold entries with empty bodies into the next entry's bucket
+    folded: list[tuple[Optional[str], list[str]]] = []
+    j = 0
+    while j < len(raw):
+        h, body = raw[j]
+        # Gather all consecutive empty-body headings, then attach to next
+        # non-empty entry. This collapses mnemonic/one-liner headings
+        # like "Magadha — Rajgir" into the surrounding topic.
+        if not body:
+            # Look ahead for the next entry with a body
+            k = j + 1
+            extras = []
+            while k < len(raw) and not raw[k][1]:
+                extras.append(raw[k][0])
+                k += 1
+            if k < len(raw):
+                target_h, target_body = raw[k]
+                # Merge: keep first non-None heading, prepend extras as body
+                real_h = h if h else target_h
+                merged_body = list(filter(None, [body])) + [
+                    e for e in extras if e
+                ] + ([target_body] if target_body else [])
+                folded.append((real_h, merged_body))
+                j = k + 1
+                continue
+            else:
+                # No body follows - drop
+                j = k
+                continue
+        folded.append((h, [body] if body else []))
+        j += 1
+
+    bucket: dict[Optional[str], list[str]] = {}
+    for h, bodies in folded:
+        bucket.setdefault(h, []).extend(b for b in bodies if b)
+    return bucket
 
 
 def heuristic_topics(
@@ -276,27 +396,13 @@ def heuristic_topics(
 ) -> list[RevisionTopic]:
     """Walk paragraphs, group under detected headings.
 
-    Falls back to topic-less paragraph groups if not enough headings.
+    Falls back to chunked paragraph groups if not enough headings.
     """
     paragraphs = _split_paragraphs(text)
     if not paragraphs:
         return []
 
-    # Scan for headings
-    current_title: Optional[str] = None
-    bucket: dict[Optional[str], list[str]] = {}
-
-    for para in paragraphs:
-        first_line = para.split("\n", 1)[0].strip()
-        rest = para[len(first_line):].strip() if len(para) > len(first_line) else ""
-        if _looks_like_heading(first_line) and len(rest) >= 80:
-            current_title = first_line
-            bucket.setdefault(current_title, [])
-            bucket[current_title].append(rest)
-        else:
-            bucket.setdefault(current_title, []).append(para)
-
-    # Drop the unnamed bucket (everything before the first heading)
+    bucket = _bucket_by_heading(text)
     named_buckets = [(k, v) for k, v in bucket.items() if k is not None]
     if len(named_buckets) < 4:
         # Not enough headings -> fall back to chunked paragraph groups
@@ -309,10 +415,12 @@ def heuristic_topics(
                 title=P.sanitise_text(title),
                 subtitle=(
                     P.sanitise_text(_first_meaningful(paras[0]))
-                    if paras
+                    if paras and paras[0]
                     else None
                 ),
-                sections=_digest_paras_to_sections(paras[1:]),
+                sections=_digest_paras_to_sections(
+                    [p for p in paras[1:] if p]
+                ),
             )
         )
     return topics
@@ -586,10 +694,15 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
         story.append(recall_box)
 
     # ---------- Final sentence ----------
+    # Wrap in KeepTogether so it doesn't orphan to a half-empty page
+    # if the topic section ends near a page break.
     if doc.final_sentence:
+        from reportlab.platypus import KeepTogether
         story.append(Spacer(1, 0.3 * cm))
         story.append(
-            P.Paragraph(f"<i>{doc.final_sentence}</i>", P.SMALL_MUTED)
+            KeepTogether([
+                P.Paragraph(f"<i>{doc.final_sentence}</i>", P.SMALL_MUTED)
+            ])
         )
 
     # ---------- Build with footer ----------
@@ -946,28 +1059,19 @@ def generate_revision_notes_for_child(
 def _attach_payloads(
     source_text: str, topics: list[RevisionTopic]
 ) -> list[RevisionTopic]:
-    """Run heuristic_topics again but capture each topic's paragraph list
-    so the renderer can put real text on the page. Returns topics with
-    _payload attribute populated, and source_paragraphs set for AI use."""
-    paragraphs = _split_paragraphs(source_text)
-    bucket: dict[Optional[str], list[str]] = {}
-    current_title: Optional[str] = None
-    for para in paragraphs:
-        first_line = para.split("\n", 1)[0].strip()
-        rest = para[len(first_line):].strip() if len(para) > len(first_line) else ""
-        if _looks_like_heading(first_line) and len(rest) >= 80:
-            current_title = first_line
-            bucket.setdefault(current_title, []).append(rest)
-        else:
-            bucket.setdefault(current_title, []).append(para)
-
+    """Walk the source again, capture each topic's paragraph list so the
+    renderer can put real text on the page. Returns topics with
+    ``_payload`` attribute populated, and ``source_paragraphs`` set for
+    AI selection.
+    """
+    bucket = _bucket_by_heading(source_text)
     named = [(k, v) for k, v in bucket.items() if k is not None]
     by_title = {k: v for k, v in named}
 
     for t in topics:
         paras_for_topic = by_title.get(t.title, [])
-        # First paragraph was already used as subtitle by the heuristic
-        # organiser; for AI selection we want to pass everything.
+        # Filter empty entries (paired heading with no body)
+        paras_for_topic = [p for p in paras_for_topic if p]
         t.source_paragraphs = list(paras_for_topic)
         _store_section_payload(t, build_topic_payload_map(paras_for_topic))
     return topics
