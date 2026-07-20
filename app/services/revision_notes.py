@@ -89,16 +89,57 @@ def _normalise_for_match(s: str) -> str:
 def validate_verbatim_bullets(
     bullets: list[str], source_paragraphs: list[str]
 ) -> list[str]:
-    """Drop any bullet that does not appear character-for-character
-    (after whitespace normalisation) in the concatenated source."""
+    """Drop any bullet that is not a verbatim sentence from the source.
+
+    A bullet passes the validator only when:
+      (a) its whitespace-normalised text appears in the joined source, AND
+      (b) it begins at a sentence boundary in the source - i.e. either
+          at the start of a paragraph, after ``. ! ? " '``, or as one
+          of the first 1-2 words of a sentence. This catches the common
+          case where the AI (or the picker) returns the *tail* of a
+          sentence whose leading word(s) were already in the previous
+          sentence - which the substring test alone would accept.
+
+    We tolerate the bullet starting up to 3 words after the boundary
+    so that extraction quirks (e.g. "Fig. 8.3" merged into the next
+    sentence) don't penalise honest cases.
+    """
     if not bullets or not source_paragraphs:
         return []
-    src_blob = "\n".join(_normalise_for_match(p) for p in source_paragraphs)
+
+    norm_src = "\n".join(_normalise_for_match(p) for p in source_paragraphs)
+
+    # Build a regex that matches the bullet's first 1-3 words after a
+    # sentence-start boundary in the source. We accept the bullet if any
+    # head-window aligns with a sentence-start.
+    def bullet_starts_at_sentence_boundary(blob: str, head_words: list[str]) -> bool:
+        head_pat = r"\s+".join(re.escape(w) for w in head_words)
+        # Match head_pat that follows a sentence boundary or start-of-string
+        for boundary in [r"(?:^|[.!?]\s+|[\"“”'`]\s+)"]:
+            if re.search(boundary + head_pat, blob, re.I | re.M):
+                return True
+        return False
+
     out: list[str] = []
     for b in bullets:
         if not b:
             continue
-        if _normalise_for_match(b) in src_blob:
+        norm_b = _normalise_for_match(b)
+        if norm_b not in norm_src:
+            continue
+        # Check sentence-boundary alignment for 1, 2, or 3 leading words.
+        words = norm_b.split()
+        if not words:
+            continue
+        accepted = False
+        for n in (1, 2, 3):
+            if len(words) < n:
+                continue
+            head = words[:n]
+            if bullet_starts_at_sentence_boundary(norm_src, head):
+                accepted = True
+                break
+        if accepted:
             out.append(b.strip())
     return out
 
