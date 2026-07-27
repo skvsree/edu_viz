@@ -264,6 +264,11 @@ class RevisionTopic:
     ai_bullets: Optional[list[str]] = None
     # NEW: did AI help for this topic? drives the per-page footer.
     ai_used: bool = False
+    # NEW: top-level chapter this topic belongs to. Two-pass heuristic
+    # detects chapter-level narrative units (story titles) first, then
+    # sub-section activity labels within each chapter. Topics sharing a
+    # chapter are grouped visually in the renderer.
+    chapter: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.source_paragraphs is None:
@@ -318,27 +323,40 @@ _STRONG_CONNECTORS = {"and", "with", "from", "into", "for", "of"}
 
 def _looks_like_heading(line: str) -> bool:
     """A line that is short, mostly title-case or all-caps, no terminal
-    punctuation — likely a heading.
+    punctuation (except '?' for question-style headings) — likely a heading.
 
-    Three filters, applied in order:
+    Five filters, applied in order:
 
-    1. Length & punctuation: 4-90 chars, no terminal `.?!:`
-    2. Title-case: ≥half the words start with uppercase
-    3. Not a phrase: rejects lines where >50% of words are common
+    1. Length & punctuation: 3-90 chars, no terminal `.!:,` (the comma
+       check rejects wrapped-line starts like 'Ether, air, fire,')
+    2. Word count: 1-8 words (real sub-section headings are concise; a
+       12-word sentence starting with a capital is not a heading)
+    3. Title-case: ≥half the words start with uppercase
+       (single-word headings like 'Pilgrimages' also allowed)
+       OR the first word starts with uppercase AND there are no sentence
+       patterns (no embedded period followed by capital letter).
+    4. Not a phrase: rejects lines where >50% of words are common
        connectors AND at least one strong connector is present
        (otherwise legitimate headings like "Innovations of the Age"
        would be wrongly dropped).
     """
     line = (line or "").strip()
-    if not (4 <= len(line) <= 90):
+    if not (3 <= len(line) <= 90):
         return False
-    if line.endswith((".", "?", "!", ":")):
+    if line.endswith((".", "!", ":", ",")):
         return False
     words = line.split()
-    if len(words) < 2:
+    if len(words) < 1:
         return False
+    if len(words) > 8:
+        return False  # too long to be a heading
+    # Single-word heading (e.g. "Pilgrimages"): always allowed if title-case
+    if len(words) == 1:
+        return words[0][:1].isupper()
     title_caps = sum(1 for w in words if w[:1].isupper())
-    if title_caps < max(2, len(words) // 2):
+    # Allow either: ≥half words title-case OR first word title-case
+    # (so "Sacred rivers" passes even though "rivers" is lowercase)
+    if title_caps < max(2, len(words) // 2) and not (words[0][:1].isupper() and title_caps >= 1):
         return False
     cleaned = [w.lower().strip(",.;:!?\"'()") for w in words]
     blocklist_hits = sum(1 for w in cleaned if w in _HEADING_BLOCKLIST)
@@ -435,36 +453,280 @@ def _bucket_by_heading(source_text: str) -> dict[Optional[str], list[str]]:
 def heuristic_topics(
     text: str, *, max_topics: int = 9
 ) -> list[RevisionTopic]:
-    """Walk paragraphs, group under detected headings.
+    """Two-pass topic detection.
 
-    Falls back to chunked paragraph groups if not enough headings.
+    Pass 1: detect top-level narrative chapters (story/poem titles) by
+            looking for standalone short title-case lines that don't
+            have body text immediately following them.
+    Pass 2: within each chapter, detect sub-section headings using the
+            standard heading detector. Activity labels like 'Let us read'
+            / 'Let us discuss' (recurring NCERT reader phrases) are
+            always treated as sub-section anchors.
+
+    Falls back to flat chunked groups when:
+      * No chapter-level boundaries can be found AND Pass 2 didn't
+        yield enough sub-section headings (chunked keeps things readable)
+      * Within a chapter, fewer than 2 sub-section headings detected
     """
     paragraphs = _split_paragraphs(text)
     if not paragraphs:
         return []
 
-    bucket = _bucket_by_heading(text)
-    named_buckets = [(k, v) for k, v in bucket.items() if k is not None]
-    if len(named_buckets) < 4:
-        # Not enough headings -> fall back to chunked paragraph groups
+    chapter_blocks = _detect_chapters(paragraphs)
+    if not chapter_blocks:
+        # No chapter-level structure found. Try Pass 2 on the whole document
+        # (single-chapter textbook, sub-sections only).
+        all_subtopics = _subtopics_within_chapter(
+            chapter_title="", paras=paragraphs, max_per_chapter=max_topics
+        )
+        if len(all_subtopics) >= 4:
+            return all_subtopics
+        # Sub-section detection didn't yield enough. Fall back to chunked.
         return _chunked_topics(paragraphs, max_topics=max_topics)
 
+    # Pass 2: sub-topic detection within each chapter
     topics: list[RevisionTopic] = []
-    for title, paras in named_buckets[:max_topics]:
+    for chap_title, chap_paras in chapter_blocks:
+        sub_topics = _subtopics_within_chapter(chap_title, chap_paras, max_per_chapter=max_topics)
+        topics.extend(sub_topics)
+        if len(topics) >= max_topics:
+            break
+
+    if len(topics) < 4:
+        # Two-pass didn't yield enough. Flat chunked is safer than nothing.
+        flat = _chunked_topics(paragraphs, max_topics=max_topics)
+        if len(flat) > len(topics):
+            return flat
+    return topics[:max_topics]
+
+
+# Chapter-level patterns: activity labels are NEVER chapter titles.
+# They appear as repeated sub-section anchors across NCERT readers.
+_ACTIVITY_LABEL_RE = re.compile(
+    r"^(let us "
+    r"(read|discuss|think and reflect|think|reflect|listen|"
+    r"speak|write|learn|explore|find out|share|do|try))\b",
+    re.I,
+)
+
+
+def _is_clean_chapter_title(line: str) -> bool:
+    """Sanity check: a heading line is chapter-level only if it looks like
+    a real story/poem chapter title (e.g. 'The Day the River Spoke',
+    'Try Again', 'Sacred rivers and forests'), NOT a sub-section heading.
+
+    Stricter than _is_clean_subtopic_title because chapter titles need to
+    pass strict visual heuristics that sub-section headings don't have
+    to (e.g. box prompts like 'DON'T MISS OUT' or table-row labels
+    like 'Lord Balaji, Tirumala hills' must be rejected here).
+
+    Rejects:
+      * Lines starting with single-letter fragments ('T', 'S', etc.)
+      * Lines containing parentheses (table-row labels like
+        'Khasi (Meghalaya)')
+      * Lines containing all-caps tokens ('THINK ABOUT IT', 'LET'S EXPLORE')
+      * Single-word chapter titles ('Pilgrimages' is a sub-section, not
+        a chapter)
+      * Lines containing a comma + name pattern ('Vaishno Devi Temple, Katra')
+    """
+    if not line or not line[0].isalpha():
+        return False
+    if re.search(r"\s{2,}", line):
+        return False
+    # Lines with any all-caps token of 3+ letters: box prompts
+    if re.search(r"\b[A-Z]{3,}\b", line):
+        return False
+    # Parenthesised content: table-row labels
+    if "(" in line or ")" in line:
+        return False
+    # Comma followed by another capitalized word (location, author, etc.)
+    if re.search(r",\s*[A-Z]", line):
+        return False
+    if re.search(
+        r"\b(Column|Across|Down|Fig|Speaker|Activity|Task|"
+        r"Hint|Situation|Lets|Explore|Big|Sample|Chapter)\b",
+        line, re.I,
+    ):
+        return False
+    if re.search(r"\b(LET|LET'S|LET US)\b", line):
+        return False
+    if line.strip().lower() in {"questions", "answers", "hints", "exercises"}:
+        return False
+    words = line.split()
+    if len(words) > 6 or len(words) < 2:
+        return False
+    # Reject lines starting with a Roman numeral or numeric marker
+    if re.match(r"^(I{1,3}|IV|VI{0,3}|IX|X|\d+\.?)\s+", line):
+        return False
+    short_tokens = sum(1 for w in words if len(w) <= 2)
+    if short_tokens >= 3:
+        return False
+    if sum(1 for w in words if len(w) == 1 and w.isalpha()) >= 2:
+        return False
+    return True
+
+
+def _detect_chapters(paragraphs: list[str]) -> list[tuple[str, list[str]]]:
+    """Pass 1: detect top-level narrative units (story/poem titles).
+
+    A chapter title is a short title-case line that:
+      * Is NOT an activity label (those are sub-section anchors)
+      * Has no significant body text immediately following it (within
+        the same paragraph or as a body paragraph right after)
+      * Is the only "heading-like" content in its immediate context
+      * Looks like a real story/poem title (not column-bleed artifact,
+        not table-row label, not box prompt)
+
+    To distinguish real chapter titles from table-row labels and
+    box prompts, we look for TWO OR MORE similar standalone heading
+    lines that are spaced through the document. A single heading line
+    is not enough to claim a chapter structure (it might be a stray
+    title or a sub-section), but 2+ spaced similar headings indicates
+    the document has multiple narrative chapters.
+
+    Returns a list of (chapter_title, [paragraphs belonging to that chapter])
+    in document order. The first chapter starts at paragraph 0.
+    """
+    # Mark each paragraph as either a candidate-chapter-title (just a heading
+    # line, no body) or as a content paragraph.
+    chapter_titles: list[tuple[int, str]] = []  # (paragraph index, title text)
+    for idx, p in enumerate(paragraphs):
+        first_line = p.split("\n", 1)[0].strip()
+        if not _looks_like_heading(first_line):
+            continue
+        # Activity labels are sub-section, never chapter-level
+        if _ACTIVITY_LABEL_RE.match(first_line):
+            continue
+        # Sanity check: reject column-bleed artifacts, table labels, box prompts
+        if not _is_clean_chapter_title(first_line):
+            continue
+        # Standalone: paragraph is just the heading line (no body)
+        if len(p.strip()) <= len(first_line) + 2:
+            chapter_titles.append((idx, first_line))
+
+    # Need at least 2 chapters to claim multi-chapter structure.
+    # A single heading could be a stray title (NCERT sub-section heading)
+    # rather than a chapter title.
+    if len(chapter_titles) < 2:
+        return []
+
+    # Multi-chapter: split at chapter boundaries
+    blocks: list[tuple[str, list[str]]] = []
+    for i, (idx, title) in enumerate(chapter_titles):
+        next_idx = chapter_titles[i + 1][0] if i + 1 < len(chapter_titles) else len(paragraphs)
+        # Skip the chapter-title paragraph itself (idx)
+        chap_paras = paragraphs[idx + 1:next_idx]
+        if not chap_paras:
+            continue
+        blocks.append((title, chap_paras))
+    return blocks
+
+
+def _is_clean_subtopic_title(line: str) -> bool:
+    """Sanity check for sub-section titles (more lenient than chapter titles).
+
+    Allows single-word headings like 'Pilgrimages', 'Sacred rivers',
+    but still rejects column-bleed and crossword artifacts.
+    """
+    if not line or not line[0].isalpha():
+        return False
+    if re.search(r"\s{2,}", line):
+        return False
+    if re.search(r"\b(Column|Across|Down|Fig|Speaker|Activity|Task|Hint|Situation)\b", line, re.I):
+        return False
+    if line.strip().lower() in {"questions", "answers", "hints", "exercises"}:
+        return False
+    words = line.split()
+    if len(words) > 10:
+        return False
+    if re.match(r"^(I{1,3}|IV|VI{0,3}|IX|X|\d+\.?)\s+", line):
+        return False
+    short_tokens = sum(1 for w in words if len(w) <= 2)
+    if short_tokens >= 4:
+        return False
+    if sum(1 for w in words if len(w) == 1 and w.isalpha()) >= 3:
+        return False
+    return True
+
+
+def _subtopics_within_chapter(
+    chapter_title: str, paras: list[str], *, max_per_chapter: int = 9
+) -> list[RevisionTopic]:
+    """Pass 2: detect sub-section headings within a chapter's paragraphs.
+
+    Sub-section anchors are:
+      * Activity labels ('Let us read', 'Let us discuss', ...)
+      * Title-case lines followed by body content
+    """
+    # Mark paragraphs as heading-or-body
+    classified: list[tuple[str, str]] = []
+    for p in paras:
+        first_line = p.split("\n", 1)[0].strip()
+        # Reject column-bleed and crossword fragments as sub-section headings
+        if _looks_like_heading(first_line) and _is_clean_subtopic_title(first_line):
+            if len(p.strip()) > len(first_line) + 80:
+                rest = p[len(first_line):].strip()
+                classified.append(("h", first_line))
+                classified.append(("b", rest))
+            elif _ACTIVITY_LABEL_RE.match(first_line):
+                # Activity label: always a sub-section anchor, with body following
+                classified.append(("h", first_line))
+                if len(p.strip()) > len(first_line) + 2:
+                    rest = p[len(first_line):].strip()
+                    if rest:
+                        classified.append(("b", rest))
+            else:
+                # Standalone clean heading (e.g. "Sacred rivers")
+                classified.append(("h", first_line))
+        elif _ACTIVITY_LABEL_RE.match(first_line):
+            # Activity label even if heading detector rejected it (lenient)
+            classified.append(("h", first_line))
+            if len(p.strip()) > len(first_line) + 2:
+                rest = p[len(first_line):].strip()
+                if rest:
+                    classified.append(("b", rest))
+        else:
+            classified.append(("b", p))
+
+    # Build topics
+    topics: list[RevisionTopic] = []
+    current_title: Optional[str] = None
+    current_paras: list[str] = []
+    for kind, txt in classified:
+        if kind == "h":
+            if current_title is not None:
+                topics.append(
+                    RevisionTopic(
+                        title=current_title,
+                        subtitle=_first_meaningful(current_paras[0]) if current_paras else None,
+                        sections=_digest_paras_to_sections(
+                            [p for p in current_paras[1:] if p]
+                        ),
+                        source_paragraphs=list(current_paras),
+                        chapter=chapter_title,
+                    )
+                )
+            current_title = txt
+            current_paras = []
+        else:
+            current_paras.append(txt)
+    # Flush final topic
+    if current_title is not None and current_paras:
         topics.append(
             RevisionTopic(
-                title=P.sanitise_text(title),
-                subtitle=(
-                    P.sanitise_text(_first_meaningful(paras[0]))
-                    if paras and paras[0]
-                    else None
-                ),
-                sections=_digest_paras_to_sections(
-                    [p for p in paras[1:] if p]
-                ),
+                title=current_title,
+                subtitle=_first_meaningful(current_paras[0]) if current_paras else None,
+                sections=_digest_paras_to_sections([p for p in current_paras[1:] if p]),
+                source_paragraphs=list(current_paras),
+                chapter=chapter_title,
             )
         )
-    return topics
+
+    # Fallback: if sub-section detection yielded nothing usable, chunk the chapter
+    if len(topics) < 2 and paras:
+        return _chunked_topics(paras, max_topics=max_per_chapter)
+
+    return topics[:max_per_chapter]
 
 
 def _first_meaningful(text: str) -> str:
@@ -492,8 +754,43 @@ def _chunked_topics(
         if not chunk:
             continue
         title = f"Section {i + 1}"
-        first = chunk[0]
-        subtitle = re.split(r"(?<=[.!?])\s+", first)[0][:200]
+        # Find the best first-paragraph as a subtitle: pick the longest
+        # first sentence that doesn't look like a word-list / fill-in-the-blank /
+        # column-bleed / heading-mash.
+        subtitle = ""
+        for c in chunk[:5]:
+            # Take the first sentence (split on .!?)
+            cand = re.split(r"(?<=[.!?])\s+", c)[0][:200]
+            if "___" in cand:
+                continue
+            if re.match(r"^(?:\s*[A-Za-z][a-z']+\s*,\s*){4,}", cand):
+                continue
+            if re.match(r"^\d{1,3}\s*\)\s+", cand):
+                continue
+            if re.match(r"^(I{1,3}|IV|VI{0,3}|IX|X)\s+[A-Z]", cand):
+                continue
+            if re.match(r"^Unit \d+\b", cand):
+                continue
+            if sum(c.isalpha() for c in cand) < 30:
+                continue
+            # Reject heading-mash subtitles: starts with capitalized title + grammar,
+            # e.g. "Unit 1 LEARNING TOGETHER The Day the River Spoke Let us do these..."
+            # (5+ words no punctuation, all looking like title tokens)
+            tokens = cand.split()
+            if len(tokens) >= 5 and sum(1 for t in tokens[:6] if t[0:1].isupper()) >= 4:
+                continue
+            # Reject word-list paragraphs (space-separated lowercase tokens)
+            if re.match(r"^(?=[a-z])(?:[a-z]+\s+){5,}", cand):
+                continue
+            # Reject single-word subtitles like 'Notes.'
+            if re.match(r"^[A-Z][a-z]+\.\s*$", cand) and len(tokens) <= 2:
+                continue
+            # First non-bad chunk wins
+            subtitle = cand
+            break
+        if not subtitle:
+            subtitle = re.split(r"(?<=[.!?])\s+", chunk[0])[0][:200] if chunk[0] else ""
+            subtitle = subtitle or "Section content"
         topics.append(
             RevisionTopic(
                 title=title,
@@ -686,9 +983,18 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
     #     direct source quotes, OR
     #   * Heuristic payload (first line as subtitle, rest as bullets) -
     #     rendered normally.
+    # When topic.chapter changes between consecutive topics, render a
+    # chapter divider band so the reader sees the narrative boundary.
     any_ai_used = any(getattr(t, "ai_used", False) for t in doc.topics)
     last_topic_idx = len(doc.topics) - 1
+    prev_chapter: Optional[str] = None
     for idx, topic in enumerate(doc.topics):
+        chap = getattr(topic, "chapter", None)
+        # Render a chapter divider when the chapter changes (and it's set)
+        if chap and chap != prev_chapter:
+            for flow in P.chapter_divider(chap):
+                story.append(flow)
+            prev_chapter = chap
         # Build the whole topic as one KeepTogether block.
         # Reportlab KeepTogether semantics: try to fit the entire block on
         # the current page. If it fits, render as one unit. If it doesn't,
@@ -730,6 +1036,14 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
         else:
             payload = getattr(topic, "_payload", {})
             flat_lines = _flatten_payload(payload)
+            # Fallback when there's no real AI bullets and no heuristic payload:
+            # use the first 1-2 source paragraphs as prose bullets instead of
+            # the generic "Notes." placeholder.
+            if not flat_lines and topic.source_paragraphs:
+                flat_lines = [
+                    p for p in topic.source_paragraphs[:2]
+                    if len(p) >= 80 and len(p) <= 280
+                ]
             if not flat_lines and topic.sections:
                 flat_lines = [f"{h}." for h, _ in topic.sections]
             if flat_lines:

@@ -23,6 +23,7 @@ from reportlab.platypus import (
     ListFlowable,
     ListItem,
     Paragraph,
+    Spacer,
     Table,
     TableStyle,
 )
@@ -33,6 +34,7 @@ INK = HexColor("#222222")          # body & head text
 HEAD_RULE = HexColor("#222222")     # topic banner rule
 SOFT_RULE = HexColor("#888888")     # callout borders, hairlines, table grid
 ACCENT_LINE = HexColor("#666666")   # cover rule
+DEEP_RULE = HexColor("#000000")     # chapter divider rule (heavier than HEAD_RULE)
 PAGE_NUM = HexColor("#666666")      # footer
 
 
@@ -181,6 +183,32 @@ def topic_banner(title: str, subtitle: str | None = None) -> list:
         )
     )
     return out
+
+
+def chapter_divider(chapter_title: str) -> list:
+    """Top-level chapter divider band. Renders above the first topic of a
+    new narrative chapter (story / poem). Tag + bold chapter title + thin
+    double rule. Visual hierarchy: chapter > topic.
+    """
+    return [
+        Spacer(1, 0.4 * cm),
+        Paragraph("CHAPTER", SECT_TAG),
+        Paragraph(chapter_title, H1),
+        HRFlowable(
+            width="100%",
+            thickness=1.2,
+            color=DEEP_RULE,
+            spaceBefore=1,
+            spaceAfter=2,
+        ),
+        HRFlowable(
+            width="100%",
+            thickness=0.4,
+            color=DEEP_RULE,
+            spaceBefore=0,
+            spaceAfter=8,
+        ),
+    ]
 
 
 def callout(title: str, body_lines: list, icon: str | None = None) -> Table:
