@@ -2,226 +2,183 @@
 {% block head %}
 <meta name="deck-id" content="{{ deck.id }}" />
 <style>
-/* ── Concept Map Layout ── */
-.concept-map-wrapper {
-  max-width: 1100px;
+.concept-outline {
+  max-width: 760px;
   margin: 0 auto;
-  padding: 1rem 1.5rem 3rem;
+  padding: 1rem 1.25rem 3rem;
 }
 
-.concept-map-header {
-  margin-bottom: 2rem;
-}
-
-.concept-map-header h1 {
-  font-size: 1.4rem;
+.concept-outline h1 {
+  font-size: 1.3rem;
   font-weight: 600;
   margin: 0 0 0.25rem;
 }
 
-.concept-map-header p {
+.concept-outline > p {
   color: var(--muted-color, #6b7280);
   font-size: 0.85rem;
-  margin: 0;
+  margin: 0 0 1.5rem;
 }
 
-/* ── Mind Map Tree ── */
-.mind-map {
-  position: relative;
-  padding: 1rem 0;
-}
-
-/* SVG connection lines layer */
-.mind-map-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.mind-map-svg line {
-  stroke: var(--border-color, #d1d5db);
-  stroke-width: 1.5;
-}
-
-.mind-map-svg line.concept-edge-chapter {
-  stroke: var(--accent-color, #6366f1);
-  stroke-width: 2;
-  stroke-dasharray: 4, 3;
-}
-
-/* Tree node structure */
-.mind-map-list {
+/* ── Hierarchical bullet list ── */
+.outline-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  position: relative;
-  z-index: 1;
 }
 
-.mind-map-list ul {
+.outline-list ul {
   list-style: none;
+  margin: 0.15rem 0 0.15rem 1.2rem;
+  padding: 0;
+  border-left: 1.5px solid var(--border-color, #d1d5db);
+}
+
+.outline-item {
   margin: 0;
-  padding: 0 0 0 1.8rem;
-  position: relative;
 }
 
-.mind-map-item {
-  position: relative;
-  margin: 0.25rem 0;
+.outline-item + .outline-item {
+  margin-top: 0.1rem;
 }
 
-/* Node card styling */
-.mind-map-node {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-color, #e5e7eb);
-  background: var(--card-bg, #fff);
+/* Clickable row */
+.outline-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
   cursor: pointer;
-  transition: all 0.15s ease;
-  font-size: 0.85rem;
-  line-height: 1.3;
-  max-width: 360px;
-  position: relative;
+  transition: background 0.1s;
   user-select: none;
 }
 
-.mind-map-node:hover {
-  border-color: var(--accent-color, #6366f1);
-  box-shadow: 0 1px 4px rgba(99, 102, 241, 0.15);
+.outline-row:hover {
+  background: var(--hover-bg, rgba(0,0,0,0.04));
 }
 
-/* Node type icons */
-.mind-map-node .node-icon {
+[data-theme="dark"] .outline-row:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+/* Bullet styles by depth */
+.outline-bullet {
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #fff;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 0.25em;
 }
 
-.node-icon.root-icon {
+.outline-bullet.root-dot {
+  width: 10px;
+  height: 10px;
   background: #6366f1;
-  width: 22px;
-  height: 22px;
-  font-size: 0.75rem;
 }
 
-.node-icon.chapter-icon {
+.outline-bullet.chapter-dot {
+  width: 8px;
+  height: 8px;
   background: #8b5cf6;
 }
 
-.node-icon.topic-icon {
+.outline-bullet.topic-dot {
+  width: 6px;
+  height: 6px;
   background: #06b6d4;
+  border-radius: 2px;
 }
 
-.node-icon.keypoint-icon {
-  background: transparent;
-  color: var(--muted-color, #6b7280);
-  font-size: 0.5rem;
-  width: 14px;
-  height: 14px;
+.outline-bullet.keypoint-dot {
+  width: 4px;
+  height: 4px;
+  background: var(--muted-color, #9ca3af);
 }
 
-/* Node label text */
-.mind-map-node .node-label {
+.outline-label {
   flex: 1;
-  min-width: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
   word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: var(--text, #111827);
 }
 
-.mind-map-node .node-toggle {
+.root-label {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--accent-color, #6366f1);
+}
+
+.chapter-label {
+  font-weight: 600;
+}
+
+.topic-label {
+  font-weight: 400;
+}
+
+.keypoint-label {
+  font-size: 0.82rem;
+  color: var(--muted-color, #6b7280);
+}
+
+/* Toggle indicator */
+.outline-toggle {
   flex-shrink: 0;
-  font-size: 0.6rem;
+  font-size: 0.5rem;
   color: var(--muted-color, #9ca3af);
-  transition: transform 0.2s ease;
-  margin-left: 0.2rem;
+  transition: transform 0.15s;
+  margin-right: 0.15rem;
 }
 
-.mind-map-node .node-toggle.collapsed {
+.outline-toggle.collapsed {
   transform: rotate(-90deg);
 }
 
 /* Collapsed children */
-.mind-map-list .collapsed + ul {
+.outline-item.collapsed > ul {
   display: none;
 }
 
-/* Root node special styling */
-.mind-map > .mind-map-list > .mind-map-item > .mind-map-node {
-  font-size: 1rem;
-  font-weight: 600;
-  padding: 0.6rem 1rem;
-  border-color: var(--accent-color, #6366f1);
-  border-width: 2px;
-  max-width: 500px;
-}
-
 /* Empty state */
-.concept-map-empty {
+.concept-empty {
   text-align: center;
   padding: 3rem 1rem;
   color: var(--muted-color, #6b7280);
 }
 
-.concept-map-empty .empty-icon {
+.concept-empty .empty-icon {
   font-size: 2.5rem;
   margin-bottom: 0.75rem;
   opacity: 0.5;
 }
 
-.concept-map-empty h3 {
+.concept-empty h3 {
   font-size: 1.1rem;
   margin: 0 0 0.5rem;
   font-weight: 600;
 }
 
-.concept-map-empty p {
+.concept-empty p {
   font-size: 0.85rem;
-  margin: 0;
-  max-width: 400px;
   margin: 0 auto;
-}
-
-/* Keypoint text — shown as note not as a full card */
-.mind-map-list .keypoint-item {
-  margin: 0.15rem 0;
-}
-
-.mind-map-list .keypoint-item .mind-map-node {
-  border: none;
-  background: transparent;
-  padding: 0.2rem 0.5rem 0.2rem 0;
-  cursor: default;
-  font-size: 0.78rem;
   max-width: 400px;
-  color: var(--muted-color, #6b7280);
-  box-shadow: none;
 }
 
-.mind-map-list .keypoint-item .mind-map-node:hover {
-  box-shadow: none;
-  border: none;
+.generate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
 }
 
-.mind-map-list .keypoint-item .mind-map-node .node-label::before {
-  content: "— ";
-  opacity: 0.4;
-}
-
-/* Loading state */
-.concept-map-loading {
+/* Loading */
+.concept-loading {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -230,8 +187,8 @@
 }
 
 .spinner {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: 2px solid var(--border-color, #e5e7eb);
   border-top-color: var(--accent-color, #6366f1);
   border-radius: 50%;
@@ -242,69 +199,32 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-
-/* Generate button flash */
-.concept-map-generate-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.concept-map-generate-btn .gen-icon {
-  font-size: 1.1rem;
-}
-
-/* Dark mode adjustments */
-[data-theme="dark"] .mind-map-node {
-  background: var(--card-bg, #1f2937);
-  border-color: var(--border-color, #374151);
-}
-
-[data-theme="dark"] .mind-map-node:hover {
-  border-color: var(--accent-color, #818cf8);
-}
-
-[data-theme="dark"] .mind-map-svg line {
-  stroke: var(--border-color, #4b5563);
-}
-
-[data-theme="dark"] .mind-map-svg line.concept-edge-chapter {
-  stroke: var(--accent-color, #818cf8);
-}
-
-/* Responsive */
-@media (max-width: 640px) {
-  .concept-map-wrapper {
-    padding: 0.75rem;
-  }
-  .mind-map-list ul {
-    padding-left: 1rem;
-  }
-  .mind-map-node {
-    max-width: 260px;
-    font-size: 0.8rem;
-  }
-}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="concept-map-wrapper">
-  <div class="concept-map-header">
-    <h1>🗺️ Concept Map</h1>
-    <p>Visual overview of <strong>{{ deck.name }}</strong> — topics and key points at a glance</p>
-  </div>
+<div class="concept-outline">
+  <h1>📋 Chapter Outline</h1>
+  <p>Topics and key points from <strong>{{ deck.name }}</strong> — tap to expand</p>
+
+  {% if can_edit and concept_map and concept_map.graph_data %}
+    <div style="margin-bottom:1rem;">
+      <button type="button" id="gen-btn" class="button button-secondary button-small">
+        🔄 Regenerate
+      </button>
+    </div>
+  {% endif %}
 
   {% if concept_map and concept_map.graph_data %}
-    <div id="mind-map-container" class="mind-map" data-graph='{{ concept_map.graph_data | tojson | safe }}'></div>
+    <div id="outline-container" data-graph='{{ concept_map.graph_data | tojson | safe }}'></div>
   {% else %}
-    <div class="concept-map-empty">
-      <div class="empty-icon">🗺️</div>
-      <h3>No concept map yet</h3>
-      <p>This deck doesn't have a concept map. Upload a file or generate one to see a visual overview of the topics.</p>
+    <div class="concept-empty">
+      <div class="empty-icon">📭</div>
+      <h3>No outline yet</h3>
+      <p>This deck doesn't have a chapter outline yet. Upload a file or generate one.</p>
       {% if can_edit %}
-        <button type="button" id="generate-concept-map-btn" class="button concept-map-generate-btn" style="margin-top: 1.5rem;">
-          <span class="gen-icon">⚡</span> Generate Concept Map
+        <button type="button" id="gen-btn" class="button generate-btn">
+          <span>⚡</span> Generate Outline
         </button>
       {% endif %}
     </div>
@@ -313,26 +233,18 @@
 
 <script>
 (() => {
-  const container = document.getElementById("mind-map-container");
+  const container = document.getElementById("outline-container");
   if (!container) return;
 
-  // ── Render graph from JSON data ──
-  const renderGraph = (graph) => {
+  const renderOutline = (graph) => {
     if (!graph || !graph.nodes || graph.nodes.length === 0) {
-      container.innerHTML = `
-        <div class="concept-map-empty">
-          <div class="empty-icon">📭</div>
-          <h3>No topics found</h3>
-          <p>The source text didn't have enough structure to build a concept map.</p>
-        </div>`;
+      container.innerHTML = `<div class="concept-empty"><div class="empty-icon">📭</div><h3>No topics found</h3><p>The source text didn't have enough structure.</p></div>`;
       return;
     }
 
-    // Build a tree from flat node list
+    // Build tree
     const nodeMap = {};
     graph.nodes.forEach(n => { nodeMap[n.id] = { ...n, children: [] }; });
-
-    // Also index edges for children
     const edgeMap = {};
     if (graph.edges) {
       graph.edges.forEach(e => {
@@ -342,223 +254,103 @@
         }
       });
     }
-
-    // Attach children using edges (preferred) or parent field
     graph.nodes.forEach(n => {
-      if (n.parent && nodeMap[n.parent]) {
-        nodeMap[n.parent].children.push(nodeMap[n.id]);
-      }
+      if (n.parent && nodeMap[n.parent]) nodeMap[n.parent].children.push(nodeMap[n.id]);
       if (edgeMap[n.id]) {
-        edgeMap[n.id].forEach(childId => {
-          if (nodeMap[childId] && !nodeMap[n.id].children.includes(nodeMap[childId])) {
-            nodeMap[n.id].children.push(nodeMap[childId]);
-          }
+        edgeMap[n.id].forEach(cid => {
+          if (nodeMap[cid] && !nodeMap[n.id].children.includes(nodeMap[cid])) nodeMap[n.id].children.push(nodeMap[cid]);
         });
       }
     });
 
-    // Find root node (no parent / depth 0)
     const roots = graph.nodes.filter(n => !n.parent || n.depth === 0);
     if (roots.length === 0) return;
 
-    // Render tree recursively
-    const typeIcon = {
-      root: "◉",
-      chapter: "◆",
-      topic: "▶",
-      keypoint: "·"
-    };
-    const typeClass = {
-      root: "root-icon",
-      chapter: "chapter-icon",
-      topic: "topic-icon",
-      keypoint: "keypoint-icon"
-    };
+    const typeBullet = { root: "root-dot", chapter: "chapter-dot", topic: "topic-dot", keypoint: "keypoint-dot" };
+    const typeLabel = { root: "root-label", chapter: "chapter-label", topic: "topic-label", keypoint: "keypoint-label" };
 
-    let nodeCounter = 0;
+    let counter = 0;
 
-    const renderNode = (node, depth) => {
-      nodeCounter++;
-      const nodeId = `mn-${nodeCounter}`;
+    function renderNode(node, depth) {
+      counter++;
       const hasChildren = node.children && node.children.length > 0;
-      const isKeypoint = node.type === "keypoint";
-      const itemClass = isKeypoint ? 'mind-map-item keypoint-item' : 'mind-map-item';
-
-      let html = `<li class="${itemClass}" data-node-id="${nodeId}" data-depth="${depth}" data-type="${node.type}">`;
-      html += `<div class="mind-map-node" data-node="${nodeId}" ${hasChildren ? 'data-toggle' : ''}>`;
-      html += `<span class="node-icon ${typeClass[node.type] || 'topic-icon'}">${typeIcon[node.type] || '▶'}</span>`;
-      html += `<span class="node-label">${escapeHtml(node.label)}</span>`;
-      if (hasChildren) {
-        html += `<span class="node-toggle">▼</span>`;
-      }
+      const isKp = node.type === "keypoint";
+      let html = `<li class="outline-item${hasChildren ? ' collapsed' : ''}" data-id="ol-${counter}">`;
+      html += `<div class="outline-row" ${hasChildren ? 'data-toggle' : ''}>`;
+      if (hasChildren) html += `<span class="outline-toggle collapsed">▶</span>`;
+      else html += '<span class="outline-toggle" style="visibility:hidden">▶</span>';
+      html += `<span class="outline-bullet ${typeBullet[node.type] || 'topic-dot'}"></span>`;
+      html += `<span class="outline-label ${typeLabel[node.type] || ''}">${esc(node.label)}</span>`;
       html += `</div>`;
-
       if (hasChildren) {
         html += `<ul>`;
-        node.children.forEach(child => {
-          html += renderNode(child, depth + 1);
-        });
+        node.children.forEach(c => { html += renderNode(c, depth + 1); });
         html += `</ul>`;
       }
-
       html += `</li>`;
       return html;
-    };
-
-    const escapeHtml = (text) => {
-      const div = document.createElement("div");
-      div.textContent = text;
-      return div.innerHTML;
-    };
-
-    let treeHtml = `<ul class="mind-map-list">`;
-    roots.forEach(root => {
-      treeHtml += renderNode(nodeMap[root.id] || root, 0);
-    });
-    treeHtml += `</ul>`;
-
-    container.innerHTML = treeHtml;
-
-    // ── Toggle collapse ──
-    container.querySelectorAll(".mind-map-node[data-toggle]").forEach(el => {
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const li = el.closest("li");
-        if (!li) return;
-        const toggle = el.querySelector(".node-toggle");
-        if (toggle) {
-          toggle.classList.toggle("collapsed");
-        }
-        const childUl = li.querySelector(":scope > ul");
-        if (childUl) {
-          childUl.style.display = childUl.style.display === "none" ? "" : "none";
-        }
-      });
-    });
-
-    // ── Draw SVG connector lines ──
-    drawConnectors(container);
-  };
-
-  const drawConnectors = (container) => {
-    // Remove any existing SVG overlay
-    const existing = container.querySelector(".mind-map-svg");
-    if (existing) existing.remove();
-
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("class", "mind-map-svg");
-    svg.style.position = "absolute";
-    svg.style.top = "0";
-    svg.style.left = "0";
-    svg.style.width = "100%";
-    svg.style.height = "100%";
-    svg.style.pointerEvents = "none";
-    svg.style.zIndex = "0";
-    svg.style.overflow = "visible";
-    container.style.position = "relative";
-    container.prepend(svg);
-
-    // Delay to let DOM settle
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const items = container.querySelectorAll(".mind-map-item");
-        items.forEach(item => {
-          const nodeEl = item.querySelector(".mind-map-node");
-          if (!nodeEl) return;
-          const childUl = item.querySelector(":scope > ul");
-          if (!childUl) return;
-          const childItems = childUl.querySelectorAll(":scope > .mind-map-item > .mind-map-node");
-          if (childItems.length === 0) return;
-
-          const rect = nodeEl.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
-          const x1 = rect.right - containerRect.left;
-          const y1 = rect.top + rect.height / 2 - containerRect.top;
-
-          childItems.forEach(child => {
-            const childRect = child.getBoundingClientRect();
-            const x2 = childRect.left - containerRect.left;
-            const y2 = childRect.top + childRect.height / 2 - containerRect.top;
-
-            // Draw polyline: right edge of parent → midpoint → left edge of child
-            const midX = (x1 + x2) / 2;
-            const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-            line.setAttribute("points", `${x1},${y1} ${midX},${y1} ${midX},${y2} ${x2},${y2}`);
-            line.setAttribute("fill", "none");
-
-            // Style based on depth
-            const depth = parseInt(item.dataset.depth || "0");
-            const edgeClass = depth === 0 ? "concept-edge-chapter" : "";
-            if (edgeClass) line.setAttribute("class", edgeClass);
-            else {
-              line.setAttribute("stroke", "var(--border-color, #d1d5db)");
-              line.setAttribute("stroke-width", "1.5");
-            }
-
-            svg.appendChild(line);
-          });
-        });
-
-        // Update SVG dimensions to match content
-        const svgRect = container.getBoundingClientRect();
-        svg.setAttribute("viewBox", `0 0 ${svgRect.width} ${svgRect.height}`);
-        svg.style.width = svgRect.width + "px";
-        svg.style.height = svgRect.height + "px";
-      });
-    });
-  };
-
-  // ── Initialize ──
-  const graphData = container.dataset.graph;
-  if (graphData) {
-    try {
-      const graph = JSON.parse(graphData);
-      renderGraph(graph);
-    } catch (e) {
-      console.error("Concept map: failed to parse graph data", e);
     }
+
+    function esc(t) {
+      const d = document.createElement("div");
+      d.textContent = t;
+      return d.innerHTML;
+    }
+
+    let html = `<ul class="outline-list">`;
+    roots.forEach(r => { html += renderNode(nodeMap[r.id] || r, 0); });
+    html += `</ul>`;
+    container.innerHTML = html;
+
+    // Toggle click
+    container.querySelectorAll(".outline-row[data-toggle]").forEach(el => {
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        const li = el.closest(".outline-item");
+        if (!li) return;
+        li.classList.toggle("collapsed");
+        const toggle = el.querySelector(".outline-toggle");
+        if (toggle) toggle.classList.toggle("collapsed");
+      });
+    });
+
+    // Auto-expand first two levels on desktop
+    const isMobile = window.innerWidth < 768;
+    if (!isMobile) {
+      container.querySelectorAll(".outline-item").forEach(li => {
+        const depth = li.parentElement ? li.parentElement.closest(".outline-item") ? 1 : 0 : 0;
+        if (depth === 0) {
+          li.classList.remove("collapsed");
+          const toggle = li.querySelector(".outline-toggle");
+          if (toggle) toggle.classList.remove("collapsed");
+        }
+      });
+    }
+  };
+
+  const raw = container.dataset.graph;
+  if (raw) {
+    try { renderOutline(JSON.parse(raw)); }
+    catch(e) { console.error("Outline parse error", e); }
   }
 
-  // ── Generate button ──
-  const genBtn = document.getElementById("generate-concept-map-btn");
-  if (genBtn) {
-    genBtn.addEventListener("click", async () => {
-      genBtn.disabled = true;
-      genBtn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Generating...`;
-      const deckId = document.querySelector('meta[name="deck-id"]')?.content;
-      if (!deckId) return;
-
+  // Generate/Regenerate button
+  const btn = document.getElementById("gen-btn");
+  if (btn) {
+    const deckId = document.querySelector('meta[name="deck-id"]')?.content;
+    const originalText = btn.textContent.trim() || "Generate";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Working...`;
       try {
-        const resp = await fetch(`/decks/${deckId}/concept-map/generate`, { method: "POST" });
-        if (resp.ok) {
-          window.location.reload();
-        } else {
-          const data = await resp.json().catch(() => ({}));
-          alert(data.message || "Failed to generate concept map.");
-          genBtn.disabled = false;
-          genBtn.innerHTML = `<span class="gen-icon">⚡</span> Generate Concept Map`;
-        }
-      } catch (err) {
-        alert("Network error while generating concept map.");
-        genBtn.disabled = false;
-        genBtn.innerHTML = `<span class="gen-icon">⚡</span> Generate Concept Map`;
-      }
+        const r = await fetch(`/decks/${deckId}/concept-map/generate`, { method: "POST" });
+        if (r.ok) window.location.reload();
+        else alert("Failed to generate outline.");
+      } catch(e) { alert("Network error."); }
+      btn.disabled = false;
+      btn.innerHTML = originalText;
     });
   }
-
-  // Redraw connectors on resize
-  let resizeTimer;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => {
-      if (container.dataset.graph) {
-        try {
-          const graph = JSON.parse(container.dataset.graph);
-          renderGraph(graph);
-        } catch (e) {}
-      }
-    }, 300);
-  });
 })();
 </script>
 {% endblock %}

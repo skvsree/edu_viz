@@ -3074,6 +3074,7 @@ def deck_concept_map(
         .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
         .first()
     )
+    can_edit = can_manage_deck(user, deck)
 
     return _html_no_store(
         templates.TemplateResponse(
@@ -3083,6 +3084,7 @@ def deck_concept_map(
                 "user": user,
                 "deck": deck,
                 "concept_map": concept_map,
+                "can_edit": can_edit,
                 "title": f"Concept Map | {deck.name}",
             },
         )
