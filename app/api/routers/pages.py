@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from functools import lru_cache
 from hashlib import sha256
@@ -26,6 +27,8 @@ from app.models import (
     BulkAIUploadFileStatus,
     BulkAIUploadStatus,
     Card,
+    ConceptMap,
+    ConceptMapStatus,
     Deck,
     Job,
     Organization,
@@ -66,6 +69,8 @@ from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
 from app.services.review_service import ReviewService
 from app.services.storage import deck_media_prefix, get_storage
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_review_html(text: str | None) -> str:
@@ -2550,6 +2555,16 @@ def deck_overview(
     )
     is_favorited = favorite_first is not None
 
+    has_concept_map = (
+        db.query(ConceptMap.id)
+        .filter(
+            ConceptMap.deck_id == deck.id,
+            ConceptMap.status == ConceptMapStatus.READY.value,
+        )
+        .first()
+        is not None
+    )
+
     return _html_no_store(
         templates.TemplateResponse(
             "decks/overview.html",
@@ -2565,6 +2580,7 @@ def deck_overview(
                 "can_use_ai_generation": (can_use_ai_generation(user) and can_edit),
                 "tests_available": tests_available,
                 "test_count": test_count,
+                "has_concept_map": has_concept_map,
                 "default_test_count": settings.default_test_count,
                 "import_success": request.query_params.get("import_success"),
                 "update_success": request.query_params.get("update_success"),
@@ -3034,3 +3050,141 @@ def review_rate(
     return _review_next_inner(
         request, user, db, deck_id=effective_deck_id, remaining=next_remaining
     )
+
+
+# ---------------------------------------------------------------------------
+# Concept map routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/decks/{deck_id}/concept-map", response_class=HTMLResponse)
+def deck_concept_map(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Render the concept map page for a deck."""
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
+        .first()
+    )
+
+    return _html_no_store(
+        templates.TemplateResponse(
+            "decks/concept_map.html",
+            {
+                "request": request,
+                "user": user,
+                "deck": deck,
+                "concept_map": concept_map,
+                "title": f"Concept Map | {deck.name}",
+            },
+        )
+    )
+
+
+@router.get("/api/v1/decks/{deck_id}/concept-map", response_class=HTMLResponse)
+def deck_concept_map_json(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Serve the concept map graph data as JSON for the mind map renderer."""
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
+        .first()
+    )
+
+    if not concept_map or not concept_map.graph_data:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {"status": "not_found", "message": "No concept map available for this deck."},
+            status_code=404,
+        )
+
+    return {
+        "status": "ready",
+        "title": concept_map.title or deck.name,
+        "node_count": concept_map.node_count,
+        "graph": concept_map.graph_data,
+    }
+
+
+@router.post("/decks/{deck_id}/concept-map/generate")
+def generate_deck_concept_map(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate (or regenerate) a concept map for a deck.
+
+    Finds the latest successful file upload for this deck and runs
+    the two-pass heuristic to produce a mind-map graph.
+    """
+    from fastapi.responses import JSONResponse
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        return JSONResponse(
+            {"message": "You don't have permission to generate concept maps for this deck."},
+            status_code=403,
+        )
+
+    # Find the latest completed file upload for this deck
+    source_file = (
+        db.query(BulkAIUploadFile)
+        .filter(
+            BulkAIUploadFile.created_deck_id == deck.id,
+            BulkAIUploadFile.status == BulkAIUploadFileStatus.COMPLETED.value,
+            BulkAIUploadFile.content_text.isnot(None),
+            BulkAIUploadFile.content_text != "",
+        )
+        .order_by(BulkAIUploadFile.completed_at.desc())
+        .first()
+    )
+
+    if not source_file:
+        return JSONResponse(
+            {"message": "No uploaded content found for this deck. Upload a file first."},
+            status_code=400,
+        )
+
+    from app.services.concept_map import generate_concept_map
+
+    try:
+        concept_map = generate_concept_map(
+            db,
+            deck_id=deck.id,
+            source_file_id=source_file.id,
+            title=source_file.extracted_title or deck.name,
+        )
+
+        if concept_map.status == ConceptMapStatus.READY.value:
+            return {"status": "ok", "node_count": concept_map.node_count}
+        else:
+            return JSONResponse(
+                {"message": concept_map.error_message or "Failed to generate concept map."},
+                status_code=500,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("concept_map generation failed for deck %s", deck.id)
+        return JSONResponse(
+            {"message": f"Generation failed: {exc}"},
+            status_code=500,
+        )

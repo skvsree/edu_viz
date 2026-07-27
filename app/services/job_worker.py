@@ -51,6 +51,7 @@ from app.services.ai_generation import (
     parse_title_generation_json,
 )
 from app.services.storage import get_storage, StorageError
+from app.services.concept_map import generate_concept_map
 
 
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
@@ -885,6 +886,24 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     bulk=bulk,
                     file_record=file_record,
                 )
+                # Generate a concept map for the deck this file belongs to.
+                # The generator is fast (heuristic-only, no AI calls) and
+                # runs inline. If a map already exists for this deck, the
+                # generator marks it stale and re-creates it.
+                if file_record.created_deck_id:
+                    try:
+                        generate_concept_map(
+                            db,
+                            deck_id=file_record.created_deck_id,
+                            source_file_id=file_record.id,
+                            title=file_record.extracted_title or file_record.original_filename.rsplit(".", 1)[0],
+                        )
+                    except Exception:
+                        logger.exception(
+                            "concept_map: inline generation failed for deck %s file %s",
+                            file_record.created_deck_id,
+                            file_record.id,
+                        )
             if bulk is not None:
                 # Safety net: if the per-chunk calls did not run (e.g. the
                 # file had zero chunks because text was empty), make sure

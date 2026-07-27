@@ -19,6 +19,7 @@ from app.models.bulk_revision_notes import (  # noqa: F401
     BulkAIUploadRevisionNote,
     BulkRevisionNoteStatus,
 )
+from app.models.concept_map import ConceptMap, ConceptMapStatus  # noqa: F401
 from app.models.review import Review
 from app.models.tag import Tag, deck_tags
 from app.models.test import Test
@@ -72,6 +73,8 @@ __all__ = [
     "BulkAIUploadStatus",
     "BulkAIUploadRevisionNote",
     "BulkRevisionNoteStatus",
+    "ConceptMap",
+    "ConceptMapStatus",
     "Job",
     "JobStatus",
 ]  # noqa: E501,F401
