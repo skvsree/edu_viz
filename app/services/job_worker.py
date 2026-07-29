@@ -259,6 +259,7 @@ def _is_retryable_ai_format_error(exc: Exception) -> bool:
         for phrase in (
             "invalid json",
             "empty response",
+            "empty content",
             "returned no choices",
             "invalid choice payload",
             "did not return usable flashcards or mcqs",

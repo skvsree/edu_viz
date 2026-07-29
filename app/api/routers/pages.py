@@ -853,7 +853,7 @@ def jobs_page(
     )
     tab = (get_param("tab") or "").strip().lower()
     if tab not in {"active", "history"}:
-        tab = "history"
+        tab = "active"
     return _jobs_response(request, user=user, db=db, active_tab=tab)
 
 

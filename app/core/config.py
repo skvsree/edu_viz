@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
+    opencode_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
+    opencode_model: str = "deepseek-v4-flash"
     ai_secrets_fernet_key: str | None = None
     bulk_import_api_key: str | None = None
 

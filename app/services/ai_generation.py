@@ -462,50 +462,68 @@ def get_study_pack_provider(name: str) -> StudyPackProvider:
 
 
 class OpencodeStudyPackProvider:
-    """OpenCode provider using MiniMax API."""
+    """OpenCode provider via OpenAI-compatible HTTP API."""
     name = "opencode"
+
+    def __init__(self) -> None:
+        from app.core.config import settings
+        self.api_endpoint = settings.opencode_api_endpoint
+        self.model = settings.opencode_model
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
 
     def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
-        if not credential or credential.provider != "minimax":
-            raise AIGenerationError("Minimax credential is required for opencode provider.")
-        if credential.auth_type not in {"api_key"}:
-            raise AIGenerationError(f"Unsupported auth type: {credential.auth_type}")
+        raw = self.generate_text(prompt, credential)
+        return _parse_study_pack_json(raw)
+
+    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
+        if not credential or not credential.secret:
+            raise AIGenerationError(
+                "OpenCode credential (API key) is required. "
+                "Set AI_API_KEY in .env or configure a user/org credential."
+            )
 
         import requests
         response = requests.post(
-            "https://api.minimax.io/v1/text/chatcompletion_v2",
+            self.api_endpoint,
             headers={
                 "Authorization": f"Bearer {credential.secret}",
                 "Content-Type": "application/json",
             },
             json={
-                "model": "MiniMax-M3",
+                "model": self.model,
                 "messages": [
                     {
                         "role": "system",
                         "content": (
-                            "Return compact strict JSON only. No markdown, "
-                            "no code fences, no commentary, no prose, "
-                            "no trailing text."
+                            "You are a precise study-card generator. "
+                            "Always produce valid JSON with keys flashcards and mcqs in your response. "
+                            "No markdown code fences, no extra commentary."
                         ),
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_completion_tokens": 8192,
-                "temperature": 0.2,
+                "max_tokens": 16384,
+                "temperature": 0.3,
             },
             timeout=180,
         )
         if response.status_code != 200:
-            raise AIGenerationError(f"Minimax API error: {response.status_code} - {response.text[:200]}")
+            body = response.text[:300]
+            raise AIGenerationError(
+                f"OpenCode API error ({response.status_code}): {body}"
+            )
+
         data = response.json()
-        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise AIGenerationError("OpenCode API returned no choices.")
+
+        content = choices[0].get("message", {}).get("content", "")
         if not content:
-            raise AIGenerationError("Minimax returned empty response.")
-        return _parse_study_pack_json(content)
+            raise AIGenerationError("OpenCode API returned empty response.")
+        return content
 
 
 class CodexStudyPackProvider:
