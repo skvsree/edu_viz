@@ -81,6 +81,7 @@
                   <option value="openai" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
                   <option value="minimax" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'minimax' %}selected{% endif %}>Minimax</option>
                   <option value="claude" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'claude' %}selected{% endif %}>Claude</option>
+                  <option value="opencode" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'opencode' %}selected{% endif %}>OpenCode</option>
                 </select>
               </div>
               <div>
@@ -182,6 +183,7 @@
                 <option value="openai" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
                 <option value="minimax" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'minimax' %}selected{% endif %}>Minimax</option>
                 <option value="claude" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'claude' %}selected{% endif %}>Claude</option>
+                <option value="opencode" {% if modal_organization and org_ai_provider.get(modal_organization.id|string) == 'opencode' %}selected{% endif %}>OpenCode</option>
               </select>
             </div>
             <div>

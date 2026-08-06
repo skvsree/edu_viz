@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from functools import lru_cache
 from hashlib import sha256
@@ -26,8 +27,11 @@ from app.models import (
     BulkAIUploadFileStatus,
     BulkAIUploadStatus,
     Card,
+    ConceptMap,
+    ConceptMapStatus,
     Deck,
     Job,
+    JobStatus,
     Organization,
     Review,
     Tag,
@@ -66,6 +70,8 @@ from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
 from app.services.review_service import ReviewService
 from app.services.storage import deck_media_prefix, get_storage
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_review_html(text: str | None) -> str:
@@ -848,7 +854,7 @@ def jobs_page(
     )
     tab = (get_param("tab") or "").strip().lower()
     if tab not in {"active", "history"}:
-        tab = "history"
+        tab = "active"
     return _jobs_response(request, user=user, db=db, active_tab=tab)
 
 
@@ -2550,6 +2556,16 @@ def deck_overview(
     )
     is_favorited = favorite_first is not None
 
+    has_concept_map = (
+        db.query(ConceptMap.id)
+        .filter(
+            ConceptMap.deck_id == deck.id,
+            ConceptMap.status == ConceptMapStatus.READY.value,
+        )
+        .first()
+        is not None
+    )
+
     return _html_no_store(
         templates.TemplateResponse(
             "decks/overview.html",
@@ -2565,6 +2581,7 @@ def deck_overview(
                 "can_use_ai_generation": (can_use_ai_generation(user) and can_edit),
                 "tests_available": tests_available,
                 "test_count": test_count,
+                "has_concept_map": has_concept_map,
                 "default_test_count": settings.default_test_count,
                 "import_success": request.query_params.get("import_success"),
                 "update_success": request.query_params.get("update_success"),
@@ -3034,3 +3051,337 @@ def review_rate(
     return _review_next_inner(
         request, user, db, deck_id=effective_deck_id, remaining=next_remaining
     )
+
+
+# ---------------------------------------------------------------------------
+# Concept map routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/decks/{deck_id}/concept-map", response_class=HTMLResponse)
+def deck_concept_map(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Render the concept map page for a deck."""
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
+        .first()
+    )
+    can_edit = can_manage_deck(user, deck)
+
+    return _html_no_store(
+        templates.TemplateResponse(
+            "decks/concept_map.html",
+            {
+                "request": request,
+                "user": user,
+                "deck": deck,
+                "concept_map": concept_map,
+                "can_edit": can_edit,
+                "title": f"Concept Map | {deck.name}",
+            },
+        )
+    )
+
+
+@router.post("/decks/{deck_id}/concept-map/generate-revision-pdf")
+def deck_concept_map_request_revision_pdf(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Queue a background job to generate AI-selected revision notes PDF.
+
+    The job runs AI-as-selector on each topic, generates a low-ink PDF,
+    and stores it to SeaweedFS. The ConceptMap.revision_pdf_status field
+    tracks progress (pending → processing → ready/failed).
+
+    Returns JSON with status and job info so the frontend can poll.
+    """
+    from fastapi.responses import JSONResponse
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        return JSONResponse(
+            {"message": "You don't have permission."},
+            status_code=403,
+        )
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
+        .first()
+    )
+    if not concept_map or not concept_map.graph_data:
+        return JSONResponse(
+            {"message": "No concept map available. Generate the outline first."},
+            status_code=400,
+        )
+
+    # If revision PDF is already ready, serve immediately
+    if concept_map.revision_pdf_status == "ready":
+        return {"status": "ready", "message": "Revision PDF is ready"}
+
+    # If already processing, don't queue another
+    if concept_map.revision_pdf_status in ("pending", "processing"):
+        return {"status": "processing", "message": "Revision PDF is being generated"}
+
+    # Mark as pending and enqueue job
+    concept_map.revision_pdf_status = "pending"
+    db.commit()
+
+    new_job = Job(
+        job_type="concept_map_revision",
+        reference_id=concept_map.id,
+        total_items=1,
+        status=JobStatus.PENDING.value,
+    )
+    db.add(new_job)
+    db.commit()
+
+    return {
+        "status": "pending",
+        "job_id": str(new_job.id),
+        "message": "Revision PDF generation queued",
+    }
+
+
+@router.get("/decks/{deck_id}/concept-map/revision-pdf-status")
+def deck_concept_map_revision_pdf_status(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Check the status of the revision notes PDF generation job."""
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id)
+        .first()
+    )
+    if not concept_map:
+        return {"status": "none", "message": "No concept map"}
+
+    return {
+        "status": concept_map.revision_pdf_status or "none",
+        "error": concept_map.error_message if concept_map.revision_pdf_status == "failed" else None,
+    }
+
+
+@router.get("/decks/{deck_id}/concept-map/revision-notes.pdf")
+def deck_concept_map_revision_notes(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Download the generated revision notes PDF from storage."""
+    from fastapi.responses import Response
+    from app.services.storage import get_storage, StorageError
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id, ConceptMap.revision_pdf_status == "ready")
+        .first()
+    )
+    if not concept_map or not concept_map.revision_pdf_storage_key:
+        raise HTTPException(status_code=404, detail="Revision PDF not ready")
+
+    try:
+        storage = get_storage()
+        pdf_bytes, content_type = storage.open_bytes(key=concept_map.revision_pdf_storage_key)
+        return Response(
+            content=pdf_bytes,
+            media_type=content_type or "application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="{deck.name} - Revision Notes.pdf"',
+            },
+        )
+    except (StorageError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="Revision PDF file not found in storage")
+
+
+@router.get("/api/v1/decks/{deck_id}/concept-map", response_class=HTMLResponse)
+def deck_concept_map_json(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Serve the concept map graph data as JSON for the mind map renderer."""
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
+        .first()
+    )
+
+    if not concept_map or not concept_map.graph_data:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {"status": "not_found", "message": "No concept map available for this deck."},
+            status_code=404,
+        )
+
+    return {
+        "status": "ready",
+        "title": concept_map.title or deck.name,
+        "node_count": concept_map.node_count,
+        "graph": concept_map.graph_data,
+    }
+
+
+@router.get("/decks/{deck_id}/concept-map/status")
+def deck_concept_map_status(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Poll concept map generation status.
+
+    Returns {status: "ready"|"pending"|"processing"|"failed"|"none",
+              node_count?, error? }
+    """
+    from fastapi.responses import JSONResponse
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        return JSONResponse({"status": "none", "message": "Not found"}, status_code=404)
+
+    concept_map = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id)
+        .first()
+    )
+
+    if not concept_map:
+        return {"status": "none", "message": "No concept map"}
+
+    resp: dict = {"status": (concept_map.status or ConceptMapStatus.PENDING.value)}
+    if concept_map.status == ConceptMapStatus.READY.value:
+        resp["node_count"] = concept_map.node_count
+    if concept_map.status == ConceptMapStatus.FAILED.value:
+        resp["error"] = concept_map.error_message
+    return resp
+
+
+@router.post("/decks/{deck_id}/concept-map/generate")
+def generate_deck_concept_map(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Enqueue a background job to generate (or hard-regenerate) a concept map.
+
+    Unlike revision notes (which skip if READY), concept map generation is
+    always a hard regenerate — it overwrites any existing map.
+
+    Returns JSON with status so the frontend can poll.
+    """
+    from datetime import datetime as dt
+    from fastapi.responses import JSONResponse
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+    if not can_manage_deck(user, deck):
+        return JSONResponse(
+            {"message": "You don't have permission to generate concept maps for this deck."},
+            status_code=403,
+        )
+
+    # Check source file exists
+    source_file = (
+        db.query(BulkAIUploadFile)
+        .filter(
+            BulkAIUploadFile.created_deck_id == deck.id,
+            BulkAIUploadFile.status == BulkAIUploadFileStatus.COMPLETED.value,
+            BulkAIUploadFile.content_text.isnot(None),
+            BulkAIUploadFile.content_text != "",
+        )
+        .order_by(BulkAIUploadFile.completed_at.desc())
+        .first()
+    )
+
+    if not source_file:
+        return JSONResponse(
+            {"message": "No uploaded content found for this deck. Upload a file first."},
+            status_code=400,
+        )
+
+    # Check if a concept_map job is already pending/running (dedup)
+    existing_job = (
+        db.query(Job)
+        .filter(
+            Job.job_type == "concept_map",
+            Job.reference_id.in_(
+                db.query(ConceptMap.id).filter(ConceptMap.deck_id == deck.id)
+            ),
+            Job.status.in_([JobStatus.PENDING.value, JobStatus.RUNNING.value]),
+        )
+        .first()
+    )
+    if existing_job:
+        return {"status": "processing", "message": "Concept map generation is already in progress"}
+
+    # Create / reset the ConceptMap row (hard-regenerate: always overwrite)
+    cm = (
+        db.query(ConceptMap)
+        .filter(ConceptMap.deck_id == deck.id)
+        .first()
+    )
+    if cm:
+        cm.source_file_id = source_file.id
+        cm.status = ConceptMapStatus.PENDING.value
+        cm.error_message = None
+        cm.started_at = dt.utcnow()
+    else:
+        cm = ConceptMap(
+            deck_id=deck.id,
+            source_file_id=source_file.id,
+            status=ConceptMapStatus.PENDING.value,
+            started_at=dt.utcnow(),
+        )
+        db.add(cm)
+    db.flush()
+
+    # Enqueue the background job
+    job = Job(
+        job_type="concept_map",
+        reference_id=cm.id,
+        total_items=1,
+        status=JobStatus.PENDING.value,
+    )
+    db.add(job)
+    db.commit()
+
+    return {
+        "status": "pending",
+        "concept_map_id": str(cm.id),
+        "message": "Concept map generation queued",
+    }

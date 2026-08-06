@@ -1220,7 +1220,12 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
                 if not content:
                     raise AIGenerationError("Claude returned empty response.")
                 return _parse_study_pack_json(content)
-            elif credential.provider in {"minimax", "opencode"}:
+            elif credential.provider == "opencode":
+                pack = provider_client.generate_from_prompt(prompt, credential)
+                if not pack.flashcards and not pack.mcqs:
+                    raise AIGenerationError("OpenCode returned no usable study material.")
+                return pack
+            elif credential.provider in {"minimax"}:
                 import requests
                 response = requests.post(
                     "https://api.minimax.io/v1/text/chatcompletion_v2",

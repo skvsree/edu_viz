@@ -3,7 +3,10 @@ Job worker service for processing background jobs.
 Run as: python -m app.services.job_worker
 """
 
+from __future__ import annotations
+
 import io
+import logging
 import os
 import re
 import signal
@@ -25,9 +28,13 @@ from app.models import (
     BulkAIUploadChildFile,
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
+    BulkAIUploadRevisionNote,
     BulkAIUploadStatus,
+    BulkRevisionNoteStatus,
     Card,
     CardState,
+    ConceptMap,
+    ConceptMapStatus,
     Deck,
     Job,
     JobStatus,
@@ -46,6 +53,7 @@ from app.services.ai_generation import (
     parse_title_generation_json,
 )
 from app.services.storage import get_storage, StorageError
+from app.services.concept_map import generate_concept_map
 
 
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
@@ -57,6 +65,7 @@ MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
 AI_FORMAT_RETRY_FAILURE_MESSAGE = (
     f"AI returned invalid structured output after {MAX_AI_FORMAT_RETRIES} attempts."
 )
+logger = logging.getLogger(__name__)
 _shutdown = False
 _active_jobs: set[uuid.UUID] = set()
 _active_jobs_lock = threading.Lock()
@@ -252,6 +261,7 @@ def _is_retryable_ai_format_error(exc: Exception) -> bool:
         for phrase in (
             "invalid json",
             "empty response",
+            "empty content",
             "returned no choices",
             "invalid choice payload",
             "did not return usable flashcards or mcqs",
@@ -870,6 +880,33 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             file_record.mcqs_generated = mcqs_generated
             file_record.duplicate_count = duplicate_count
             file_record.completed_at = datetime.utcnow()
+            # Enqueue revision-notes PDF generation for this child file.
+            # The note_row is a long-lived tracker; the revision-notes
+            # job is a separate Job that produces the actual bytes.
+            if file_record.child_file_id:
+                _enqueue_revision_notes_job(
+                    db,
+                    bulk=bulk,
+                    file_record=file_record,
+                )
+                # Generate a concept map for the deck this file belongs to.
+                # The generator is fast (heuristic-only, no AI calls) and
+                # runs inline. If a map already exists for this deck, the
+                # generator marks it stale and re-creates it.
+                if file_record.created_deck_id:
+                    try:
+                        generate_concept_map(
+                            db,
+                            deck_id=file_record.created_deck_id,
+                            source_file_id=file_record.id,
+                            title=file_record.extracted_title or file_record.original_filename.rsplit(".", 1)[0],
+                        )
+                    except Exception:
+                        logger.exception(
+                            "concept_map: inline generation failed for deck %s file %s",
+                            file_record.created_deck_id,
+                            file_record.id,
+                        )
             if bulk is not None:
                 # Safety net: if the per-chunk calls did not run (e.g. the
                 # file had zero chunks because text was empty), make sure
@@ -1025,6 +1062,12 @@ def process_job(job_id: uuid.UUID) -> None:
 
         if job.job_type == "bulk_ai_upload":
             process_bulk_ai_upload(db, job)
+        elif job.job_type == "revision_notes":
+            process_revision_notes(db, job)
+        elif job.job_type == "concept_map":
+            process_concept_map_gen(db, job)
+        elif job.job_type == "concept_map_revision":
+            process_concept_map_revision(db, job)
         else:
             job.status = JobStatus.FAILED.value
             job.error_message = f"Unknown job type: {job.job_type}"
@@ -1153,7 +1196,312 @@ def signal_handler(signum, frame):
     _shutdown = True
 
 
+# ---------------------------------------------------------------------------
+# Revision-notes pipeline
+# ---------------------------------------------------------------------------
+def _enqueue_revision_notes_job(
+    db: Session,
+    *,
+    bulk: BulkAIUpload,
+    file_record: BulkAIUploadFile,
+    section_titles: list[str] | None = None,
+) -> None:
+    """After a file successfully produces cards, queue a revision-notes PDF
+    build for the underlying child file.
+
+    Idempotent: at most one ready note per child. If a previous failed
+    attempt exists, mark it stale and create a fresh row so the worker
+    can safely rerun.
+
+    ``section_titles`` is passed through to the worker so the rendered
+    PDF uses the book's real sub-section titles instead of the chunked
+    ``Section N`` fallback. Stored on the new ``BulkAIUploadRevisionNote``
+    row so the worker can retrieve it independently.
+    """
+    if not file_record.child_file_id or not bulk.deck_id:
+        return
+    child_id = file_record.child_file_id
+
+    existing = (
+        db.query(BulkAIUploadRevisionNote)
+        .filter(BulkAIUploadRevisionNote.child_file_id == child_id)
+        .order_by(BulkAIUploadRevisionNote.created_at.desc())
+        .first()
+    )
+    if existing and existing.status == BulkRevisionNoteStatus.READY.value:
+        # Already have a usable PDF for this child - nothing to do.
+        return
+    if existing:
+        # Mark stale so we don't accidentally overwrite a fresh run
+        existing.status = BulkRevisionNoteStatus.FAILED.value
+        existing.error_message = (
+            (existing.error_message or "") + " | superseded by new run"
+        )[:1000]
+        db.flush()
+
+    note = BulkAIUploadRevisionNote(
+        bulk_upload_id=bulk.id,
+        child_file_id=child_id,
+        source_file_id=file_record.id,
+        deck_id=bulk.deck_id,
+        status=BulkRevisionNoteStatus.PENDING.value,
+    )
+    db.add(note)
+    db.flush()
+
+    # Persist section_titles on the note via the JSONB column added in
+    # alembic 0028. Older rows that pre-date the column will simply get
+    # None and fall back to the chunked heuristic for the chapter.
+    if section_titles:
+        # Set attribute even if column was added later - SQLAlchemy
+        # will write it on flush. We set it before commit.
+        try:
+            setattr(note, "section_titles", section_titles)
+        except Exception:  # pragma: no cover - column may not exist yet
+            pass
+
+    job = Job(
+        job_type="revision_notes",
+        reference_id=note.id,
+        status=JobStatus.PENDING.value,
+        total_items=1,
+        processed_items=0,
+    )
+    db.add(job)
+    db.commit()
+
+
+def process_revision_notes(db: Session, job: Job) -> None:
+    """Render a revision-notes PDF for one note row, persist + mark ready."""
+    note = db.get(BulkAIUploadRevisionNote, job.reference_id)
+    if not note:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Revision note not found"
+        db.commit()
+        return
+    from app.services.revision_notes import (
+        generate_revision_notes_for_child,
+    )
+
+    # Pull section_titles (set by callers when the deck has a known TOC)
+    # so the renderer can label topics with real sub-section names
+    # instead of the chunked-fallback "Section N" placeholders.
+    section_titles = getattr(note, "section_titles", None)
+
+    # Resolve AI credentials for DeepSeek-driven revision notes.
+    # We always use the "deepseek" provider (deepseek-v4-pro) for
+    # revision notes — it's explicitly configured for this task.
+    # The API key from any resolved credential works with the
+    # opencode endpoint that deepseek-v4-pro uses.
+    provider_name: str | None = None
+    credential = None
+    try:
+        from app.models import User
+        deck = db.get(Deck, note.deck_id) if note.deck_id else None
+        if deck and deck.user_id:
+            owner = db.get(User, deck.user_id)
+            if owner:
+                _resolved_name, credential = _resolve_ai_provider_and_credential(
+                    db, owner
+                )
+                # Force deepseek provider for revision notes
+                provider_name = "deepseek"
+    except Exception as exc:
+        logger.warning(
+            "process_revision_notes: credential resolution failed for note %s: %s",
+            note.id,
+            exc,
+        )
+
+    try:
+        updated = generate_revision_notes_for_child(
+            db,
+            child_file_id=note.child_file_id,
+            note=note,
+            credential_provider_name=provider_name,
+            credential=credential,
+            section_titles=section_titles,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "process_revision_notes: failed note=%s", note.id
+        )
+        job.status = JobStatus.FAILED.value
+        job.error_message = f"Render failed: {exc}"[:500]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    if updated.status == BulkRevisionNoteStatus.READY.value:
+        job.processed_items = 1
+        job.status = JobStatus.COMPLETED.value
+        job.completed_at = datetime.utcnow()
+    else:
+        job.status = JobStatus.FAILED.value
+        job.error_message = (updated.error_message or "render failed")[:500]
+        job.completed_at = datetime.utcnow()
+    db.commit()
+
+
+def process_concept_map_gen(db: Session, job: Job) -> None:
+    """Background job: generate/regenerate a concept map.
+
+    Hard-regenerate: always overwrites any existing map (never skips).
+    The job reference_id is the ConceptMap id (pre-created with
+    status=pending by the web endpoint).
+    """
+    from app.services.concept_map import generate_concept_map as _gen
+
+    concept_map_id = job.reference_id
+    if not concept_map_id:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Missing concept map reference"
+        db.commit()
+        return
+
+    concept_map = db.get(ConceptMap, concept_map_id)
+    if not concept_map:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Concept map not found"
+        db.commit()
+        return
+
+    # Find the latest completed source file for this deck
+    source_file = (
+        db.query(BulkAIUploadFile)
+        .filter(
+            BulkAIUploadFile.created_deck_id == concept_map.deck_id,
+            BulkAIUploadFile.status == BulkAIUploadFileStatus.COMPLETED.value,
+            BulkAIUploadFile.content_text.isnot(None),
+            BulkAIUploadFile.content_text != "",
+        )
+        .order_by(BulkAIUploadFile.completed_at.desc())
+        .first()
+    )
+
+    if not source_file:
+        concept_map.status = ConceptMapStatus.FAILED.value
+        concept_map.error_message = "No source text available"
+        job.status = JobStatus.FAILED.value
+        job.error_message = "No source text available for this deck"
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    # Resolve AI credentials for key-point selection (same pattern as
+    # process_concept_map_revision). Falls back to heuristic-only if
+    # credential resolution fails.
+    provider_name: str | None = None
+    credential = None
+    try:
+        owner = None
+        if concept_map.deck:
+            owner = db.get(User, concept_map.deck.user_id) if concept_map.deck.user_id else None
+        if owner:
+            provider_name, credential = _resolve_ai_provider_and_credential(db, owner)
+    except Exception:
+        logger.warning(
+            "concept_map: credential resolution failed for deck %s, using heuristic-only",
+            concept_map.deck_id,
+        )
+
+    try:
+        # _gen updates the existing row in-place (our UUID survives)
+        result = _gen(
+            db,
+            deck_id=concept_map.deck_id,
+            source_file_id=source_file.id,
+            title=source_file.extracted_title or "",
+            credential_provider_name=provider_name,
+            credential=credential,
+        )
+        # _gen already committed and set the status; refresh to confirm
+        db.refresh(result)
+        if result.status == ConceptMapStatus.READY.value:
+            job.processed_items = 1
+            job.status = JobStatus.COMPLETED.value
+        else:
+            job.status = JobStatus.FAILED.value
+            job.error_message = (result.error_message or "Generation failed")[:500]
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("concept_map: generation failed for deck %s", concept_map.deck_id)
+        concept_map.status = ConceptMapStatus.FAILED.value
+        concept_map.error_message = f"Generation failed: {exc}"
+        job.status = JobStatus.FAILED.value
+        job.error_message = str(exc)[:500]
+    job.completed_at = datetime.utcnow()
+    db.commit()
+
+
+def process_concept_map_revision(db: Session, job: Job) -> None:
+    """Background job: AI-select keypoints + render concept map revision PDF.
+
+    The job reference_id is the ConceptMap id.
+    """
+    from app.services.concept_map import generate_concept_map_revision_pdf
+    from app.services.job_worker import _resolve_ai_provider_and_credential
+
+    concept_map_id = job.reference_id
+    if not concept_map_id:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Missing concept map reference"
+        db.commit()
+        return
+
+    concept_map = db.get(ConceptMap, concept_map_id)
+    if not concept_map:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Concept map not found"
+        db.commit()
+        return
+
+    # Resolve AI credentials (use the deck owner)
+    owner = None
+    if concept_map.deck:
+        owner = db.get(User, concept_map.deck.user_id) if concept_map.deck.user_id else None
+    if not owner:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "No deck owner found for concept map"
+        db.commit()
+        return
+
+    try:
+        provider_name, credential = _resolve_ai_provider_and_credential(db, owner)
+    except Exception as exc:
+        job.status = JobStatus.FAILED.value
+        job.error_message = f"Failed to resolve AI credential: {exc}"[:500]
+        db.commit()
+        return
+
+    try:
+        generate_concept_map_revision_pdf(
+            db,
+            concept_map_id=concept_map_id,
+            credential_provider_name=credential.provider,
+            credential=credential,
+        )
+    except Exception as exc:
+        job.status = JobStatus.FAILED.value
+        job.error_message = f"Revision PDF generation failed: {exc}"[:500]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    # Refresh to check final status
+    db.refresh(concept_map)
+    if concept_map.revision_pdf_status == "ready":
+        job.processed_items = 1
+        job.status = JobStatus.COMPLETED.value
+    else:
+        job.status = JobStatus.FAILED.value
+        job.error_message = concept_map.error_message or "Unknown error"[:500]
+    job.completed_at = datetime.utcnow()
+    db.commit()
+
+
 if __name__ == "__main__":
+    # Module-level logger (avoid NameError when this file is imported but
+    # process_revision_notes is never called).
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 

@@ -115,6 +115,7 @@
                         <option value="openai" {% if user_ai_provider.get(member.id|string) == 'openai' %}selected{% endif %}>OpenAI</option>
                         <option value="minimax" {% if user_ai_provider.get(member.id|string) == 'minimax' %}selected{% endif %}>Minimax</option>
                         <option value="claude" {% if user_ai_provider.get(member.id|string) == 'claude' %}selected{% endif %}>Claude</option>
+                        <option value="opencode" {% if user_ai_provider.get(member.id|string) == 'opencode' %}selected{% endif %}>OpenCode</option>
                       </select>
                     </div>
                     <div>

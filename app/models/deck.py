@@ -83,3 +83,4 @@ class Deck(Base):
     ai_upload_generations = relationship("AIUploadGeneration", back_populates="deck", cascade="all, delete-orphan")
     bulk_ai_uploads = relationship("BulkAIUpload", back_populates="deck", cascade="all, delete-orphan")
     deck_accesses = relationship("DeckAccess", back_populates="deck", cascade="all, delete-orphan")
+    concept_maps = relationship("ConceptMap", back_populates="deck", cascade="all, delete-orphan")

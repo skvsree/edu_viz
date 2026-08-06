@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     ai_provider: str = "openai"
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
+    opencode_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
+    opencode_model: str = "deepseek-v4-flash"
+    # Revision notes: pure AI model
+    revision_notes_model: str = "deepseek-v4-pro"
+    revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
+    revision_notes_max_tokens: int = 16384
+    # Max source chars fed to the AI prompt. NCERT chapters extract to
+    # 50-70K chars; the old hardcoded 22000 silently dropped trailing
+    # sections of long chapters (e.g. 5.4-5.6). Raised default keeps the
+    # whole chapter visible; env var REVISION_NOTES_MAX_SOURCE_CHARS overrides.
+    revision_notes_max_source_chars: int = 60000
     ai_secrets_fernet_key: str | None = None
     bulk_import_api_key: str | None = None
 
