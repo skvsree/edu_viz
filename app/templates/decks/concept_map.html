@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block head %}
+{% block extra_head %}
 <meta name="deck-id" content="{{ deck.id }}" />
 <style>
 .concept-outline {
@@ -208,10 +208,14 @@
   <p>Topics and key points from <strong>{{ deck.name }}</strong> — tap to expand</p>
 
   {% if can_edit and concept_map and concept_map.graph_data %}
-    <div style="margin-bottom:1rem;">
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap;">
       <button type="button" id="gen-btn" class="button button-secondary button-small">
         🔄 Regenerate
       </button>
+      <button type="button" id="revision-pdf-btn" class="button button-small">
+        📄 Revision Notes (PDF)
+      </button>
+      <span id="revision-pdf-status" style="font-size:0.82rem;color:var(--muted-color,#6b7280);"></span>
     </div>
   {% endif %}
 
@@ -334,22 +338,131 @@
     catch(e) { console.error("Outline parse error", e); }
   }
 
-  // Generate/Regenerate button
-  const btn = document.getElementById("gen-btn");
-  if (btn) {
+  // Generate/Regenerate button — enqueues async job, polls for completion
+  const genBtn = document.getElementById("gen-btn");
+  if (genBtn) {
     const deckId = document.querySelector('meta[name="deck-id"]')?.content;
-    const originalText = btn.textContent.trim() || "Generate";
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      btn.innerHTML = `<span class="spinner" style="width:16px;height:16px;border-width:2px;"></span> Working...`;
+    const originalText = genBtn.textContent.trim() || "Generate";
+
+    function pollGenStatus() {
+      const interval = setInterval(() => {
+        fetch(`/decks/${deckId}/concept-map/status`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.status === "ready") {
+              clearInterval(interval);
+              window.location.reload();
+            } else if (data.status === "failed") {
+              clearInterval(interval);
+              genBtn.disabled = false;
+              genBtn.textContent = originalText;
+              alert("Failed to generate outline: " + (data.error || "unknown error"));
+            } else if (data.status === "none") {
+              clearInterval(interval);
+              genBtn.disabled = false;
+              genBtn.textContent = originalText;
+            }
+            // "pending" or "processing" → keep polling
+          }).catch(() => { /* retry on next interval */ });
+      }, 3000);
+    }
+
+    genBtn.addEventListener("click", async () => {
+      genBtn.disabled = true;
+      genBtn.textContent = "Queueing…";
       try {
         const r = await fetch(`/decks/${deckId}/concept-map/generate`, { method: "POST" });
-        if (r.ok) window.location.reload();
-        else alert("Failed to generate outline.");
-      } catch(e) { alert("Network error."); }
-      btn.disabled = false;
-      btn.innerHTML = originalText;
+        const data = await r.json();
+        if (data.status === "pending" || data.status === "processing") {
+          genBtn.textContent = "Generating…";
+          pollGenStatus();
+        } else if (r.ok) {
+          // Backward compat: if the endpoint returns "ok" directly
+          window.location.reload();
+        } else {
+          alert(data.message || "Failed to generate outline.");
+          genBtn.disabled = false;
+          genBtn.textContent = originalText;
+        }
+      } catch(e) {
+        alert("Network error.");
+        genBtn.disabled = false;
+        genBtn.textContent = originalText;
+      }
     });
+  }
+
+  // Revision PDF button — queue async job, poll status, show download
+  const pdfBtn = document.getElementById("revision-pdf-btn");
+  const pdfStatus = document.getElementById("revision-pdf-status");
+  if (pdfBtn) {
+    const deckId = document.querySelector('meta[name="deck-id"]')?.content;
+
+    // Check existing status on page load
+    fetch(`/decks/${deckId}/concept-map/revision-pdf-status`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === "ready") {
+          showDownloadLink();
+        } else if (data.status === "pending" || data.status === "processing") {
+          pdfStatus.textContent = "Generating…";
+          pdfBtn.disabled = true;
+          poll();
+        }
+      }).catch(() => {});
+
+    function showDownloadLink() {
+      pdfBtn.textContent = "📄 Download PDF";
+      pdfBtn.disabled = false;
+      pdfBtn.className = "button button-small";
+      pdfStatus.textContent = "";
+      pdfBtn.onclick = () => {
+        window.open(`/decks/${deckId}/concept-map/revision-notes.pdf`, "_blank");
+      };
+    }
+
+    function poll() {
+      const interval = setInterval(() => {
+        fetch(`/decks/${deckId}/concept-map/revision-pdf-status`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.status === "ready") {
+              clearInterval(interval);
+              showDownloadLink();
+            } else if (data.status === "failed") {
+              clearInterval(interval);
+              pdfStatus.textContent = "Failed: " + (data.error || "unknown");
+              pdfBtn.disabled = true;
+              pdfBtn.textContent = "📄 Retry";
+              pdfBtn.disabled = false;
+              pdfBtn.onclick = queueJob;
+            }
+          }).catch(() => {});
+      }, 3000);
+    }
+
+    function queueJob() {
+      pdfStatus.textContent = "Queueing…";
+      pdfBtn.disabled = true;
+      fetch(`/decks/${deckId}/concept-map/generate-revision-pdf`, { method: "POST" })
+        .then(r => r.json())
+        .then(data => {
+          if (data.status === "ready") {
+            showDownloadLink();
+          } else if (data.status === "pending" || data.status === "processing") {
+            pdfStatus.textContent = "Generating…";
+            poll();
+          } else {
+            pdfStatus.textContent = data.message || "Error";
+            pdfBtn.disabled = false;
+          }
+        }).catch(e => {
+          pdfStatus.textContent = "Network error";
+          pdfBtn.disabled = false;
+        });
+    }
+
+    pdfBtn.addEventListener("click", queueJob);
   }
 })();
 </script>

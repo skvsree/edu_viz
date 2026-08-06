@@ -458,7 +458,85 @@ def get_study_pack_provider(name: str) -> StudyPackProvider:
         return ClaudeStudyPackProvider()
     if name == "opencode":
         return OpencodeStudyPackProvider()
+    if name == "deepseek":
+        return DeepSeekRevisionProvider()
     raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
+
+
+class DeepSeekRevisionProvider:
+    """DeepSeek provider for revision-notes generation.
+
+    Uses DeepSeek v4 Pro (reasoning model) via an OpenAI-compatible
+    endpoint. Handles reasoning_content vs content split — extracts
+    only the final content, ignoring chain-of-thought.
+    """
+    name = "deepseek"
+
+    def __init__(self) -> None:
+        from app.core.config import settings
+        self.api_endpoint = settings.revision_notes_api_endpoint
+        self.model = settings.revision_notes_model
+        self.max_tokens = settings.revision_notes_max_tokens
+
+    def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        return self.generate_from_prompt(_build_prompt(text), credential)
+
+    def generate_from_prompt(self, prompt: str, credential: AICredential | None = None) -> GeneratedStudyPack:
+        raw = self.generate_text(prompt, credential)
+        return _parse_study_pack_json(raw)
+
+    def _call_api(self, model: str, prompt: str, api_key: str) -> str:
+        """Call the OpenAI-compatible endpoint with the given model."""
+        import requests
+        response = requests.post(
+            self.api_endpoint,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": self.max_tokens,
+                "temperature": 0.3,
+            },
+            timeout=300,
+        )
+        if response.status_code != 200:
+            body = response.text[:500]
+            raise AIGenerationError(
+                f"DeepSeek API error ({response.status_code}): {body}"
+            )
+
+        data = response.json()
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise AIGenerationError("DeepSeek API returned no choices.")
+
+        message = choices[0].get("message", {})
+        # DeepSeek v4 Pro is a reasoning model — it returns
+        # reasoning_content (chain-of-thought) separately from
+        # content (the actual answer). We only want content.
+        content = message.get("content", "")
+        if not content:
+            raise AIGenerationError("DeepSeek API returned empty response.")
+        return content
+
+    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
+        if not credential or not credential.secret:
+            raise AIGenerationError(
+                "DeepSeek credential (API key) is required. "
+                "Set AI_API_KEY in .env or configure a user/org credential."
+            )
+
+        api_key = credential.secret
+
+        # Try primary model. If it's unavailable (503), the
+        # higher-level code in generate_ai_topics() will catch
+        # the exception and fall back to the heuristic path.
+        return self._call_api(self.model, prompt, api_key)
 
 
 class OpencodeStudyPackProvider:

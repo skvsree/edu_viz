@@ -11,6 +11,7 @@
 - `feature/deck_segregation`: older branch used for role-based browse tabs, folder UX, and deck access work.
 - `phase-2`: completed — organization-aware access, settings, review/dashboard polish.
 - As of 2026-06-24, `main` is ahead of `feature/bulk-ai-upload`; HEAD on `main` is `faad437 Use deck IDs for bulk retry targets`. Other local branches exist unpushed — do not push or delete without confirmation.
+- `feature/concept-maps`: current active work branch — async concept-map generation job pipeline + AI revision notes PDF (see "Concept map + revision notes" below). Unpushed; do not push without confirmation.
 - Unless told otherwise, check the branch in `/opt/edu_viz` before starting and deploy from `main`.
 
 ## Stack / architecture
@@ -206,3 +207,26 @@ Task #55 — "Validate bulk upload schema refactor live" — must be evidenced b
 6. No synthetic / static / mock data used for the validation evidence.
 
 If any of the above fails, task #55 stays open and the failure becomes the next scoped work item.
+
+## Concept map + revision notes (async job pipeline)
+
+Work lives on `feature/concept-maps` (unpushed). Core idea: long-running AI work moved out of request handlers into the `Job` worker.
+
+- Concept map generation is a **background job**. `POST /decks/{id}/concept-map/generate` enqueues a `Job` (`job_type="concept_map"`, reference_id = ConceptMap id) and returns `{status:"pending"}` immediately. It is ALWAYS a hard regenerate: the ConceptMap row is reset/overwritten in place so the UUID stays stable for Job references.
+- Dedup: a pending/running `concept_map` job for the same deck blocks re-queuing (checked in the endpoint).
+- Polling: `GET /decks/{id}/concept-map/status` → `{status: none|pending|processing|ready|failed, node_count?, error?}`.
+- Worker handlers in `app/services/job_worker.py`: `process_concept_map_gen`, `process_concept_map_revision`. Both resolve the deck owner's AI credential via `_resolve_ai_provider_and_credential`; failure to resolve → heuristic-only path, never a hard error.
+- AI-as-selector: when a credential resolves, each heuristic topic is enriched with AI-picked verbatim key-point bullets (`select_topic_recall_bullets`); per-topic failure falls back to heuristic bullets.
+
+### Revision notes PDF
+- `POST /decks/{id}/concept-map/generate-revision-pdf` queues `job_type="concept_map_revision"`; refuses to double-queue, serves immediately if already ready.
+- Progress on `ConceptMap.revision_pdf_status` (none → pending → processing → ready/failed); PDF stored in SeaweedFS under `revision_pdf_storage_key`.
+- Download: `GET /decks/{id}/concept-map/revision-notes.pdf` (inline, filename from deck name).
+- AI path: DeepSeek v4 Pro (`revision_notes_model=deepseek-v4-pro`) synthesizes topics + bullets as strict JSON in ONE call (`build_revision_notes_prompt` / `parse_ai_revision_response` in `app/services/revision_notes.py`), then falls back to heuristic + verbatim selector when AI fails.
+- Source cap: `revision_notes_max_source_chars` default 60000 (env `REVISION_NOTES_MAX_SOURCE_CHARS`). The old hardcoded 22000 silently dropped trailing sections of long NCERT chapters — do not lower this casually.
+- `DeepSeekRevisionProvider` in `app/services/ai_generation.py`: OpenAI-compatible call to opencode.ai endpoint; strips `reasoning_content` (CoT) — only `content` is used. Registered as provider name `deepseek`.
+- NCERT text cleaning: `app/services/text_cleaner.py` — zero-config artifact stripper (repeated standalone header/footer lines by page frequency ≥30%, InDesign timestamps, lone page numbers/numeric figure rows, form-feed normalisation). Page-marker-agnostic: uses `\f` pages if present, else 40-line pseudo-pages.
+- Alembic `0030_concept_map_revision_pdf`: adds `revision_pdf_status` (indexed) + `revision_pdf_storage_key` to `concept_maps`.
+- Standalone CLI (offline mirror of the pipeline): `scripts/run_revision_notes.py <chapter.pdf> <out.pdf> [chapter_label] [deck_name] [source_title]`.
+- Frontend: `app/templates/decks/concept_map.html` — revision PDF request + status polling wired to the new endpoints.
+- New config keys (`.env`): `REVISION_NOTES_MODEL`, `REVISION_NOTES_API_ENDPOINT`, `REVISION_NOTES_MAX_TOKENS`, `REVISION_NOTES_MAX_SOURCE_CHARS` (see `app/core/config.py`).

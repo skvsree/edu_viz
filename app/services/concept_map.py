@@ -240,19 +240,22 @@ def _build_concept_map_data(
     title: str,
     max_topics: int = 12,
     chapter_label: str = "",
+    topics: list[RevisionTopic] | None = None,
 ) -> _GraphData | None:
     """Given extracted text, produce the concept map graph.
 
-    Returns None if the text is too short to extract anything useful.
+    When ``topics`` is provided (pre-built, optionally enriched with
+    AI-selected bullets), uses those directly — skipping the heuristic.
+    Otherwise runs the two-pass heuristic on ``source_text``.
+
+    Returns None if no topics are found.
     """
-    if not source_text or len(source_text.strip()) < 200:
-        return None
-
-    # Run the two-pass heuristic to get topics with chapter grouping
-    topics = heuristic_topics(source_text, max_topics=max_topics)
-
-    if not topics:
-        return None
+    if topics is None:
+        if not source_text or len(source_text.strip()) < 200:
+            return None
+        topics = heuristic_topics(source_text, max_topics=max_topics)
+        if not topics:
+            return None
 
     # Build the graph
     graph = _topics_to_graph(title or chapter_label or "Chapter", topics)
@@ -300,35 +303,53 @@ def generate_concept_map(
     source_file_id: uuid.UUID | None = None,
     source_text: str | None = None,
     title: str = "",
+    credential_provider_name: str | None = None,
+    credential: object | None = None,
 ) -> ConceptMap:
     """Generate a concept map for a deck.
+
+    Hard-regenerate: always overwrites any existing map. Updates in-place
+    so the ConceptMap UUID stays stable for Job references.
+
+    When ``credential`` is provided, runs AI-as-selector on each topic
+    to pick verbatim key-point bullets (same pipeline as revision notes).
+    Otherwise uses heuristic-only key-point extraction.
 
     Parameters:
         deck_id: The deck to attach the map to.
         source_file_id: Optional source file for provenance.
         source_text: Pre-extracted text. If None, reads from source file.
         title: Display title for the map (e.g. chapter name).
+        credential_provider_name: AI provider name for key-point selection.
+        credential: AI credential object for key-point selection.
 
     Returns the ConceptMap row (persisted).
     """
-    # Mark any existing concept map row as stale
+    # Upsert: reuse existing row so UUID is stable for Job references.
+    # Hard-regenerate: always overwrite, never skip.
     existing = (
         db.query(ConceptMap)
         .filter(ConceptMap.deck_id == deck_id)
         .first()
     )
     if existing:
-        existing.status = ConceptMapStatus.FAILED.value
-        existing.error_message = "Superseded by new generation"
-        db.flush()
-
-    concept_map = ConceptMap(
-        deck_id=deck_id,
-        source_file_id=source_file_id,
-        status=ConceptMapStatus.PROCESSING.value,
-        started_at=datetime.utcnow(),
-    )
-    db.add(concept_map)
+        concept_map = existing
+        concept_map.source_file_id = source_file_id
+        concept_map.status = ConceptMapStatus.PROCESSING.value
+        concept_map.error_message = None
+        concept_map.graph_data = None
+        concept_map.title = None
+        concept_map.node_count = None
+        concept_map.started_at = datetime.utcnow()
+        concept_map.completed_at = None
+    else:
+        concept_map = ConceptMap(
+            deck_id=deck_id,
+            source_file_id=source_file_id,
+            status=ConceptMapStatus.PROCESSING.value,
+            started_at=datetime.utcnow(),
+        )
+        db.add(concept_map)
     db.flush()
 
     # Resolve source text if not provided
@@ -344,7 +365,32 @@ def generate_concept_map(
         return concept_map
 
     try:
-        graph = _build_concept_map_data(source_text, title)
+        # Run the two-pass heuristic to get topics
+        topics = heuristic_topics(source_text, max_topics=12)
+
+        # AI-as-selector: enrich topics with verbatim key points
+        if credential is not None and hasattr(credential, "secret") and credential.secret:
+            from app.services.revision_notes import (
+                select_topic_recall_bullets,
+            )
+            for topic in topics:
+                if not topic.source_paragraphs:
+                    continue
+                try:
+                    bullets, used = select_topic_recall_bullets(
+                        db,
+                        topic_title=topic.title,
+                        source_paragraphs=topic.source_paragraphs,
+                        credential_provider_name=credential_provider_name or "openai",
+                        credential=credential,
+                    )
+                    if used:
+                        topic.ai_bullets = bullets
+                        topic.ai_used = True
+                except Exception:
+                    pass  # fall back to heuristic key points below
+
+        graph = _build_concept_map_data(source_text, title, topics=topics)
         if graph is None or not graph.get("nodes"):
             concept_map.status = ConceptMapStatus.FAILED.value
             concept_map.error_message = (

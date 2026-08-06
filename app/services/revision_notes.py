@@ -39,6 +39,7 @@ from app.models import (
 from app.services import revision_palette as P
 from app.services.ai_generation import get_study_pack_provider
 from app.services.storage import StorageError, get_storage, guess_content_type
+from app.services.text_cleaner import clean_ncert_text
 
 logger = logging.getLogger(__name__)
 
@@ -851,6 +852,213 @@ def _digest_paras_to_sections(paras: list[str]) -> list[tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
+# AI-driven revision notes (replaces heuristic + verbatim selector)
+# ---------------------------------------------------------------------------
+# DeepSeek v4 Pro reads the full source text, identifies key topics,
+# and generates clear revision bullet points in a single call.
+# No heuristic topic detection, no verbatim-only constraint —
+# the AI synthesizes student-friendly content grounded in the source.
+_MAX_SOURCE_CHARS_FOR_AI = 25000  # DeepSeek v4 Pro context is large
+_AI_DEFAULT_TOPIC_COUNT = 10       # Default if AI doesn't specify
+_AI_MAX_TOPICS = 12                # Hard cap
+_AI_MAX_BULLETS_PER_TOPIC = 6     # Per-topic bullet cap
+
+
+def build_revision_notes_prompt(source_text: str, chapter_label: str) -> str:
+    """Build the prompt for AI-driven revision notes generation.
+
+    The prompt instructs the model to:
+    1. Read the source text carefully
+    2. Identify 6-9 key topics/headings
+    3. For each topic, generate 3-5 clear revision bullet points
+    4. Return structured JSON
+    """
+    # Trim source if needed to leave room for instructions + response.
+    # Cap is configurable (REVISION_NOTES_MAX_SOURCE_CHARS) — the old
+    # hardcoded 22000 silently dropped trailing sections of long chapters.
+    from app.core.config import settings
+
+    max_source = min(len(source_text), settings.revision_notes_max_source_chars)
+    trimmed = source_text[:max_source]
+    if len(source_text) > max_source:
+        trimmed += "\n\n[Note: Source text was trimmed to fit context window.]"
+
+    return (
+        "You are creating revision notes for a student. Read the source text below "
+        f"carefully. The chapter is: {chapter_label}\n\n"
+        "TASK:\n"
+        "1. Identify 8-12 key topics/concepts from the text. Be thorough — cover all major "
+        "sections, sub-topics, definitions, examples, and important details.\n"
+        "2. For each topic, write 4-6 concise bullet points. Don't be sparse — "
+        "extract every significant fact worth remembering.\n"
+        "3. Each bullet should be 1-2 sentences — specific, factual, and self-contained.\n"
+        "4. Prioritize: key definitions, important facts, cause-effect relationships, "
+        "comparisons, dates/figures, proper nouns, terminology, and exam-relevant details.\n"
+        "5. If the source names specific people, places, dates, or numbers, include them.\n\n"
+        "GUIDELINES:\n"
+        "- Synthesize the content in your own words — do NOT just copy-paste sentences.\n"
+        "- Make bullet points clear and student-friendly.\n"
+        "- Stay faithful to the source — do not invent facts not present in the text.\n"
+        "- Preserve important names, dates, numbers, and terminology exactly as in source.\n"
+        "- If the text has Sanskrit or regional terms, keep them as-is.\n"
+        "- Order topics logically (not necessarily in the order they appear).\n\n"
+        "OUTPUT FORMAT — Return STRICT JSON only, no markdown, no commentary:\n"
+        "{\n"
+        '  "topics": [\n'
+        '    {\n'
+        '      "title": "Clear topic heading",\n'
+        '      "bullets": [\n'
+        '        "First concise revision bullet point.",\n'
+        '        "Second concise revision bullet point.",\n'
+        '        "Third concise revision bullet point."\n'
+        "      ]\n"
+        "    }\n"
+        "  ],\n"
+        '  "final_sentence": "A one-line summary of what this chapter covers."\n'
+        "}\n\n"
+        "SOURCE TEXT:\n"
+        f"{trimmed}"
+    )
+
+
+def parse_ai_revision_response(raw: str) -> dict:
+    """Parse the AI's JSON response into structured data.
+
+    Returns a dict with 'topics' (list of {title, bullets}) and
+    'final_sentence' (str). Returns empty dict on failure.
+    """
+    import json
+
+    text = (raw or "").strip()
+    if not text:
+        return {}
+
+    # Strip code fences
+    if text.startswith("```"):
+        text = text.strip("`")
+        if "\n" in text:
+            text = text.split("\n", 1)[1]
+        text = text.strip()
+
+    # Try direct parse first
+    try:
+        data = json.loads(text)
+    except Exception:
+        # Salvage: find the first { ... } block
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                data = json.loads(text[start : end + 1])
+            except Exception:
+                return {}
+        else:
+            return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    # Validate and clean topics
+    raw_topics = data.get("topics", [])
+    if not isinstance(raw_topics, list):
+        return {}
+
+    topics = []
+    for t in raw_topics:
+        if not isinstance(t, dict):
+            continue
+        title = str(t.get("title", "")).strip()
+        bullets = t.get("bullets", [])
+        if not isinstance(bullets, list):
+            continue
+        clean_bullets = [str(b).strip() for b in bullets if b and str(b).strip()]
+        if title and clean_bullets:
+            topics.append({"title": title, "bullets": clean_bullets})
+
+    if not topics:
+        return {}
+
+    final_sentence = str(data.get("final_sentence", "")).strip()
+
+    return {"topics": topics, "final_sentence": final_sentence}
+
+
+def generate_ai_topics(
+    db: Session,
+    *,
+    source_text: str,
+    chapter_label: str,
+    credential_provider_name: str,
+    credential,
+) -> tuple[list[RevisionTopic], str, bool]:
+    """Call DeepSeek to generate revision topics and bullets from source text.
+
+    Returns (topics, final_sentence, used_ai).
+    used_ai=False means the AI failed and caller should fall back to heuristic.
+    """
+    from app.services.ai_generation import get_study_pack_provider
+
+    if not source_text or len(source_text.strip()) < 200:
+        return [], "", False
+
+    try:
+        provider = get_study_pack_provider(credential_provider_name)
+        prompt = build_revision_notes_prompt(source_text, chapter_label)
+        raw = provider.generate_text(prompt, credential)
+    except Exception as exc:
+        logger.warning(
+            "revision_notes: AI generation failed for chapter %r: %s",
+            chapter_label,
+            exc,
+        )
+        return [], "", False
+
+    parsed = parse_ai_revision_response(raw)
+    if not parsed or not parsed.get("topics"):
+        logger.warning(
+            "revision_notes: AI returned no parseable topics for chapter %r",
+            chapter_label,
+        )
+        return [], "", False
+
+    topics: list[RevisionTopic] = []
+    for item in parsed["topics"]:
+        title = item["title"]
+        bullets = item["bullets"][:_AI_MAX_BULLETS_PER_TOPIC]  # Cap at 6 bullets
+        if not bullets:
+            continue
+        topics.append(
+            RevisionTopic(
+                title=title,
+                subtitle=None,
+                sections=[],
+                source_paragraphs=[],
+                ai_bullets=bullets,
+                ai_used=True,
+                chapter=None,
+            )
+        )
+
+    # Cap total topics
+    topics = topics[:_AI_MAX_TOPICS]
+    if len(topics) < 3:
+        logger.warning(
+            "revision_notes: AI returned only %d topics — insufficient, falling back",
+            len(topics),
+        )
+        return [], "", False
+
+    final_sentence = parsed.get("final_sentence", "")
+    logger.info(
+        "revision_notes: AI generated %d topics (%d bullets total) for chapter %r",
+        len(topics),
+        sum(len(t.ai_bullets or []) for t in topics),
+        chapter_label,
+    )
+    return topics, final_sentence, True
+
+
+# ---------------------------------------------------------------------------
 # Document builder
 # ---------------------------------------------------------------------------
 def _build_revision_doc(
@@ -978,9 +1186,8 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
 
     # ---------- Per-topic rendering ----------
     # Each topic renders either:
-    #   * AI-selected verbatim bullets (if select_topic_recall_bullets
-    #     succeeded) - rendered with a left quote-mark to flag them as
-    #     direct source quotes, OR
+    #   * AI-generated revision bullets (from deepseek-v4-pro) -
+    #     rendered as clean bullet points, OR
     #   * Heuristic payload (first line as subtitle, rest as bullets) -
     #     rendered normally.
     # When topic.chapter changes between consecutive topics, render a
@@ -1006,18 +1213,18 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
         if getattr(topic, "ai_used", False) and topic.ai_bullets:
             topic_flows.append(
                 P.Paragraph(
-                    "<i>Key points — verbatim from your source:</i>",
+                    "<i>Key points — AI-generated from your source:</i>",
                     P.SMALL_MUTED,
                 )
             )
-            # Add each AI bullet as its own flowable so KeepTogether can
-            # move the whole block atomically. The previous version wrapped
-            # bullets-only in KeepTogether, which caused the banner to
-            # orphan at the bottom of one page with bullets on the next.
-            quote_style = P.ParagraphStyle(
-                "verbatim_quote",
+            # AI-generated bullets: clean bullet points, no quote marks.
+            # The old verbatim selector used curly quotes (&ldquo;...&rdquo;)
+            # to flag direct source quotes. AI-generated content uses
+            # standard bullet formatting instead.
+            bullet_style = P.ParagraphStyle(
+                "ai_bullet",
                 parent=P.BODY,
-                leftIndent=14,
+                leftIndent=12,
                 rightIndent=4,
                 fontSize=9.8,
                 leading=13.5,
@@ -1029,8 +1236,8 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
                     continue
                 topic_flows.append(
                     P.Paragraph(
-                        f'&ldquo;{P.sanitise_text(text)}&rdquo;',
-                        quote_style,
+                        f'&bull; {P.sanitise_text(text)}',
+                        bullet_style,
                     )
                 )
         else:
@@ -1089,15 +1296,12 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
         story.append(KeepTogether(tail))
 
     # ---------- Build with footer ----------
-    # Decide the honesty footer text once per render based on whether
-    # ANY topic in the doc used AI selection. Mixed docs (some AI, some
-    # heuristic) still get the AI footer so the user knows AI touched it
-    # at all - the per-topic quote marks already flag which parts were
-    # AI-selected.
+    # AI-generated footer: clearly labels the content as AI-synthesized
+    # so the student knows to verify against the original source.
     if any_ai_used:
         footer_text = (
-            "Key points extracted verbatim from your source using AI "
-            "selection. No AI rewriting - verify against original if uncertain."
+            "AI-generated revision notes — synthesized from your source "
+            "text. Verify key facts against the original material."
         )
     else:
         footer_text = (
@@ -1288,17 +1492,14 @@ def generate_revision_notes_for_child(
 ) -> BulkAIUploadRevisionNote:
     """Render the revision-notes PDF for a child and persist it.
 
-    Optional ``credential_provider_name`` and ``credential`` enable the
-    AI-as-selector pass. When omitted, the function falls back to
-    heuristic-only bullets for every topic.
+    When ``credential_provider_name`` and ``credential`` are provided,
+    the AI-driven path is preferred: DeepSeek reads the full source
+    text, identifies key topics, and generates clear revision bullet
+    points in one call. Falls back to heuristic topic extraction +
+    verbatim AI selector when the AI path fails.
 
-    Optional ``section_titles`` (a list of human-readable sub-section
-    titles from the book's table of contents) overrides the chunked
-    "Section 1, Section 2..." fallback produced by ``heuristic_topics``
-    when it can't detect real headings in flowing prose. The list is
-    paired 1:1 with detected topics by index; titles for chunked
-    topics are replaced in order. Topics whose heuristic already
-    produced a real title (not "Section N") are left alone.
+    Optional ``section_titles`` overrides the chunked "Section N"
+    fallback titles (only used in heuristic fallback path).
     """
     from app.models import BulkAIUploadChildFile
 
@@ -1331,6 +1532,10 @@ def generate_revision_notes_for_child(
         return note
 
     source_text = _extracted_payload(attempt)
+    # Zero-config artifact stripping (running page headers, mastheads,
+    # InDesign metadata, page numbers, numeric figure rows). Detected by
+    # page frequency — no per-book regexes. See app/services/text_cleaner.py.
+    source_text = clean_ncert_text(source_text)
     if not source_text or len(source_text.strip()) < 200:
         note.status = BulkRevisionNoteStatus.FAILED.value
         note.error_message = (
@@ -1340,55 +1545,87 @@ def generate_revision_notes_for_child(
         db.commit()
         return note
 
-    # Heuristic topic extraction. Topic titles come from real headings.
-    raw_topics = heuristic_topics(source_text, max_topics=9)
+    chapter_label = (
+        attempt.extracted_title
+        or child.display_title
+        or child.original_filename.rsplit(".", 1)[0]
+    )[:80]
+
     topics: list[RevisionTopic] = []
-    for t in raw_topics:
-        if not t.sections:
-            continue
-        topics.append(t)
+    final_sentence = ""
+    ai_generated = False
 
-    # Replace chunked-fallback "Section N" titles with real section titles
-    # from the book's TOC (when supplied). Real detected titles are kept.
-    if section_titles:
-        title_cursor = 0
-        for t in topics:
-            if t.title.startswith("Section ") and title_cursor < len(section_titles):
-                t.title = section_titles[title_cursor]
-                title_cursor += 1
-
-    if not topics:
-        note.status = BulkRevisionNoteStatus.FAILED.value
-        note.error_message = "Could not extract topics from source text"
-        db.commit()
-        return note
-
-    # Attach full source paragraphs to each topic (used by AI selector).
-    topics = _attach_payloads(source_text, topics)
-
-    # AI-as-selector pass: per topic, ask the model to PICK 3-5 verbatim
-    # sentences from the source. Validator enforces they appear in source.
+    # ---- AI-driven path (preferred) ----
     if credential_provider_name and credential is not None:
-        for t in topics:
-            bullets, used = select_topic_recall_bullets(
-                db,
-                topic_title=t.title,
-                source_paragraphs=t.source_paragraphs,
-                credential_provider_name=credential_provider_name,
-                credential=credential,
-            )
-            if used and bullets:
-                t.ai_bullets = bullets
-                t.ai_used = True
-            else:
-                t.ai_bullets = []
-                t.ai_used = False
-        ai_topics_used = sum(1 for t in topics if t.ai_used)
         logger.info(
-            "revision_notes: AI selector used for %d/%d topics on child %s",
-            ai_topics_used,
-            len(topics),
+            "revision_notes: attempting AI generation for child %s (%d chars)",
             child_file_id,
+            len(source_text),
+        )
+        topics, final_sentence, ai_generated = generate_ai_topics(
+            db,
+            source_text=source_text,
+            chapter_label=chapter_label,
+            credential_provider_name=credential_provider_name,
+            credential=credential,
+        )
+
+    # ---- Heuristic fallback ----
+    if not ai_generated:
+        logger.info(
+            "revision_notes: using heuristic path for child %s",
+            child_file_id,
+        )
+        raw_topics = heuristic_topics(source_text, max_topics=9)
+        topics = []
+        for t in raw_topics:
+            if not t.sections:
+                continue
+            topics.append(t)
+
+        # Replace chunked-fallback "Section N" titles with real section titles
+        if section_titles:
+            title_cursor = 0
+            for t in topics:
+                if t.title.startswith("Section ") and title_cursor < len(section_titles):
+                    t.title = section_titles[title_cursor]
+                    title_cursor += 1
+
+        if not topics:
+            note.status = BulkRevisionNoteStatus.FAILED.value
+            note.error_message = "Could not extract topics from source text"
+            db.commit()
+            return note
+
+        # Attach full source paragraphs to each topic
+        topics = _attach_payloads(source_text, topics)
+
+        # Per-topic verbatim AI selector (legacy)
+        if credential_provider_name and credential is not None:
+            for t in topics:
+                bullets, used = select_topic_recall_bullets(
+                    db,
+                    topic_title=t.title,
+                    source_paragraphs=t.source_paragraphs,
+                    credential_provider_name=credential_provider_name,
+                    credential=credential,
+                )
+                if used and bullets:
+                    t.ai_bullets = bullets
+                    t.ai_used = True
+                else:
+                    t.ai_bullets = []
+                    t.ai_used = False
+            ai_topics_used = sum(1 for t in topics if t.ai_used)
+            logger.info(
+                "revision_notes: AI selector used for %d/%d topics on child %s",
+                ai_topics_used,
+                len(topics),
+                child_file_id,
+            )
+
+        final_sentence = (
+            f"Generated on {datetime.utcnow().strftime('%Y-%m-%d')} from your uploaded deck."
         )
 
     note.topic_count = len(topics)
@@ -1399,19 +1636,15 @@ def generate_revision_notes_for_child(
     elif deck.description:
         subtitle = deck.description[:240]
 
-    chapter_label = (
-        attempt.extracted_title
-        or child.display_title
-        or child.original_filename.rsplit(".", 1)[0]
-    )[:80]
-
     doc = _build_revision_doc(
         deck_name=deck.name or chapter_label,
         chapter_label=chapter_label,
         source_title=chapter_label,
         subtitle=subtitle,
         topics=topics,
-        final_sentence=f"Generated on {datetime.utcnow().strftime('%Y-%m-%d')} from your uploaded deck.",
+        final_sentence=final_sentence or (
+            f"Generated on {datetime.utcnow().strftime('%Y-%m-%d')} from your uploaded deck."
+        ),
     )
 
     try:

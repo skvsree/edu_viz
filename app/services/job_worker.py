@@ -33,6 +33,8 @@ from app.models import (
     BulkRevisionNoteStatus,
     Card,
     CardState,
+    ConceptMap,
+    ConceptMapStatus,
     Deck,
     Job,
     JobStatus,
@@ -1062,6 +1064,10 @@ def process_job(job_id: uuid.UUID) -> None:
             process_bulk_ai_upload(db, job)
         elif job.job_type == "revision_notes":
             process_revision_notes(db, job)
+        elif job.job_type == "concept_map":
+            process_concept_map_gen(db, job)
+        elif job.job_type == "concept_map_revision":
+            process_concept_map_revision(db, job)
         else:
             job.status = JobStatus.FAILED.value
             job.error_message = f"Unknown job type: {job.job_type}"
@@ -1282,11 +1288,38 @@ def process_revision_notes(db: Session, job: Job) -> None:
     # instead of the chunked-fallback "Section N" placeholders.
     section_titles = getattr(note, "section_titles", None)
 
+    # Resolve AI credentials for DeepSeek-driven revision notes.
+    # We always use the "deepseek" provider (deepseek-v4-pro) for
+    # revision notes — it's explicitly configured for this task.
+    # The API key from any resolved credential works with the
+    # opencode endpoint that deepseek-v4-pro uses.
+    provider_name: str | None = None
+    credential = None
+    try:
+        from app.models import User
+        deck = db.get(Deck, note.deck_id) if note.deck_id else None
+        if deck and deck.user_id:
+            owner = db.get(User, deck.user_id)
+            if owner:
+                _resolved_name, credential = _resolve_ai_provider_and_credential(
+                    db, owner
+                )
+                # Force deepseek provider for revision notes
+                provider_name = "deepseek"
+    except Exception as exc:
+        logger.warning(
+            "process_revision_notes: credential resolution failed for note %s: %s",
+            note.id,
+            exc,
+        )
+
     try:
         updated = generate_revision_notes_for_child(
             db,
             child_file_id=note.child_file_id,
             note=note,
+            credential_provider_name=provider_name,
+            credential=credential,
             section_titles=section_titles,
         )
     except Exception as exc:  # noqa: BLE001
@@ -1307,6 +1340,162 @@ def process_revision_notes(db: Session, job: Job) -> None:
         job.status = JobStatus.FAILED.value
         job.error_message = (updated.error_message or "render failed")[:500]
         job.completed_at = datetime.utcnow()
+    db.commit()
+
+
+def process_concept_map_gen(db: Session, job: Job) -> None:
+    """Background job: generate/regenerate a concept map.
+
+    Hard-regenerate: always overwrites any existing map (never skips).
+    The job reference_id is the ConceptMap id (pre-created with
+    status=pending by the web endpoint).
+    """
+    from app.services.concept_map import generate_concept_map as _gen
+
+    concept_map_id = job.reference_id
+    if not concept_map_id:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Missing concept map reference"
+        db.commit()
+        return
+
+    concept_map = db.get(ConceptMap, concept_map_id)
+    if not concept_map:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Concept map not found"
+        db.commit()
+        return
+
+    # Find the latest completed source file for this deck
+    source_file = (
+        db.query(BulkAIUploadFile)
+        .filter(
+            BulkAIUploadFile.created_deck_id == concept_map.deck_id,
+            BulkAIUploadFile.status == BulkAIUploadFileStatus.COMPLETED.value,
+            BulkAIUploadFile.content_text.isnot(None),
+            BulkAIUploadFile.content_text != "",
+        )
+        .order_by(BulkAIUploadFile.completed_at.desc())
+        .first()
+    )
+
+    if not source_file:
+        concept_map.status = ConceptMapStatus.FAILED.value
+        concept_map.error_message = "No source text available"
+        job.status = JobStatus.FAILED.value
+        job.error_message = "No source text available for this deck"
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    # Resolve AI credentials for key-point selection (same pattern as
+    # process_concept_map_revision). Falls back to heuristic-only if
+    # credential resolution fails.
+    provider_name: str | None = None
+    credential = None
+    try:
+        owner = None
+        if concept_map.deck:
+            owner = db.get(User, concept_map.deck.user_id) if concept_map.deck.user_id else None
+        if owner:
+            provider_name, credential = _resolve_ai_provider_and_credential(db, owner)
+    except Exception:
+        logger.warning(
+            "concept_map: credential resolution failed for deck %s, using heuristic-only",
+            concept_map.deck_id,
+        )
+
+    try:
+        # _gen updates the existing row in-place (our UUID survives)
+        result = _gen(
+            db,
+            deck_id=concept_map.deck_id,
+            source_file_id=source_file.id,
+            title=source_file.extracted_title or "",
+            credential_provider_name=provider_name,
+            credential=credential,
+        )
+        # _gen already committed and set the status; refresh to confirm
+        db.refresh(result)
+        if result.status == ConceptMapStatus.READY.value:
+            job.processed_items = 1
+            job.status = JobStatus.COMPLETED.value
+        else:
+            job.status = JobStatus.FAILED.value
+            job.error_message = (result.error_message or "Generation failed")[:500]
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("concept_map: generation failed for deck %s", concept_map.deck_id)
+        concept_map.status = ConceptMapStatus.FAILED.value
+        concept_map.error_message = f"Generation failed: {exc}"
+        job.status = JobStatus.FAILED.value
+        job.error_message = str(exc)[:500]
+    job.completed_at = datetime.utcnow()
+    db.commit()
+
+
+def process_concept_map_revision(db: Session, job: Job) -> None:
+    """Background job: AI-select keypoints + render concept map revision PDF.
+
+    The job reference_id is the ConceptMap id.
+    """
+    from app.services.concept_map import generate_concept_map_revision_pdf
+    from app.services.job_worker import _resolve_ai_provider_and_credential
+
+    concept_map_id = job.reference_id
+    if not concept_map_id:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Missing concept map reference"
+        db.commit()
+        return
+
+    concept_map = db.get(ConceptMap, concept_map_id)
+    if not concept_map:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "Concept map not found"
+        db.commit()
+        return
+
+    # Resolve AI credentials (use the deck owner)
+    owner = None
+    if concept_map.deck:
+        owner = db.get(User, concept_map.deck.user_id) if concept_map.deck.user_id else None
+    if not owner:
+        job.status = JobStatus.FAILED.value
+        job.error_message = "No deck owner found for concept map"
+        db.commit()
+        return
+
+    try:
+        provider_name, credential = _resolve_ai_provider_and_credential(db, owner)
+    except Exception as exc:
+        job.status = JobStatus.FAILED.value
+        job.error_message = f"Failed to resolve AI credential: {exc}"[:500]
+        db.commit()
+        return
+
+    try:
+        generate_concept_map_revision_pdf(
+            db,
+            concept_map_id=concept_map_id,
+            credential_provider_name=credential.provider,
+            credential=credential,
+        )
+    except Exception as exc:
+        job.status = JobStatus.FAILED.value
+        job.error_message = f"Revision PDF generation failed: {exc}"[:500]
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        return
+
+    # Refresh to check final status
+    db.refresh(concept_map)
+    if concept_map.revision_pdf_status == "ready":
+        job.processed_items = 1
+        job.status = JobStatus.COMPLETED.value
+    else:
+        job.status = JobStatus.FAILED.value
+        job.error_message = concept_map.error_message or "Unknown error"[:500]
+    job.completed_at = datetime.utcnow()
     db.commit()
 
 

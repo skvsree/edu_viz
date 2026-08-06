@@ -74,6 +74,14 @@ class ConceptMap(Base):
     node_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Revision notes PDF generated via async job pipeline
+    revision_pdf_status: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True
+    )  # None=not requested, pending, processing, ready, failed
+    revision_pdf_storage_key: Mapped[str | None] = mapped_column(
+        String(512), nullable=True
+    )
+
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
