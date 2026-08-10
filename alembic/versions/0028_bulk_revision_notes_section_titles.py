@@ -24,6 +24,19 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Alembic creates the version table with VARCHAR(32), but long revision
+    # IDs like "0028_bulk_revision_notes_section_titles" (39 chars) overflow
+    # it and the final version-stamp UPDATE dies with
+    # StringDataRightTruncation, rolling back the whole migration. Widen the
+    # column first so fresh DBs and DBs stuck below this revision (prod FO
+    # was failing on the 0027 -> 0028 stamp) can be stamped.
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(32),
+        type_=sa.String(255),
+        existing_nullable=False,
+    )
     op.add_column(
         "bulk_ai_upload_revision_notes",
         sa.Column("section_titles", JSONB, nullable=True),
