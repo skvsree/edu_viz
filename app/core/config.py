@@ -32,6 +32,15 @@ class Settings(BaseSettings):
     # one in two (empty-bodied 503s and 300s read timeouts). Serial by default so
     # bulk runs complete; raise it if the provider gets sturdier.
     ai_pass_concurrency: int = 1
+    # Bulk generation used to ask for 18 flashcards + 18 MCQs in one call. The
+    # provider answers those long completions with empty-bodied 503s, while a
+    # 6+6 ask of the same chunk returns 200 in under 10s, so each chunk is
+    # covered by ai_pass_rounds short passes per mode of ai_pass_items items.
+    # Coverage ceiling per chunk = modes x ai_pass_rounds x ai_pass_items.
+    ai_pass_items: int = 6
+    ai_pass_rounds: int = 3
+    # Completion budget sent to OpenCode Go. Long ones correlate with 503s.
+    opencode_max_tokens: int = 4096
     # Revision notes: pure AI model
     revision_notes_model: str = "deepseek-v4-pro"
     revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"

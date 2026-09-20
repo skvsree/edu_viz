@@ -45,6 +45,7 @@ from app.services.access import normalize_deck_name
 from app.services.ai_auth import get_env_ai_provider_name, get_scope_provider, resolve_ai_credential
 from app.services.ai_generation import (
     AIGenerationError,
+    GeneratedStudyPack,
     build_iterative_study_pack_prompt,
     build_title_generation_prompt,
     get_study_pack_provider,
@@ -539,6 +540,69 @@ def _clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
     db.execute(delete(Card).where(Card.id.in_(card_id_list)))
 
 
+def _generate_chunk_pack(
+    *,
+    provider,
+    credential,
+    chunk_text: str,
+    aggregate: GeneratedStudyPack,
+    modes: tuple[str, ...],
+    rounds: int,
+    pass_items: int,
+    log_prefix: str,
+    executor,
+    failure_log: dict | None = None,
+) -> tuple[GeneratedStudyPack, set[str], int]:
+    """Generate one chunk's cards as several short passes.
+
+    A single 18+18 pass asks for a very long completion, and the provider
+    answers those with empty-bodied 503s while a 6+6 ask of the same chunk
+    succeeds in under 10 seconds. Each round is fed the aggregate so far, so it
+    asks for material that is not covered yet; the per-chunk coverage ceiling
+    is unchanged (modes x rounds x pass_items).
+    """
+    covered = aggregate
+    failed_modes: set[str] = set()
+    failed_passes = 0
+    chunk_pack = merge_study_packs()
+    total_rounds = max(1, rounds)
+
+    for round_index in range(1, total_rounds + 1):
+        round_failure_log: dict = {}
+        round_pack, round_failures = _run_chunk_modes_parallel(
+            provider=provider,
+            credential=credential,
+            chunk_text=chunk_text,
+            aggregate=covered,
+            modes=modes,
+            max_flashcards=pass_items,
+            max_mcqs=pass_items,
+            log_prefix=f"{log_prefix} round={round_index}/{total_rounds}",
+            executor=executor,
+            failure_log=round_failure_log,
+        )
+        if failure_log is not None:
+            for mode, reason in round_failure_log.items():
+                failure_log.setdefault(f"{mode}@{round_index}", reason)
+        failed_modes |= round_failures
+        failed_passes += len(round_failures)
+
+        if not round_pack.flashcards and not round_pack.mcqs:
+            # A round with nothing new means the chunk is exhausted; asking
+            # again only burns provider calls.
+            print(
+                f"{log_prefix} round={round_index}/{total_rounds} empty, "
+                f"stopping early for this chunk",
+                flush=True,
+            )
+            break
+
+        covered = merge_study_packs(covered, round_pack)
+        chunk_pack = merge_study_packs(chunk_pack, round_pack)
+
+    return chunk_pack, failed_modes, failed_passes
+
+
 def _run_chunk_modes_parallel(
     *,
     provider,
@@ -895,6 +959,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"chunks={len(chunks)} provider={credential.provider}",
                 flush=True,
             )
+            from app.core.config import settings as _settings
+
+            pass_items = max(1, int(getattr(_settings, "ai_pass_items", 6) or 1))
+            pass_rounds = max(1, int(getattr(_settings, "ai_pass_rounds", 3) or 1))
+            print(
+                f"[job-worker] generation plan job={job.id} file={pdf_name} "
+                f"passes={len(modes) * pass_rounds} items_per_pass={pass_items}",
+                flush=True,
+            )
             failed_pass_total = 0
             failed_pass_reasons: dict[str, int] = {}
             for chunk_index, chunk in enumerate(chunks, start=1):
@@ -910,24 +983,26 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     flush=True,
                 )
                 chunk_failure_log: dict = {}
-                chunk_pack, failed_modes = _run_chunk_modes_parallel(
-                    provider=provider_client,
-                    credential=credential,
-                    chunk_text=chunk,
-                    aggregate=aggregate,
-                    modes=modes,
-                    max_flashcards=18,
-                    max_mcqs=18,
-                    log_prefix=(
-                        f"[job-worker] ai pass job={job.id} file={pdf_name} "
-                        f"chunk={chunk_index}/{len(chunks)}"
-                    ),
-                    executor=mode_executor,
-                    failure_log=chunk_failure_log,
+                chunk_pack, failed_modes, chunk_failed_passes = (
+                    _generate_chunk_pack(
+                        provider=provider_client,
+                        credential=credential,
+                        chunk_text=chunk,
+                        aggregate=aggregate,
+                        modes=modes,
+                        rounds=pass_rounds,
+                        pass_items=pass_items,
+                        log_prefix=(
+                            f"[job-worker] ai pass job={job.id} file={pdf_name} "
+                            f"chunk={chunk_index}/{len(chunks)}"
+                        ),
+                        executor=mode_executor,
+                        failure_log=chunk_failure_log,
+                    )
                 )
 
-                if failed_modes:
-                    failed_pass_total += len(failed_modes)
+                if chunk_failed_passes:
+                    failed_pass_total += chunk_failed_passes
                     for reason in chunk_failure_log.values():
                         failed_pass_reasons[reason] = (
                             failed_pass_reasons.get(reason, 0) + 1

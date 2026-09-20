@@ -569,6 +569,20 @@ class DeepSeekRevisionProvider:
         return self._call_api(self.model, prompt, api_key)
 
 
+def _opencode_max_tokens() -> int:
+    """Completion budget for OpenCode Go.
+
+    Requests asking for a long completion come back as empty-bodied 503s, so
+    this is configurable and deliberately smaller than the old 16384.
+    """
+    try:
+        from app.core.config import settings
+
+        return max(256, int(getattr(settings, "opencode_max_tokens", 4096) or 4096))
+    except Exception:  # noqa: BLE001 - never fail a request over config lookup
+        return 4096
+
+
 class OpencodeStudyPackProvider:
     """OpenCode provider via OpenAI-compatible HTTP API."""
     name = "opencode"
@@ -612,7 +626,7 @@ class OpencodeStudyPackProvider:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_tokens": 16384,
+                "max_tokens": _opencode_max_tokens(),
                 "temperature": 0.3,
             },
             timeout=180,

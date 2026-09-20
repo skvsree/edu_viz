@@ -16,6 +16,7 @@ scheduler invokes them concurrently and merges results.
 
 from __future__ import annotations
 
+import itertools
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -280,3 +281,94 @@ def test_pass_concurrency_cap_is_honoured(monkeypatch):
         peak = max(peak, running)
     assert peak <= 1, f"cap of 1 allowed {peak} concurrent passes"
     assert len(provider.call_log) == 3, "all three modes must still run"
+
+
+class _CountingProvider:
+    """Returns one fresh card pair per call so rounds accumulate."""
+
+    def __init__(self, empty: bool = False):
+        self.empty = empty
+        self.calls: list[str] = []
+        self._counter = itertools.count()
+        self._lock = threading.Lock()
+
+    def generate_from_prompt(self, prompt, credential=None):
+        mode = "core"
+        for candidate in ("core", "mechanisms", "traps"):
+            if "Current extraction mode: " in prompt and candidate in prompt.split(
+                "Current extraction mode: ", 1
+            )[1][:200]:
+                mode = candidate
+                break
+        with self._lock:
+            self.calls.append(mode)
+        if self.empty:
+            return GeneratedStudyPack(flashcards=[], mcqs=[])
+        index = next(self._counter)
+        return GeneratedStudyPack(
+            flashcards=[GeneratedFlashcard(front=f"fact {index}", back="back")],
+            mcqs=[
+                GeneratedMcq(
+                    question=f"question {index}",
+                    options=["A", "B", "C", "D"],
+                    answer_index=0,
+                    explanation="explanation",
+                )
+            ],
+        )
+
+
+def test_generate_chunk_pack_uses_short_rounds_and_keeps_coverage(monkeypatch):
+    """A chunk is covered by `rounds` short passes per mode, not one long pass.
+
+    Long completions are what the provider answers with empty-bodied 503s; the
+    per-chunk ceiling (modes x rounds x items) stays the same.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(job_worker, "_pass_semaphore", threading.BoundedSemaphore(3))
+    provider = _CountingProvider()
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        pack, failed_modes, failed_passes = job_worker._generate_chunk_pack(
+            provider=provider,
+            credential=SimpleNamespace(provider="opencode"),
+            chunk_text="Source text for this chunk. " * 50,
+            aggregate=GeneratedStudyPack(flashcards=[], mcqs=[]),
+            modes=("core", "mechanisms", "traps"),
+            rounds=3,
+            pass_items=6,
+            log_prefix="test",
+            executor=executor,
+            failure_log={},
+        )
+
+    assert len(provider.calls) == 9, f"expected 3 rounds x 3 modes, got {len(provider.calls)}"
+    assert len(pack.flashcards) == 9 and len(pack.mcqs) == 9
+    assert failed_modes == set()
+    assert failed_passes == 0
+
+
+def test_generate_chunk_pack_stops_early_when_a_round_adds_nothing(monkeypatch):
+    """An exhausted chunk must not burn further provider calls."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(job_worker, "_pass_semaphore", threading.BoundedSemaphore(3))
+    provider = _CountingProvider(empty=True)
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        pack, _failed_modes, _failed_passes = job_worker._generate_chunk_pack(
+            provider=provider,
+            credential=SimpleNamespace(provider="opencode"),
+            chunk_text="Source text for this chunk. " * 50,
+            aggregate=GeneratedStudyPack(flashcards=[], mcqs=[]),
+            modes=("core", "mechanisms", "traps"),
+            rounds=3,
+            pass_items=6,
+            log_prefix="test",
+            executor=executor,
+            failure_log={},
+        )
+
+    assert len(provider.calls) == 3, "only the first round should have run"
+    assert not pack.flashcards and not pack.mcqs
