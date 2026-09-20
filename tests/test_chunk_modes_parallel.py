@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from app.services import job_worker
 from app.services.ai_generation import (
+    AIGenerationError,
     GeneratedFlashcard,
     GeneratedMcq,
     GeneratedStudyPack,
@@ -372,3 +373,49 @@ def test_generate_chunk_pack_stops_early_when_a_round_adds_nothing(monkeypatch):
 
     assert len(provider.calls) == 3, "only the first round should have run"
     assert not pack.flashcards and not pack.mcqs
+
+
+class _AlwaysFailingProvider:
+    """Every pass fails with the empty-response error the logs actually show."""
+
+    def __init__(self):
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def generate_from_prompt(self, prompt, credential=None):
+        with self._lock:
+            self.calls += 1
+        raise AIGenerationError("OpenCode API returned empty response.")
+
+
+def test_generate_chunk_pack_keeps_going_when_a_whole_round_fails(monkeypatch):
+    """A round where every pass failed does not mean the chunk is exhausted.
+
+    The provider returns empty-bodied 200s intermittently, so the rounds must
+    still be attempted rather than abandoning the chunk's remaining coverage.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    monkeypatch.setattr(job_worker.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(job_worker, "_pass_semaphore", threading.BoundedSemaphore(3))
+    provider = _AlwaysFailingProvider()
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        pack, failed_modes, failed_passes = job_worker._generate_chunk_pack(
+            provider=provider,
+            credential=SimpleNamespace(provider="opencode"),
+            chunk_text="Source text for this chunk. " * 50,
+            aggregate=GeneratedStudyPack(flashcards=[], mcqs=[]),
+            modes=("core", "mechanisms", "traps"),
+            rounds=3,
+            pass_items=6,
+            log_prefix="test",
+            executor=executor,
+            failure_log={},
+        )
+
+    assert not pack.flashcards and not pack.mcqs
+    assert failed_modes == {"core", "mechanisms", "traps"}
+    # 3 rounds x 3 modes were all attempted (each with its own retries).
+    assert provider.calls >= 9, f"only {provider.calls} passes attempted"
+    assert failed_passes >= 9

@@ -63,7 +63,9 @@ MAX_WORKERS = int(os.environ.get("JOB_WORKER_THREADS", "1"))
 POLL_INTERVAL = int(os.environ.get("JOB_POLL_INTERVAL", "5"))
 JOB_LEASE_SECONDS = int(os.environ.get("JOB_LEASE_SECONDS", "60"))
 MAX_529_RETRIES = int(os.environ.get("JOB_MAX_529_RETRIES", "5"))
-MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
+# Empty-bodied 200s ("OpenCode API returned empty response") are flaky:
+# the same ask succeeded 6/6 in a direct probe, so they get more attempts.
+MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "5"))
 MAX_TRANSIENT_RETRIES = 4
 # A hung request costs its whole read timeout, so timeouts get fewer
 # attempts than an instantly-rejected 503 (a 20-minute pass blocks the run).
@@ -588,8 +590,16 @@ def _generate_chunk_pack(
         failed_passes += len(round_failures)
 
         if not round_pack.flashcards and not round_pack.mcqs:
-            # A round with nothing new means the chunk is exhausted; asking
-            # again only burns provider calls.
+            if len(round_failures) >= len(modes):
+                # Every pass failed this round (provider flakiness). That says
+                # nothing about the chunk being exhausted, so keep going.
+                print(
+                    f"{log_prefix} round={round_index}/{total_rounds} all passes "
+                    f"failed, continuing",
+                    flush=True,
+                )
+                continue
+            # Passes succeeded and returned nothing new: the chunk is exhausted.
             print(
                 f"{log_prefix} round={round_index}/{total_rounds} empty, "
                 f"stopping early for this chunk",
