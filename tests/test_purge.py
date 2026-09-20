@@ -252,6 +252,69 @@ def test_purge_deck_skips_models_whose_table_is_missing(monkeypatch, fake_storag
     assert session.committed is True
 
 
+def test_model_foreign_keys_cascade_for_deck_owned_tables():
+    """The database must clean up a deck's children on its own (migration 0031).
+
+    purge_deck deletes explicitly for accurate counts, but the schema is the
+    safety net: removing a deck row must not leave orphans behind in cards,
+    tests, attempts, reviews or MCQ rows.
+    """
+    from app.models import (
+        Card,
+        CardState,
+        DeckMcqGenerationItem,
+        MCQGeneration,
+        Review,
+        Test,
+        TestAttempt,
+        TestAttemptAnswer,
+        TestQuestion,
+        deck_tags,
+    )
+
+    scoped_columns = [
+        Card.__table__.c.deck_id,
+        CardState.__table__.c.card_id,
+        Review.__table__.c.card_id,
+        Test.__table__.c.deck_id,
+        TestAttempt.__table__.c.test_id,
+        TestAttemptAnswer.__table__.c.attempt_id,
+        TestAttemptAnswer.__table__.c.question_id,
+        TestQuestion.__table__.c.test_id,
+        TestQuestion.__table__.c.card_id,
+        MCQGeneration.__table__.c.deck_id,
+        DeckMcqGenerationItem.__table__.c.deck_id,
+    ]
+    for column in scoped_columns:
+        rules = {fk.ondelete for fk in column.foreign_keys}
+        assert rules == {"CASCADE"}, f"{column.table.name}.{column.name} -> {rules}"
+
+    for fk in deck_tags.foreign_keys:
+        assert fk.ondelete == "CASCADE", f"deck_tags.{fk.parent.name} -> {fk.ondelete}"
+
+
+def test_migration_cascade_list_covers_every_scoped_table():
+    """Migration 0031 must keep rewriting the rule for every scoped FK."""
+    from pathlib import Path
+
+    migration = Path("alembic/versions/0031_mcq_fk_cascade.py").read_text()
+    for table, column, parent in (
+        ("cards", "deck_id", "decks"),
+        ("tests", "deck_id", "decks"),
+        ("test_questions", "test_id", "tests"),
+        ("test_questions", "card_id", "cards"),
+        ("test_attempts", "test_id", "tests"),
+        ("test_attempt_answers", "attempt_id", "test_attempts"),
+        ("test_attempt_answers", "question_id", "test_questions"),
+        ("reviews", "card_id", "cards"),
+        ("card_states", "card_id", "cards"),
+        ("deck_tags", "deck_id", "decks"),
+        ("deck_tags", "tag_id", "tags"),
+        ("mcq_generations", "deck_id", "decks"),
+    ):
+        assert f"('{table}', '{column}', '{parent}')" in migration
+
+
 def test_purge_deck_clears_media_and_revision_pdf_objects(fake_storage):
     deck = _deck()
     session = RecordingSession(revision_keys=["reports/deck/revision.pdf"])

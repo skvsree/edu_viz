@@ -13,13 +13,13 @@ class TestAttemptAnswer(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     attempt_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("test_attempts.id"),
+        ForeignKey("test_attempts.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )
     question_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("test_questions.id"),
+        ForeignKey("test_questions.id", ondelete="CASCADE"),
         index=True,
         nullable=False,
     )

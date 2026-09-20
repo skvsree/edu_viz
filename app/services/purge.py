@@ -4,13 +4,11 @@ Deleting a deck only flips ``is_deleted`` so it can still be recovered. Once
 an admin decides a record is never coming back, the helpers here remove it and
 everything that references it for good, plus the stored objects it owns.
 
-Ordering matters: several tables reference decks, cards, tests and attempts
-*without* ``ON DELETE CASCADE`` (cards, tests, test_questions, test_attempts,
-test_attempt_answers, reviews, card_states, deck_tags), so children are cleared
-before their parents and the parent row always goes last. Tables that do
-cascade (concept maps, deck accesses, favorites, MCQ/AI generations, bulk
-uploads) are still deleted explicitly so the returned counts are complete and
-the behaviour does not depend on the schema's cascade rules.
+Ordering matters: children are cleared before their parents and the parent row
+always goes last. Migration ``0031_mcq_fk_cascade`` made every deck-owned table
+cascade at the database level, but the deletes below are still issued
+explicitly: the returned counts are then complete and per-table, and a deck row
+removed by hand or by an older deployment cannot leave orphans behind.
 """
 
 from __future__ import annotations

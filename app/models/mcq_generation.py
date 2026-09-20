@@ -21,7 +21,12 @@ class MCQGeneration(Base):
     __tablename__ = "mcq_generations"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    deck_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("decks.id"), index=True, nullable=False)
+    deck_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("decks.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
 
     status: Mapped[str] = mapped_column(String(50), default=MCQGenerationStatus.NOT_STARTED.value, nullable=False)
     total_cards: Mapped[int | None] = mapped_column(Integer, nullable=True)
