@@ -420,3 +420,175 @@ def generate_concept_map(
 
     db.commit()
     return concept_map
+
+
+# ---------------------------------------------------------------------------
+# Revision notes PDF
+# ---------------------------------------------------------------------------
+
+REVISION_PDF_KEY_TEMPLATE = "concept_maps/{concept_map_id}/revision_notes.pdf"
+MIN_REVISION_SOURCE_CHARS = 200
+
+
+def revision_pdf_key(concept_map_id: uuid.UUID) -> str:
+    return REVISION_PDF_KEY_TEMPLATE.format(concept_map_id=concept_map_id)
+
+
+def _concept_map_source_text(
+    db: Session, concept_map: ConceptMap, *, max_chars: int
+) -> str:
+    """Source text for revision notes: the upload it came from, else its cards.
+
+    Concept maps generated from an uploaded chapter have a source file with the
+    extracted text. Maps generated for a hand-built deck have none, so the
+    deck's own cards are used instead — that is what makes an on-demand
+    download possible for every deck.
+    """
+    source_file_id = getattr(concept_map, "source_file_id", None)
+    if source_file_id:
+        file_row = db.get(BulkAIUploadFile, source_file_id)
+        if file_row is not None:
+            text = _extracted_payload(file_row)
+            if text and text.strip():
+                return text[:max_chars]
+
+    from app.models import Card
+
+    cards = (
+        db.query(Card)
+        .filter(Card.deck_id == concept_map.deck_id)
+        .order_by(Card.created_at)
+        .limit(600)
+        .all()
+    )
+    parts: list[str] = []
+    for card in cards:
+        front = (card.front or "").strip()
+        back = (card.back or "").strip()
+        joined = "\n".join(part for part in (front, back) if part)
+        if joined:
+            parts.append(joined)
+    return "\n\n".join(parts)[:max_chars]
+
+
+def generate_concept_map_revision_pdf(
+    db: Session,
+    *,
+    concept_map_id: uuid.UUID,
+    credential_provider_name: str | None = None,
+    credential: object | None = None,
+) -> ConceptMap:
+    """Build (or rebuild) the revision notes PDF for a deck's concept map.
+
+    Mirrors the bulk-upload pipeline in ``revision_notes.py``: AI-first topic
+    selection with a heuristic + verbatim-selector fallback, rendered through
+    the same low-ink palette and stored under
+    ``concept_maps/<concept_map id>/revision_notes.pdf``.
+
+    ``ConceptMap.revision_pdf_status`` ends as ``ready`` or ``failed``;
+    generation errors are recorded on the row and in ``error_message`` rather
+    than raised, so the caller can simply look at the status.
+    """
+    from app.core.config import settings
+    from app.services import revision_notes as RN
+
+    concept_map = db.get(ConceptMap, concept_map_id)
+    if concept_map is None:
+        raise ValueError(f"Concept map {concept_map_id} not found")
+
+    from app.models import Deck
+
+    deck = db.get(Deck, concept_map.deck_id) if concept_map.deck_id else None
+    deck_name = (getattr(deck, "name", None) or "").strip() or "Deck"
+
+    concept_map.revision_pdf_status = "processing"
+    concept_map.error_message = None
+    db.commit()
+
+    page_count = 0
+    used_ai = False
+    try:
+        from app.services.storage import get_storage, guess_content_type
+
+        source_text = _concept_map_source_text(
+            db,
+            concept_map,
+            max_chars=settings.revision_notes_max_source_chars,
+        )
+        if len(source_text.strip()) < MIN_REVISION_SOURCE_CHARS:
+            raise ValueError(
+                "Not enough content to build revision notes "
+                f"({len(source_text.strip())} characters)"
+            )
+
+        chapter_label = (concept_map.title or deck_name or "Revision Notes").strip()
+        topics: list[RevisionTopic] = []
+        final_sentence = ""
+
+        if credential is not None and getattr(credential, "secret", None):
+            try:
+                topics, final_sentence, used_ai = RN.generate_ai_topics(
+                    db,
+                    source_text=source_text,
+                    chapter_label=chapter_label,
+                    credential_provider_name=credential_provider_name or "openai",
+                    credential=credential,
+                    session_id=RN.opencode_session_id(f"rev-cm-{concept_map.id}"),
+                )
+            except Exception as exc:  # noqa: BLE001 - heuristic fallback below
+                logger.warning(
+                    "concept_map: AI topics failed for %s, using heuristic: %s",
+                    concept_map.id,
+                    exc,
+                )
+                topics = []
+
+        if not topics:
+            topics = [
+                topic
+                for topic in heuristic_topics(source_text, max_topics=9)
+                if topic.sections
+            ]
+            topics = RN._attach_payloads(source_text, topics)
+
+        if not topics:
+            raise ValueError("Could not extract topics from the source text")
+
+        doc = RN._build_revision_doc(
+            deck_name=deck_name,
+            chapter_label=chapter_label,
+            source_title=chapter_label,
+            subtitle=(
+                (getattr(deck, "description", None) or "")[:240] if deck else ""
+            ),
+            topics=topics,
+            final_sentence=final_sentence
+            or f"Generated on {datetime.utcnow().strftime('%Y-%m-%d')}.",
+        )
+        pdf_bytes, page_count = RN.render_revision_pdf(doc, deck_name)
+
+        key = revision_pdf_key(concept_map.id)
+        get_storage().save_bytes(
+            key=key,
+            data=pdf_bytes,
+            content_type=guess_content_type(".pdf") or "application/pdf",
+        )
+        concept_map.revision_pdf_storage_key = key
+        concept_map.revision_pdf_status = "ready"
+        concept_map.completed_at = datetime.utcnow()
+        logger.info(
+            "concept_map: revision PDF ready deck=%s pages=%d bytes=%d ai=%s",
+            concept_map.deck_id,
+            page_count,
+            len(pdf_bytes),
+            used_ai,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "concept_map: revision PDF failed for map %s", concept_map_id
+        )
+        concept_map.revision_pdf_status = "failed"
+        concept_map.error_message = f"Revision notes generation failed: {exc}"[:500]
+
+    db.commit()
+    return concept_map

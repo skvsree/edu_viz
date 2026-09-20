@@ -52,10 +52,10 @@
           {% if test_count %}<span class="overview-nav__count">{{ test_count }}</span>{% endif %}
         </a>
         {% endif %}
-        {% if has_concept_map %}
-        <a href="/decks/{{ deck.id }}/concept-map" class="overview-nav__item">
-          <span class="overview-nav__icon" aria-hidden="true">🗺️</span>
-          <span class="overview-nav__text">Concept Map</span>
+        {% if flashcard_count or mcq_count or has_concept_map %}
+        <a href="/decks/{{ deck.id }}/revision-notes.pdf" class="overview-nav__item">
+          <span class="overview-nav__icon" aria-hidden="true">📝</span>
+          <span class="overview-nav__text">Revision Notes</span>
         </a>
         {% endif %}
       </div>

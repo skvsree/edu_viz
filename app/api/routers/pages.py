@@ -3288,6 +3288,148 @@ def deck_concept_map_revision_pdf_status(
     }
 
 
+def _deck_ai_credential(db: Session, user: User):
+    """Resolve the credential to use for an on-demand generation.
+
+    Mirrors ``job_worker._resolve_ai_provider_and_credential``: user scope, then
+    the user's organization (when AI is enabled there), then the environment
+    key. Returns ``(provider_name, credential)``; the credential may be None
+    when nothing is configured, in which case generation falls back to the
+    heuristic path.
+    """
+    from app.services.ai_auth import (
+        get_env_ai_provider_name,
+        get_scope_provider,
+        resolve_ai_credential,
+    )
+
+    provider = get_scope_provider(db, "user", user.id) if user.id else None
+    if not provider and getattr(user, "organization_id", None):
+        org = db.get(Organization, user.organization_id)
+        if org and getattr(org, "is_ai_enabled", False):
+            provider = get_scope_provider(db, "organization", org.id)
+    if not provider:
+        provider = get_env_ai_provider_name() or "openai"
+    try:
+        resolution = resolve_ai_credential(db, user, provider)
+    except Exception as exc:  # noqa: BLE001 - heuristic fallback is fine
+        logger.warning("revision notes: credential resolution failed: %s", exc)
+        return provider, None
+    return provider, resolution.credential
+
+
+def _deck_concept_map(db: Session, deck: Deck, *, create: bool = False):
+    """The deck's ConceptMap row, optionally created so a PDF has somewhere to live."""
+    concept_map = (
+        db.query(ConceptMap).filter(ConceptMap.deck_id == deck.id).first()
+    )
+    if concept_map is None and create:
+        concept_map = ConceptMap(
+            deck_id=deck.id,
+            status=ConceptMapStatus.PENDING.value,
+        )
+        db.add(concept_map)
+        db.commit()
+        db.refresh(concept_map)
+    return concept_map
+
+
+def ensure_deck_revision_pdf(
+    db: Session, *, deck: Deck, user: User
+) -> ConceptMap:
+    """Return the deck's revision notes PDF, generating it if needed.
+
+    This is what backs the one-click download: a ready PDF is reused, anything
+    else is generated inline (AI topics when a credential resolves, heuristic
+    fallback otherwise) and stored before the file is streamed back.
+    """
+    from app.services.concept_map import generate_concept_map_revision_pdf
+
+    concept_map = _deck_concept_map(db, deck, create=True)
+    if (
+        concept_map.revision_pdf_status == "ready"
+        and concept_map.revision_pdf_storage_key
+    ):
+        return concept_map
+
+    provider_name, credential = _deck_ai_credential(db, user)
+    return generate_concept_map_revision_pdf(
+        db,
+        concept_map_id=concept_map.id,
+        credential_provider_name=provider_name,
+        credential=credential,
+    )
+
+
+def _revision_pdf_response(*, deck: Deck, concept_map: ConceptMap):
+    """Stream a generated revision notes PDF back to the browser."""
+    from fastapi.responses import Response
+    from app.services.storage import StorageError, get_storage
+
+    try:
+        pdf_bytes, content_type = get_storage().open_bytes(
+            key=concept_map.revision_pdf_storage_key
+        )
+    except (StorageError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="Revision notes file not found")
+
+    filename = f"{(deck.name or 'Deck').strip()} - Revision Notes.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type=content_type or "application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.get("/decks/{deck_id}/revision-notes.pdf")
+def deck_revision_notes_download(
+    request: Request,
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Download this deck's revision notes, generating them on first click.
+
+    No separate page: the deck overview button points straight here, and the
+    PDF is built and stored when it does not exist yet. A failure is reported
+    as an HTML page with the reason and a link back to the deck.
+    """
+    from fastapi.responses import HTMLResponse
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not can_access_deck(user, deck):
+        raise HTTPException(status_code=404)
+
+    concept_map = ensure_deck_revision_pdf(db, deck=deck, user=user)
+
+    if concept_map.revision_pdf_status != "ready" or not concept_map.revision_pdf_storage_key:
+        reason = concept_map.error_message or "Revision notes could not be generated."
+        return HTMLResponse(
+            status_code=502,
+            content=_revision_notes_error_page(deck, reason),
+        )
+
+    return _revision_pdf_response(deck=deck, concept_map=concept_map)
+
+
+def _revision_notes_error_page(deck: Deck, reason: str) -> str:
+    import html
+
+    deck_name = html.escape(deck.name or "this deck")
+    return (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        f"<title>Revision notes — {deck_name}</title></head>"
+        "<body style=\"font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem\">"
+        "<h1 style=\"font-size:1.25rem\">Revision notes could not be generated</h1>"
+        f"<p style=\"color:#555\">{html.escape(reason)}</p>"
+        f"<p><a href=\"/decks/{deck.id}\">Back to {deck_name}</a></p>"
+        "</body></html>"
+    )
+
+
 @router.get("/decks/{deck_id}/concept-map/revision-notes.pdf")
 def deck_concept_map_revision_notes(
     request: Request,
@@ -3295,34 +3437,26 @@ def deck_concept_map_revision_notes(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Download the generated revision notes PDF from storage."""
-    from fastapi.responses import Response
-    from app.services.storage import get_storage, StorageError
+    """Download the generated revision notes PDF from storage.
 
+    Kept for existing links and the concept map page; shares the one-click
+    behaviour with ``/decks/{id}/revision-notes.pdf`` (generate when missing).
+    """
     deck = db.get(Deck, deck_id)
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id, ConceptMap.revision_pdf_status == "ready")
-        .first()
-    )
-    if not concept_map or not concept_map.revision_pdf_storage_key:
-        raise HTTPException(status_code=404, detail="Revision PDF not ready")
+    concept_map = ensure_deck_revision_pdf(db, deck=deck, user=user)
+    if concept_map.revision_pdf_status != "ready" or not concept_map.revision_pdf_storage_key:
+        reason = concept_map.error_message or "Revision notes could not be generated."
+        from fastapi.responses import HTMLResponse
 
-    try:
-        storage = get_storage()
-        pdf_bytes, content_type = storage.open_bytes(key=concept_map.revision_pdf_storage_key)
-        return Response(
-            content=pdf_bytes,
-            media_type=content_type or "application/pdf",
-            headers={
-                "Content-Disposition": f'inline; filename="{deck.name} - Revision Notes.pdf"',
-            },
+        return HTMLResponse(
+            status_code=502,
+            content=_revision_notes_error_page(deck, reason),
         )
-    except (StorageError, FileNotFoundError):
-        raise HTTPException(status_code=404, detail="Revision PDF file not found in storage")
+
+    return _revision_pdf_response(deck=deck, concept_map=concept_map)
 
 
 @router.get("/api/v1/decks/{deck_id}/concept-map", response_class=HTMLResponse)
