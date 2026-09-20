@@ -848,6 +848,82 @@ def _jobs_response(
     )
 
 
+@router.post("/settings/decks/purge-selected")
+def purge_selected_decks(
+    deck_ids: list[str] | None = Form(default=None),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently remove several deleted decks in one action.
+
+    Reports how many were removed, and lists the ones that were skipped (no
+    longer deleted) or refused (a job or upload is still running) so a partial
+    failure is never silently swallowed.
+    """
+    _require_system_admin(user)
+
+    selected = [deck_id for deck_id in (deck_ids or []) if deck_id]
+    if not selected:
+        return RedirectResponse(
+            url="/settings/deleted-decks?error=No+decks+were+selected.",
+            status_code=303,
+        )
+
+    purged = 0
+    records_removed = 0
+    objects_removed = 0
+    skipped: list[str] = []
+    refused: list[str] = []
+
+    for raw_id in selected:
+        try:
+            deck_uuid = UUID(raw_id)
+        except (ValueError, TypeError):
+            skipped.append("an unknown deck")
+            continue
+
+        deck = db.get(Deck, deck_uuid)
+        if deck is None:
+            skipped.append("a deck that no longer exists")
+            continue
+        if not getattr(deck, "is_deleted", False):
+            skipped.append(f"{deck.name or 'a deck'} (restored since the page loaded)")
+            continue
+
+        name = deck.name or "Untitled deck"
+        try:
+            counts = purge_deck(db, deck)
+        except PurgeError as exc:
+            refused.append(f"{name}: {exc}")
+            continue
+
+        purged += 1
+        objects_removed += counts.get("storage_objects", 0)
+        records_removed += sum(
+            value for key, value in counts.items() if key != "storage_objects"
+        )
+
+    query: list[tuple[str, str]] = []
+    skip_reasons = skipped + refused
+    if purged:
+        query.append(
+            (
+                "success",
+                f"{purged} deck(s) permanently deleted — {records_removed} records and "
+                f"{objects_removed} stored objects removed.",
+            )
+        )
+    else:
+        query.append(("error", "No decks were deleted."))
+    if skip_reasons:
+        label = "Skipped" if purged else "Details"
+        query.append((f"{'warning' if purged else 'error'}", f"{label} " + "; ".join(skip_reasons) + "."))
+
+    return RedirectResponse(
+        url="/settings/deleted-decks?" + urlencode(query), status_code=303
+    )
+
+
 def _deleted_decks_response(
     request: Request,
     *,
@@ -895,6 +971,7 @@ def _deleted_decks_response(
             ],
             "settings_error": request.query_params.get("error"),
             "settings_success": request.query_params.get("success"),
+            "settings_warning": request.query_params.get("warning"),
             "title": "Deleted decks | edu selviz",
         },
         status_code=status_code,

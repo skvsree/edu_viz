@@ -409,7 +409,7 @@ def test_deleted_decks_page_lists_deleted_decks(monkeypatch):
     assert response.status_code == 200
     assert "Biology" in body
     assert "owner@example.com" in body
-    assert ">3<" in body
+    assert "3 cards" in body  # card count shown in the row meta
     assert f'data-purge-deck="{deck.id}"' in body
     assert "Delete permanently" in body
     assert "purge-deck-modal" in body  # the confirmation popup
@@ -531,3 +531,131 @@ def test_jobs_page_hides_permanent_delete_while_an_upload_runs():
     # The card renders (cancel is available) but no permanent delete is offered.
     assert f"/api/v1/bulk-ai-upload/{bulk.id}/cancel" in body
     assert f"/api/v1/bulk-ai-upload/{bulk.id}/purge" not in body
+
+
+# --------------------------------------------------------------------------
+# multi-select bulk purge
+# --------------------------------------------------------------------------
+
+
+def _bulk_request(deck_ids):
+    request = make_request(path="/settings/deleted-decks")
+    request._deck_ids = deck_ids  # kept for readability of the call below
+    return request
+
+
+def test_bulk_purge_removes_every_selected_deck(monkeypatch):
+    first, second = _deck(), _deck()
+    purged = []
+
+    def fake_purge(db, deck):
+        purged.append(deck)
+        return {"decks": 1, "cards": 4, "storage_objects": 2}
+
+    monkeypatch.setattr(pages, "purge_deck", fake_purge)
+
+    response = pages.purge_selected_decks(
+        deck_ids=[str(first.id), str(second.id)],
+        user=_system_admin(),
+        db=FakeDB({str(first.id): first, first.id: first, str(second.id): second, second.id: second}),
+    )
+
+    location = unquote_plus(response.headers["location"])
+    assert response.status_code == 303
+    assert [deck for deck in purged] == [first, second]
+    assert "2 deck(s) permanently deleted" in location
+    assert "10 records" in location
+    assert "4 stored objects" in location
+
+
+def test_bulk_purge_skips_a_deck_that_was_restored(monkeypatch):
+    deleted = _deck()
+    restored = _deck(is_deleted=False)
+    purged = []
+
+    monkeypatch.setattr(
+        pages, "purge_deck", lambda db, deck: purged.append(deck) or {"decks": 1}
+    )
+
+    response = pages.purge_selected_decks(
+        deck_ids=[str(deleted.id), str(restored.id)],
+        user=_system_admin(),
+        db=FakeDB(
+            {
+                str(deleted.id): deleted,
+                deleted.id: deleted,
+                str(restored.id): restored,
+                restored.id: restored,
+            }
+        ),
+    )
+
+    location = unquote_plus(response.headers["location"])
+    assert purged == [deleted]
+    assert "restored since the page loaded" in location
+    assert "warning=" in location
+
+
+def test_bulk_purge_reports_a_refused_deck(monkeypatch):
+    deck = _deck()
+
+    def refusing_purge(db, target):
+        raise PurgeError("This deck still has a running job.")
+
+    monkeypatch.setattr(pages, "purge_deck", refusing_purge)
+
+    response = pages.purge_selected_decks(
+        deck_ids=[str(deck.id)],
+        user=_system_admin(),
+        db=FakeDB({str(deck.id): deck, deck.id: deck}),
+    )
+
+    location = unquote_plus(response.headers["location"])
+    assert "No decks were deleted" in location
+    assert "still has a running job" in location
+
+
+def test_bulk_purge_without_a_selection_reports_it(monkeypatch):
+    monkeypatch.setattr(
+        pages, "purge_deck", lambda db, deck: pytest.fail("nothing should be purged")
+    )
+
+    response = pages.purge_selected_decks(
+        deck_ids=[], user=_system_admin(), db=FakeDB()
+    )
+
+    location = unquote_plus(response.headers["location"])
+    assert response.status_code == 303
+    assert "No decks were selected" in location
+
+
+def test_deleted_decks_page_offers_multi_select(monkeypatch):
+    monitor, other = _deck(), _deck()
+    monkeypatch.setattr(pages, "deleted_decks", lambda db: [monitor, other])
+
+    class PageDB(FakeDB):
+        def execute(self, stmt):
+            text = str(stmt).lower()
+            if "from cards" in text:
+                return _Result([(monitor.id, 3), (other.id, 1)])
+            return _Result([])
+
+    response = pages._deleted_decks_response(
+        make_request(path="/settings/deleted-decks"),
+        user=_system_admin(),
+        db=PageDB(),
+    )
+    body = render_body(response)
+
+    assert 'action="/settings/decks/purge-selected"' in body
+    # One selectable checkbox per deck, named for the bulk form.
+    assert body.count('name="deck_ids"') == 2
+    assert f'value="{monitor.id}"' in body
+    assert f'value="{other.id}"' in body
+    assert body.count("data-purge-select") >= 2
+    assert 'id="purge-select-all"' in body
+    assert 'id="purge-selected-btn"' in body
+    # Responsive layout: the page must not use the jobs table classes, which
+    # are scoped to jobs.html's own stylesheet and left this page unstyled.
+    assert "jobs-files-table" not in body
+    assert "purge-item" in body

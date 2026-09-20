@@ -7,6 +7,9 @@
   {% if settings_success %}
     <section class="status-banner status-banner--success"><strong>Removed permanently.</strong> <span>{{ settings_success }}</span></section>
   {% endif %}
+  {% if settings_warning %}
+    <section class="status-banner status-banner--error"><strong>Skipped.</strong> <span>{{ settings_warning }}</span></section>
+  {% endif %}
 
   <section class="card">
     <div class="section-heading">
@@ -16,66 +19,79 @@
         <p class="muted section-copy">
           Decks below were deleted but can still be restored by their owner. Deleting one
           permanently removes the deck and everything it owns — cards, review history,
-          tests and attempts, favorites, access grants, concept maps, revision PDFs and
-          its bulk upload records. This cannot be undone.
+          tests and attempts, favorites, access grants, and its bulk upload records. This
+          cannot be undone.
         </p>
       </div>
       <a href="/settings" class="button button-secondary button-small">Back to settings</a>
     </div>
 
     {% if deleted_decks %}
-      <div class="jobs-files-table-wrap">
-        <table class="jobs-files-table">
-          <thead>
-            <tr>
-              <th>Deck</th>
-              <th>Owner</th>
-              <th>Deleted</th>
-              <th>Cards</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for entry in deleted_decks %}
-            <tr>
-              <td>
-                <strong>{{ entry.deck.name or "Untitled deck" }}</strong>
-                {% if entry.deck.description %}
-                  <div class="muted">{{ entry.deck.description[:120] }}</div>
-                {% endif %}
-              </td>
-              <td>{{ entry.owner_email or "—" }}</td>
-              <td>{{ entry.deck.deleted_at.strftime('%Y-%m-%d %H:%M') if entry.deck.deleted_at else '—' }}</td>
-              <td>{{ entry.card_count }}</td>
-              <td>
-                <button
-                  type="button"
-                  class="button button-danger button-small"
-                  data-purge-deck="{{ entry.deck.id }}"
-                  data-purge-name="{{ entry.deck.name or 'Untitled deck' }}"
-                  data-purge-cards="{{ entry.card_count }}"
-                >
-                  Delete permanently
-                </button>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      <form method="post" action="/settings/decks/purge-selected" id="purge-selected-form" class="purge-toolbar">
+        <label class="purge-toolbar__select-all">
+          <input type="checkbox" id="purge-select-all" />
+          <span>Select all</span>
+        </label>
+        <span class="purge-toolbar__count muted" id="purge-selection-count">No decks selected</span>
+        <div class="purge-toolbar__actions">
+          <button type="button" class="button button-danger button-small" id="purge-selected-btn" disabled>
+            Delete selected
+          </button>
+        </div>
+      </form>
+
+      <ul class="purge-list">
+        {% for entry in deleted_decks %}
+        <li class="purge-item">
+          <label class="purge-item__check">
+            <input
+              type="checkbox"
+              name="deck_ids"
+              value="{{ entry.deck.id }}"
+              data-purge-select
+              data-purge-name="{{ entry.deck.name or 'Untitled deck' }}"
+            />
+            <span class="purge-item__body">
+              <span class="purge-item__title">{{ entry.deck.name or "Untitled deck" }}</span>
+              {% if entry.deck.description %}
+                <span class="purge-item__description muted">{{ entry.deck.description[:140] }}</span>
+              {% endif %}
+              <span class="purge-item__meta muted">
+                <span>{{ entry.owner_email or "Unknown owner" }}</span>
+                <span aria-hidden="true">·</span>
+                <span>Deleted {{ entry.deck.deleted_at.strftime('%Y-%m-%d %H:%M') if entry.deck.deleted_at else '—' }}</span>
+                <span aria-hidden="true">·</span>
+                <span>{{ entry.card_count }} card{{ '' if entry.card_count == 1 else 's' }}</span>
+              </span>
+            </span>
+          </label>
+          <div class="purge-item__actions">
+            <button
+              type="button"
+              class="button button-danger button-small"
+              data-purge-deck="{{ entry.deck.id }}"
+              data-purge-name="{{ entry.deck.name or 'Untitled deck' }}"
+              data-purge-cards="{{ entry.card_count }}"
+            >
+              Delete permanently
+            </button>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
     {% else %}
       <p class="muted">No deleted decks right now.</p>
     {% endif %}
   </section>
 </section>
 
-{# Confirmation popup: one dialog reused for every row #}
+{# Confirmation popup: reused for a single deck and for a multi-selection #}
 <dialog id="purge-deck-modal" class="modal">
   <div class="modal__surface" role="document">
     <div class="section-heading">
       <div>
         <p class="panel-label">Permanent deletion</p>
-        <h2 class="section-subtitle">Delete “<span id="purge-deck-name">this deck</span>” permanently?</h2>
+        <h2 class="section-subtitle" id="purge-modal-title">Delete this deck permanently?</h2>
       </div>
       <button type="button" class="button button-secondary button-small" data-modal-close="purge-deck-modal">Close</button>
     </div>
@@ -86,24 +102,151 @@
     </p>
     <div class="deck-card__actions">
       <button type="button" class="button button-secondary" data-modal-close="purge-deck-modal">Cancel</button>
-      <form method="post" id="purge-deck-form" action="">
-        <button type="submit" class="button button-danger">Delete permanently</button>
-      </form>
+      <button type="button" class="button button-danger" id="purge-confirm-btn">Delete permanently</button>
     </div>
   </div>
 </dialog>
 
+<style>
+  .purge-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+  }
+
+  .purge-toolbar__select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .purge-toolbar__count {
+    font-size: 0.85rem;
+  }
+
+  .purge-toolbar__actions {
+    margin-left: auto;
+  }
+
+  .purge-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+
+  .purge-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface-strong, var(--surface));
+  }
+
+  .purge-item__check {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1 1 22rem;
+    min-width: 0;
+    cursor: pointer;
+  }
+
+  .purge-item__check input[type="checkbox"] {
+    margin-top: 3px;
+    flex: 0 0 auto;
+  }
+
+  .purge-item__body {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .purge-item__title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .purge-item__description,
+  .purge-item__meta {
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+  }
+
+  .purge-item__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .purge-item__actions {
+    display: flex;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+  }
+
+  @media (max-width: 640px) {
+    .purge-toolbar__actions {
+      margin-left: 0;
+      width: 100%;
+    }
+
+    .purge-toolbar__actions .button {
+      width: 100%;
+    }
+
+    .purge-item {
+      padding: 12px;
+    }
+
+    .purge-item__actions {
+      width: 100%;
+      justify-content: stretch;
+    }
+
+    .purge-item__actions .button {
+      width: 100%;
+    }
+
+    .purge-item__meta {
+      gap: 4px;
+    }
+  }
+</style>
+
 <script>
   (function () {
     var dialog = document.getElementById('purge-deck-modal');
-    var form = document.getElementById('purge-deck-form');
-    var nameTarget = document.getElementById('purge-deck-name');
+    var bulkForm = document.getElementById('purge-selected-form');
+    var confirmBtn = document.getElementById('purge-confirm-btn');
+    var titleTarget = document.getElementById('purge-modal-title');
     var detailTarget = document.getElementById('purge-deck-detail');
-    if (!dialog || !form) {
+    var selectAll = document.getElementById('purge-select-all');
+    var countTarget = document.getElementById('purge-selection-count');
+    var bulkButton = document.getElementById('purge-selected-btn');
+    var checkboxes = Array.prototype.slice.call(
+      document.querySelectorAll('[data-purge-select]')
+    );
+
+    if (!dialog || !confirmBtn) {
       return;
     }
 
     var supportsModalDialog = typeof dialog.showModal === 'function';
+    var pendingAction = null; // a function invoked when the user confirms
 
     function openModal() {
       if (supportsModalDialog) {
@@ -123,37 +266,124 @@
       dialog.classList.remove('modal--open');
     }
 
+    function selected() {
+      return checkboxes.filter(function (box) { return box.checked; });
+    }
+
+    function refreshSelectionUi() {
+      var picked = selected();
+      var total = checkboxes.length;
+      if (countTarget) {
+        countTarget.textContent = picked.length
+          ? picked.length + ' of ' + total + ' selected'
+          : 'No decks selected';
+      }
+      if (bulkButton) {
+        bulkButton.disabled = picked.length === 0;
+        bulkButton.textContent = picked.length
+          ? 'Delete selected (' + picked.length + ')'
+          : 'Delete selected';
+      }
+      if (selectAll) {
+        selectAll.checked = picked.length > 0 && picked.length === total;
+        selectAll.indeterminate = picked.length > 0 && picked.length < total;
+      }
+    }
+
+    function showConfirm(title, detail, action) {
+      pendingAction = action;
+      if (titleTarget) {
+        titleTarget.textContent = title;
+      }
+      if (detailTarget) {
+        detailTarget.textContent = detail;
+      }
+      openModal();
+    }
+
+    // ---- single deck ------------------------------------------------------
     document.querySelectorAll('[data-purge-deck]').forEach(function (trigger) {
       trigger.addEventListener('click', function () {
         var deckId = trigger.dataset.purgeDeck || '';
         var name = trigger.dataset.purgeName || 'this deck';
         var cards = trigger.dataset.purgeCards || '0';
-        form.setAttribute('action', '/settings/decks/' + deckId + '/purge');
-        if (nameTarget) {
-          nameTarget.textContent = name;
-        }
-        if (detailTarget) {
-          detailTarget.textContent = cards + ' card(s) of “' + name + '”';
-        }
-        openModal();
+        showConfirm(
+          'Delete “' + name + '” permanently?',
+          cards + ' card(s) of “' + name + '”',
+          function () {
+            var form = document.createElement('form');
+            form.method = 'post';
+            form.action = '/settings/decks/' + deckId + '/purge';
+            document.body.appendChild(form);
+            form.submit();
+          }
+        );
       });
     });
 
+    // ---- multi-selection --------------------------------------------------
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        checkboxes.forEach(function (box) { box.checked = selectAll.checked; });
+        refreshSelectionUi();
+      });
+    }
+
+    checkboxes.forEach(function (box) {
+      box.addEventListener('change', refreshSelectionUi);
+    });
+
+    if (bulkButton && bulkForm) {
+      bulkButton.addEventListener('click', function () {
+        var picked = selected();
+        if (!picked.length) {
+          return;
+        }
+        var names = picked.slice(0, 3).map(function (box) {
+          return '“' + (box.dataset.purgeName || 'deck') + '”';
+        });
+        var detail = picked.length > 3
+          ? names.join(', ') + ' and ' + (picked.length - 3) + ' more'
+          : names.join(', ');
+        showConfirm(
+          'Delete ' + picked.length + ' deck' + (picked.length === 1 ? '' : 's') + ' permanently?',
+          detail + ' — every card, test, attempt and stored file',
+          function () { bulkForm.submit(); }
+        );
+      });
+    }
+
+    confirmBtn.addEventListener('click', function () {
+      var action = pendingAction;
+      pendingAction = null;
+      closeModal();
+      if (action) {
+        action();
+      }
+    });
+
     document.querySelectorAll('[data-modal-close="purge-deck-modal"]').forEach(function (trigger) {
-      trigger.addEventListener('click', closeModal);
+      trigger.addEventListener('click', function () {
+        pendingAction = null;
+        closeModal();
+      });
     });
 
     dialog.addEventListener('click', function (event) {
       var surface = dialog.querySelector('.modal__surface');
       if (surface && !surface.contains(event.target)) {
+        pendingAction = null;
         closeModal();
       }
     });
 
     dialog.addEventListener('cancel', function (event) {
       event.preventDefault();
+      pendingAction = null;
       closeModal();
     });
+
+    refreshSelectionUi();
   })();
 </script>
 {% endblock %}
