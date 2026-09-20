@@ -276,6 +276,32 @@ def _ai_format_retry_delay(attempt: int) -> int:
     return min(30, 2 ** attempt)
 
 
+_pass_semaphore = None
+_pass_semaphore_lock = threading.Lock()
+
+
+def _get_pass_semaphore():
+    """Process-wide cap on AI passes in flight.
+
+    Three extraction modes per chunk times two job threads meant up to six long
+    generations at once, and the endpoint answered 503 / read-timeouts for all
+    of them while a single request of the same size succeeded in ~30s.
+    """
+    global _pass_semaphore
+    if _pass_semaphore is None:
+        with _pass_semaphore_lock:
+            if _pass_semaphore is None:
+                from app.core.config import settings
+
+                limit = max(1, int(getattr(settings, "ai_pass_concurrency", 2) or 1))
+                _pass_semaphore = threading.BoundedSemaphore(limit)
+                print(
+                    f"[job-worker] AI pass concurrency limit = {limit}",
+                    flush=True,
+                )
+    return _pass_semaphore
+
+
 def _is_retryable_transient_error(exc: Exception) -> bool:
     """True for provider hiccups that a retry usually clears.
 
@@ -341,7 +367,8 @@ def _generate_text_with_retry(
     while True:
         attempt += 1
         try:
-            return provider_client.generate_text(prompt, credential)
+            with _get_pass_semaphore():
+                return provider_client.generate_text(prompt, credential)
         except Exception as exc:
             if _is_retryable_transient_error(exc) and attempt < MAX_TRANSIENT_RETRIES:
                 sleep_seconds = _transient_retry_delay(attempt)
@@ -388,7 +415,8 @@ def _generate_pack_with_retry(
     while True:
         attempt += 1
         try:
-            return provider_client.generate_from_prompt(prompt, credential)
+            with _get_pass_semaphore():
+                return provider_client.generate_from_prompt(prompt, credential)
         except Exception as exc:
             if _is_retryable_transient_error(exc) and attempt < MAX_TRANSIENT_RETRIES:
                 sleep_seconds = _transient_retry_delay(attempt)

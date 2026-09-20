@@ -110,7 +110,7 @@ def _make_file_row():
     )
 
 
-def test_run_chunk_modes_parallel_invokes_three_modes_concurrently():
+def test_run_chunk_modes_parallel_invokes_three_modes_concurrently(monkeypatch):
     """The 3 modes within a chunk must be submitted to a thread pool
     simultaneously, not one after the other. Total wall time for 3 calls
     of 200ms each should be ~200ms (parallel) not ~600ms (serial).
@@ -132,6 +132,11 @@ def test_run_chunk_modes_parallel_invokes_three_modes_concurrently():
         "job_worker must expose _run_chunk_modes_parallel so the 3 modes "
         "in a chunk can be invoked concurrently. Refactor required."
     )
+
+    # AI passes go through a process-wide semaphore (the provider 503s when
+    # several long generations run together), so give this test enough room to
+    # prove the modes are submitted concurrently rather than one after another.
+    monkeypatch.setattr(job_worker, "_pass_semaphore", threading.BoundedSemaphore(3))
 
     aggregate = GeneratedStudyPack(flashcards=[], mcqs=[])
     chunk_text = "Source text for this chunk. " * 50  # ~1.2KB
@@ -234,3 +239,44 @@ def test_run_chunk_modes_parallel_handles_empty_aggregate():
     )
     assert failed_modes == set()
     assert len(chunk_pack.flashcards) == 3
+
+
+def test_pass_concurrency_cap_is_honoured(monkeypatch):
+    """The cap must actually limit how many generations overlap.
+
+    Six concurrent long generations drew 503s and read-timeouts from the
+    provider while a single one succeeded, so passes are throttled.
+    """
+    packs = {
+        "core": _make_pack("core_fact", "core_q?"),
+        "mechanisms": _make_pack("mech_fact", "mech_q?"),
+        "traps": _make_pack("trap_fact", "trap_q?"),
+    }
+    provider = _StubProvider(packs)
+    credential = SimpleNamespace(provider="minimax")
+    monkeypatch.setattr(job_worker, "_pass_semaphore", threading.BoundedSemaphore(1))
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        pack, failed_modes = job_worker._run_chunk_modes_parallel(
+            provider=provider,
+            credential=credential,
+            chunk_text="Source text for this chunk. " * 50,
+            aggregate=GeneratedStudyPack(flashcards=[], mcqs=[]),
+            modes=("core", "mechanisms", "traps"),
+            max_flashcards=5,
+            max_mcqs=5,
+            log_prefix="test",
+            executor=executor,
+        )
+
+    assert failed_modes == set()
+    events = [(entry[1], 1) for entry in provider.call_log]
+    events += [(entry[2], -1) for entry in provider.call_log]
+    running = peak = 0
+    for _, delta in sorted(events):
+        running += delta
+        peak = max(peak, running)
+    assert peak <= 1, f"cap of 1 allowed {peak} concurrent passes"
+    assert len(provider.call_log) == 3, "all three modes must still run"
