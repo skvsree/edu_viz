@@ -27,11 +27,11 @@ class Settings(BaseSettings):
     # (missing header -> 400 MissingSessionID). See
     # https://opencode.ai/docs/go/#where-can-i-use-it
     opencode_client_ua: str = "eduviz/1.0"
-    # How many AI generation passes may be in flight at once. The provider
-    # answers 503 / read-timeouts when several long generations run together
-    # (the bulk pipeline runs three extraction modes per chunk across two job
-    # threads), while a single pass of the same size succeeds.
-    ai_pass_concurrency: int = 2
+    # How many AI generation passes may be in flight at once. Measured against
+    # the provider: 1 pass in flight never failed, 3 lost one in three, 6 lost
+    # one in two (empty-bodied 503s and 300s read timeouts). Serial by default so
+    # bulk runs complete; raise it if the provider gets sturdier.
+    ai_pass_concurrency: int = 1
     # Revision notes: pure AI model
     revision_notes_model: str = "deepseek-v4-pro"
     revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
