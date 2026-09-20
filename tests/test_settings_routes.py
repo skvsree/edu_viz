@@ -117,15 +117,48 @@ def test_users_page_shows_org_assignment_for_system_admin():
 
 
 class JobsSettingsDB(FakeDB):
-    def __init__(self, execute_results=None):
+    """Fake session for the jobs page.
+
+    The route runs a fixed set of queries (jobs, bulk uploads, child files,
+    upload files, decks). Results are matched on the table named in the
+    emitted statement rather than consumed from a positional queue: the
+    queue silently fed rows to the wrong query as soon as the route gained
+    a new one (the child-file query shifted every later result, so the deck
+    lookup came back empty and the card rendered without its retry action).
+    """
+
+    _TABLES = (
+        ("bulk_ai_upload_child_files", "child_files"),
+        ("bulk_ai_upload_files", "files"),
+        ("bulk_ai_uploads", "bulks"),
+        ("jobs", "jobs"),
+        ("decks", "decks"),
+    )
+
+    def __init__(
+        self,
+        *,
+        jobs=None,
+        bulks=None,
+        child_files=None,
+        files=None,
+        decks=None,
+    ):
         super().__init__(objects={})
-        self.execute_results = list(execute_results or [])
+        self.rows = {
+            "jobs": list(jobs or []),
+            "bulks": list(bulks or []),
+            "child_files": list(child_files or []),
+            "files": list(files or []),
+            "decks": list(decks or []),
+        }
 
     def execute(self, stmt):
-        result = self.execute_results.pop(0) if self.execute_results else []
-        if isinstance(result, list) and result and isinstance(result[0], tuple):
-            return SimpleNamespace(all=lambda: list(result))
-        return FakeResult(result)
+        text = str(stmt).lower()
+        for table, key in self._TABLES:
+            if table in text:
+                return FakeResult(self.rows[key])
+        return FakeResult([])
 
 
 def test_jobs_page_shows_retry_for_failed_bulk_job():
@@ -157,9 +190,15 @@ def test_jobs_page_shows_retry_for_failed_bulk_job():
         deck_id=deck_id,
     )
     deck = SimpleNamespace(id=deck_id, name="Deck One")
-    db = JobsSettingsDB([[job], [bulk], [(bulk_id, deck)], [deck]])
+    db = JobsSettingsDB(jobs=[job], bulks=[bulk], decks=[deck])
 
-    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+    # A failed upload is a *history* entry; the page renders one tab at a
+    # time, so the card (and its retry action) only appears on that tab.
+    response = pages.jobs_page(
+        make_request(path="/settings/jobs", query_string=b"tab=history"),
+        user=admin,
+        db=db,
+    )
 
     body = render_body(response)
     assert response.status_code == 200
@@ -194,13 +233,16 @@ def test_jobs_page_hides_retry_for_running_bulk_job():
         status="processing",
         deck_id=None,
     )
-    db = JobsSettingsDB([[job], [bulk], [], []])
+    db = JobsSettingsDB(jobs=[job], bulks=[bulk])
 
     response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
 
     body = render_body(response)
     assert response.status_code == 200
     assert f"/api/v1/bulk-ai-upload/{bulk_id}/resume" not in body
+    # The running upload still renders (active tab) with its cancel action,
+    # so the missing retry link above is a real assertion, not an empty page.
+    assert f"/api/v1/bulk-ai-upload/{bulk_id}/cancel" in body
 
 
 def test_jobs_page_shows_bulk_error_message():
@@ -231,9 +273,13 @@ def test_jobs_page_shows_bulk_error_message():
         error_message="Queued upload file missing",
         deck_id=None,
     )
-    db = JobsSettingsDB([[job], [bulk], [], []])
+    db = JobsSettingsDB(jobs=[job], bulks=[bulk])
 
-    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+    response = pages.jobs_page(
+        make_request(path="/settings/jobs", query_string=b"tab=history"),
+        user=admin,
+        db=db,
+    )
 
     body = render_body(response)
     assert response.status_code == 200
@@ -268,13 +314,20 @@ def test_jobs_page_hides_retry_for_missing_storage_bulk():
         error_message="Queued upload file missing",
         deck_id=None,
     )
-    db = JobsSettingsDB([[job], [bulk], [], []])
+    db = JobsSettingsDB(jobs=[job], bulks=[bulk])
 
-    response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
+    response = pages.jobs_page(
+        make_request(path="/settings/jobs", query_string=b"tab=history"),
+        user=admin,
+        db=db,
+    )
 
     body = render_body(response)
     assert response.status_code == 200
     assert f'/api/v1/bulk-ai-upload/{bulk_id}/resume' not in body
+    # The card itself renders on the history tab, so the missing retry link
+    # is asserted against a real card rather than an empty page.
+    assert "Queued upload file missing" in body
 
 
 def test_jobs_page_active_tab_does_not_use_broken_sse_endpoint():
@@ -304,10 +357,9 @@ def test_jobs_page_active_tab_does_not_use_broken_sse_endpoint():
         completed_at=None,
         reference_id=uuid4(),
     )
-    # JobsSettingsDB consumes one list per execute() call. Pass one job
-    # (for the Job query) and empty lists for the subsequent bulk/deck
-    # queries so the page renders without blowing up.
-    db = JobsSettingsDB([[job], [], [], []])
+    # JobsSettingsDB answers each query from the table it names, so only the
+    # rows the test cares about need to be supplied here.
+    db = JobsSettingsDB(jobs=[job])
 
     response = pages.jobs_page(make_request(path="/settings/jobs"), user=admin, db=db)
 
