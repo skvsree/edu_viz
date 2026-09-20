@@ -230,3 +230,8 @@ Work lives on `feature/concept-maps` (unpushed). Core idea: long-running AI work
 - Standalone CLI (offline mirror of the pipeline): `scripts/run_revision_notes.py <chapter.pdf> <out.pdf> [chapter_label] [deck_name] [source_title]`.
 - Frontend: `app/templates/decks/concept_map.html` — revision PDF request + status polling wired to the new endpoints.
 - New config keys (`.env`): `REVISION_NOTES_MODEL`, `REVISION_NOTES_API_ENDPOINT`, `REVISION_NOTES_MAX_TOKENS`, `REVISION_NOTES_MAX_SOURCE_CHARS` (see `app/core/config.py`).
+
+### OpenCode Go request headers (do not remove)
+- The opencode.ai Go endpoint enforces the client contract from https://opencode.ai/docs/go/#where-can-i-use-it: a missing `x-opencode-session` returns **400 MissingSessionID** and a missing/generic `User-Agent` is rejected at the edge with **403 (Cloudflare error code 1010)**.
+- Both opencode call sites therefore build headers through `_opencode_headers()` in `app/services/ai_generation.py` (`OpencodeStudyPackProvider.generate_text` for study packs, `DeepSeekRevisionProvider._call_api` for revision notes).
+- Session ids come from `opencode_session_id(suffix)`: one id per conversation — `job-<job id>` for bulk AI uploads (pinned in `job_worker.process_bulk_ai_upload`) and `rev-<child_file_id>` for revision notes (pinned once per chapter in `generate_revision_notes_for_child` and shared across topic calls). Client UA is configurable via `OPENCODE_CLIENT_UA` (default `eduviz/1.0`).

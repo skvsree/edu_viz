@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     openai_generation_enabled: bool = True
     opencode_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
     opencode_model: str = "deepseek-v4-flash"
+    # OpenCode Go requires every client to identify itself with its own user
+    # agent (generic/absent UAs are blocked at the edge with Cloudflare 1010)
+    # and to send a stable ``x-opencode-session`` per conversation
+    # (missing header -> 400 MissingSessionID). See
+    # https://opencode.ai/docs/go/#where-can-i-use-it
+    opencode_client_ua: str = "eduviz/1.0"
     # Revision notes: pure AI model
     revision_notes_model: str = "deepseek-v4-pro"
     revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"

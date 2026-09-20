@@ -37,7 +37,7 @@ from app.models import (
     Deck,
 )
 from app.services import revision_palette as P
-from app.services.ai_generation import get_study_pack_provider
+from app.services.ai_generation import get_study_pack_provider, opencode_session_id
 from app.services.storage import StorageError, get_storage, guess_content_type
 from app.services.text_cleaner import clean_ncert_text
 
@@ -190,6 +190,7 @@ def select_topic_recall_bullets(
     source_paragraphs: list[str],
     credential_provider_name: str,
     credential,
+    session_id: str | None = None,
 ) -> tuple[list[str], bool]:
     """Call the AI to select verbatim bullets from the source for a topic.
 
@@ -209,7 +210,7 @@ def select_topic_recall_bullets(
         return [], False
 
     try:
-        provider = get_study_pack_provider(credential_provider_name)
+        provider = get_study_pack_provider(credential_provider_name, session_id=session_id)
         prompt = build_topic_recall_prompt(topic_title, source_paragraphs)
         raw = provider.generate_text(prompt, credential)
         candidates = _parse_recall_bullets_json(raw)
@@ -990,6 +991,7 @@ def generate_ai_topics(
     chapter_label: str,
     credential_provider_name: str,
     credential,
+    session_id: str | None = None,
 ) -> tuple[list[RevisionTopic], str, bool]:
     """Call DeepSeek to generate revision topics and bullets from source text.
 
@@ -1002,7 +1004,7 @@ def generate_ai_topics(
         return [], "", False
 
     try:
-        provider = get_study_pack_provider(credential_provider_name)
+        provider = get_study_pack_provider(credential_provider_name, session_id=session_id)
         prompt = build_revision_notes_prompt(source_text, chapter_label)
         raw = provider.generate_text(prompt, credential)
     except Exception as exc:
@@ -1557,6 +1559,7 @@ def generate_revision_notes_for_child(
 
     # ---- AI-driven path (preferred) ----
     if credential_provider_name and credential is not None:
+        session_id = opencode_session_id(f"rev-{child_file_id}")
         logger.info(
             "revision_notes: attempting AI generation for child %s (%d chars)",
             child_file_id,
@@ -1568,6 +1571,7 @@ def generate_revision_notes_for_child(
             chapter_label=chapter_label,
             credential_provider_name=credential_provider_name,
             credential=credential,
+            session_id=session_id,
         )
 
     # ---- Heuristic fallback ----
@@ -1602,6 +1606,7 @@ def generate_revision_notes_for_child(
 
         # Per-topic verbatim AI selector (legacy)
         if credential_provider_name and credential is not None:
+            session_id = opencode_session_id(f"rev-{child_file_id}")
             for t in topics:
                 bullets, used = select_topic_recall_bullets(
                     db,
@@ -1609,6 +1614,7 @@ def generate_revision_notes_for_child(
                     source_paragraphs=t.source_paragraphs,
                     credential_provider_name=credential_provider_name,
                     credential=credential,
+                    session_id=session_id,
                 )
                 if used and bullets:
                     t.ai_bullets = bullets

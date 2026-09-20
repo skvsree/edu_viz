@@ -50,6 +50,7 @@ from app.services.ai_generation import (
     get_study_pack_provider,
     merge_study_packs,
     normalize_generated_text,
+    opencode_session_id,
     parse_title_generation_json,
 )
 from app.services.storage import get_storage, StorageError
@@ -580,7 +581,10 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             folder_id = uuid.UUID(raw)
 
     provider_name, credential = _resolve_ai_provider_and_credential(db, owner)
-    provider_client = get_study_pack_provider(credential.provider)
+    provider_client = get_study_pack_provider(
+        credential.provider,
+        session_id=opencode_session_id(f"job-{job.id}"),
+    )
     bulk.provider = credential.provider or provider_name
     db.commit()
 
