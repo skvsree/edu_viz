@@ -71,6 +71,7 @@
                     {% endif %}
                     {% set can_retry_all = bulk.status in ['failed', 'stopped', 'completed'] and 'Queued upload file missing' not in (bulk.error_message or '') %}
                     {% set can_cancel_bulk = bulk.status in ['pending', 'processing'] %}
+                    {% set can_delete_bulk = bulk.status in ['failed', 'stopped', 'completed'] %}
                     {% if can_retry_all %}
                       <button
                         type="button"
@@ -86,6 +87,23 @@
                         data-action-url="/api/v1/bulk-ai-upload/{{ bulk_id }}/resume"
                       >
                         Retry all
+                      </button>
+                    {% endif %}
+                    {% if can_delete_bulk %}
+                      <button
+                        type="button"
+                        class="jobs-open-retry-modal jobs-open-retry-modal--bulk jobs-open-retry-modal--delete"
+                        data-retry-scope="bulk"
+                        data-bulk-id="{{ bulk_id }}"
+                        data-bulk-filename="{{ bulk.filename or 'Bulk upload' }}"
+                        data-bulk-status="{{ bulk.status or 'failed' }}"
+                        data-confirm-title="Delete this upload permanently?"
+                        data-confirm-body="Permanently removes this upload record with its files, attempts, revision notes and jobs. Decks it generated are kept. This cannot be undone."
+                        data-confirm-label="Delete permanently"
+                        data-success-message="Upload permanently deleted. Click OK to refresh the job list."
+                        data-action-url="/api/v1/bulk-ai-upload/{{ bulk_id }}/purge"
+                      >
+                        Delete
                       </button>
                     {% endif %}
                     {% if can_cancel_bulk %}
@@ -1043,6 +1061,12 @@
     color: #6d28d9;
   }
 
+  .jobs-open-retry-modal--delete {
+    border-color: rgba(220, 38, 38, 0.32);
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+  }
+
   .jobs-open-retry-modal::before {
     content: '↻';
     width: 0.9rem;
@@ -1053,6 +1077,11 @@
     font-size: 0.92rem;
     line-height: 1;
     font-weight: 700;
+  }
+
+  .jobs-open-retry-modal--delete::before {
+    content: '✕';
+    font-size: 0.78rem;
   }
 
   .jobs-retry-modal {

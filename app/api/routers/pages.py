@@ -68,6 +68,7 @@ from app.services.ai_auth import (
 )
 from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
+from app.services.purge import PurgeError, deleted_decks, purge_deck
 from app.services.review_service import ReviewService
 from app.services.storage import deck_media_prefix, get_storage
 
@@ -272,6 +273,13 @@ def _settings_home_response(
         if user.role == ROLE_SYSTEM_ADMIN
         else 0
     )
+    deleted_deck_count = (
+        db.execute(
+            select(func.count(Deck.id)).where(Deck.is_deleted.is_(True))
+        ).scalar_one()
+        if user.role == ROLE_SYSTEM_ADMIN
+        else 0
+    )
 
     return templates.TemplateResponse(
         "settings/index.html",
@@ -285,6 +293,7 @@ def _settings_home_response(
             ),
             "visible_user_count": len(visible_users),
             "job_count": job_count,
+            "deleted_deck_count": deleted_deck_count,
             "settings_error": (
                 settings_error
                 if settings_error is not None
@@ -837,6 +846,102 @@ def _jobs_response(
             "title": "Jobs | edu selviz",
         },
         status_code=status_code,
+    )
+
+
+def _deleted_decks_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    status_code: int = 200,
+):
+    """Admin listing of soft-deleted decks that can still be purged."""
+    _require_system_admin(user)
+
+    decks = deleted_decks(db)
+    deck_ids = [deck.id for deck in decks]
+
+    card_counts: dict = {}
+    if deck_ids:
+        card_rows = db.execute(
+            select(Card.deck_id, func.count(Card.id))
+            .where(Card.deck_id.in_(deck_ids))
+            .group_by(Card.deck_id)
+        ).all()
+        card_counts = {row[0]: row[1] for row in card_rows}
+
+    owner_ids = {deck.user_id for deck in decks if deck.user_id}
+    owner_emails: dict = {}
+    if owner_ids:
+        owner_emails = {
+            owner.id: owner.email
+            for owner in db.execute(
+                select(User).where(User.id.in_(owner_ids))
+            ).scalars().all()
+        }
+
+    return templates.TemplateResponse(
+        "settings/deleted_decks.html",
+        {
+            "request": request,
+            "user": user,
+            "deleted_decks": [
+                {
+                    "deck": deck,
+                    "card_count": card_counts.get(deck.id, 0),
+                    "owner_email": owner_emails.get(deck.user_id),
+                }
+                for deck in decks
+            ],
+            "settings_error": request.query_params.get("error"),
+            "settings_success": request.query_params.get("success"),
+            "title": "Deleted decks | edu selviz",
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/settings/deleted-decks", response_class=HTMLResponse)
+def deleted_decks_page(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return _deleted_decks_response(request, user=user, db=db)
+
+
+@router.post("/settings/decks/{deck_id}/purge")
+def purge_deck_permanently(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently remove a soft-deleted deck and everything it owns."""
+    _require_system_admin(user)
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not getattr(deck, "is_deleted", False):
+        raise HTTPException(status_code=404, detail="Deleted deck not found")
+
+    deck_name = deck.name or "Deck"
+    try:
+        counts = purge_deck(db, deck)
+    except PurgeError as exc:
+        return RedirectResponse(
+            url=f"/settings/deleted-decks?error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+    removed = sum(
+        value for key, value in counts.items() if key != "storage_objects"
+    )
+    message = quote_plus(
+        f"{deck_name} permanently deleted — {removed} records and "
+        f"{counts.get('storage_objects', 0)} stored objects removed."
+    )
+    return RedirectResponse(
+        url=f"/settings/deleted-decks?success={message}", status_code=303
     )
 
 

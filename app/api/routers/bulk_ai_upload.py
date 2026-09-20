@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.models.deck import DeckAccessScope
 from app.services.access import normalize_deck_name
+from app.services.purge import PurgeError, purge_bulk_upload
 from app.services.storage import StorageError, get_storage, guess_content_type
 
 logger = logging.getLogger(__name__)
@@ -1287,6 +1288,43 @@ def cancel_bulk_ai_upload(
         "status": bulk.status,
         "cancel_requested": True,
         "canceled_files": len(active_files),
+    }
+
+
+@router.post("/bulk-ai-upload/{bulk_id}/purge")
+def purge_bulk_ai_upload(
+    bulk_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete a finished bulk upload and its bookkeeping rows.
+
+    Decks the upload produced are kept — they are real study content; only the
+    upload record, its child files, attempts, revision notes and jobs go away.
+    Refuses while files or jobs are still running.
+    """
+    if user.role != "system_admin":
+        raise HTTPException(
+            status_code=403, detail="Only system admins can delete job records."
+        )
+
+    bulk = db.get(BulkAIUpload, bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk upload not found")
+
+    try:
+        counts = purge_bulk_upload(db, bulk)
+    except PurgeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    logger.info("purge: bulk upload %s removed by %s", bulk_id, user.email)
+    return {
+        "id": str(bulk_id),
+        "status": "purged",
+        "records_removed": sum(
+            value for key, value in counts.items() if key != "storage_objects"
+        ),
+        "counts": counts,
     }
 
 
