@@ -615,7 +615,7 @@ class OpencodeStudyPackProvider:
                 "max_tokens": 16384,
                 "temperature": 0.3,
             },
-            timeout=300,
+            timeout=180,
         )
         if response.status_code != 200:
             body = response.text[:300]

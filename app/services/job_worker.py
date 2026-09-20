@@ -64,6 +64,9 @@ JOB_LEASE_SECONDS = int(os.environ.get("JOB_LEASE_SECONDS", "60"))
 MAX_529_RETRIES = int(os.environ.get("JOB_MAX_529_RETRIES", "5"))
 MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
 MAX_TRANSIENT_RETRIES = 4
+# A hung request costs its whole read timeout, so timeouts get fewer
+# attempts than an instantly-rejected 503 (a 20-minute pass blocks the run).
+MAX_TIMEOUT_RETRIES = 2
 
 AI_FORMAT_RETRY_FAILURE_MESSAGE = (
     f"AI returned invalid structured output after {MAX_AI_FORMAT_RETRIES} attempts."
@@ -302,6 +305,12 @@ def _get_pass_semaphore():
     return _pass_semaphore
 
 
+def _is_timeout_error(exc: Exception) -> bool:
+    """True for read/connect timeouts, the slowest class of failure."""
+    lowered = str(exc or "").lower()
+    return "timed out" in lowered or "timeout" in lowered
+
+
 def _is_retryable_transient_error(exc: Exception) -> bool:
     """True for provider hiccups that a retry usually clears.
 
@@ -370,7 +379,10 @@ def _generate_text_with_retry(
             with _get_pass_semaphore():
                 return provider_client.generate_text(prompt, credential)
         except Exception as exc:
-            if _is_retryable_transient_error(exc) and attempt < MAX_TRANSIENT_RETRIES:
+            retry_limit = (
+                MAX_TIMEOUT_RETRIES if _is_timeout_error(exc) else MAX_TRANSIENT_RETRIES
+            )
+            if _is_retryable_transient_error(exc) and attempt < retry_limit:
                 sleep_seconds = _transient_retry_delay(attempt)
                 print(
                     f"{log_prefix} retryable_transient attempt={attempt} "
@@ -418,7 +430,10 @@ def _generate_pack_with_retry(
             with _get_pass_semaphore():
                 return provider_client.generate_from_prompt(prompt, credential)
         except Exception as exc:
-            if _is_retryable_transient_error(exc) and attempt < MAX_TRANSIENT_RETRIES:
+            retry_limit = (
+                MAX_TIMEOUT_RETRIES if _is_timeout_error(exc) else MAX_TRANSIENT_RETRIES
+            )
+            if _is_retryable_transient_error(exc) and attempt < retry_limit:
                 sleep_seconds = _transient_retry_delay(attempt)
                 print(
                     f"{log_prefix} retryable_transient attempt={attempt} "

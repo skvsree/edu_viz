@@ -180,3 +180,32 @@ def test_chunk_runner_without_a_failure_log_still_works(monkeypatch):
 
     assert failed_modes == set()
     assert pack is not None
+
+
+def test_timeouts_get_a_shorter_retry_budget(monkeypatch):
+    """A hung request costs its whole read timeout, so it gets fewer attempts.
+
+    With 4 attempts at a 300s timeout a single wedged pass blocked the run for
+    20 minutes; timeouts now get MAX_TIMEOUT_RETRIES instead.
+    """
+    monkeypatch.setattr(jw.time, "sleep", lambda _seconds: None)
+
+    class _HangingProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def generate_from_prompt(self, prompt, credential=None):
+            self.calls += 1
+            raise jw.AIGenerationError(
+                "HTTPSConnectionPool(host='opencode.ai', port=443): Read timed "
+                "out. (read timeout=180)"
+            )
+
+    provider = _HangingProvider()
+    with pytest.raises(jw.AIGenerationError):
+        jw._generate_pack_with_retry(
+            provider, "prompt", credential=None, log_prefix="test"
+        )
+
+    assert provider.calls == jw.MAX_TIMEOUT_RETRIES
+    assert jw.MAX_TIMEOUT_RETRIES < jw.MAX_TRANSIENT_RETRIES
