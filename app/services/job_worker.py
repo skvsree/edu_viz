@@ -63,6 +63,8 @@ POLL_INTERVAL = int(os.environ.get("JOB_POLL_INTERVAL", "5"))
 JOB_LEASE_SECONDS = int(os.environ.get("JOB_LEASE_SECONDS", "60"))
 MAX_529_RETRIES = int(os.environ.get("JOB_MAX_529_RETRIES", "5"))
 MAX_AI_FORMAT_RETRIES = int(os.environ.get("JOB_MAX_AI_FORMAT_RETRIES", "3"))
+MAX_TRANSIENT_RETRIES = 4
+
 AI_FORMAT_RETRY_FAILURE_MESSAGE = (
     f"AI returned invalid structured output after {MAX_AI_FORMAT_RETRIES} attempts."
 )
@@ -274,6 +276,64 @@ def _ai_format_retry_delay(attempt: int) -> int:
     return min(30, 2 ** attempt)
 
 
+def _is_retryable_transient_error(exc: Exception) -> bool:
+    """True for provider hiccups that a retry usually clears.
+
+    Observed in production: OpenCode returning HTTP 503 under load, and
+    requests read-timeouts at 180s while three extraction modes run per chunk.
+    Neither was retried, so the affected mode contributed nothing and a file
+    finished "completed" with a fraction of its cards.
+    """
+    message = str(exc or "")
+    lowered = message.lower()
+    for status in ("429", "500", "502", "503", "504"):
+        if f"error ({status})" in message:
+            return True
+    for phrase in (
+        "read timed out",
+        "timed out",
+        "timeout",
+        "connection reset",
+        "connection aborted",
+        "connection error",
+        "temporarily unavailable",
+        "service unavailable",
+        "too many requests",
+        "rate limit",
+    ):
+        if phrase in lowered:
+            return True
+    return False
+
+
+def _transient_retry_delay(attempt: int) -> int:
+    return min(45, 5 * attempt)
+
+
+def _classify_pass_failure(exc: Exception) -> str:
+    """Bucket a failed AI pass so the run summary names the real cause."""
+    message = str(exc or "")
+    lowered = message.lower()
+    if "read timed out" in lowered or "timed out" in lowered or "timeout" in lowered:
+        return "timeout"
+    for status in ("429", "500", "502", "503", "504"):
+        if f"error ({status})" in message:
+            return f"HTTP {status}"
+    if _is_retryable_529_error(exc):
+        return "HTTP 529"
+    if _is_retryable_ai_format_error(exc):
+        return "unparseable response"
+    return "other error"
+
+
+def _describe_pass_failures(reasons) -> str:
+    """Short human summary of why AI passes failed, most common first."""
+    if not reasons:
+        return "unknown errors"
+    ordered = sorted(reasons.items(), key=lambda item: (-item[1], item[0]))
+    return ", ".join(f"{reason} x{count}" for reason, count in ordered[:3])
+
+
 def _generate_text_with_retry(
     provider_client, prompt: str, credential, *, log_prefix: str
 ) -> str:
@@ -283,6 +343,19 @@ def _generate_text_with_retry(
         try:
             return provider_client.generate_text(prompt, credential)
         except Exception as exc:
+            if _is_retryable_transient_error(exc) and attempt < MAX_TRANSIENT_RETRIES:
+                sleep_seconds = _transient_retry_delay(attempt)
+                print(
+                    f"{log_prefix} retryable_transient attempt={attempt} "
+                    f"sleep={sleep_seconds}s err={str(exc)[:200]}",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            if _is_retryable_transient_error(exc):
+                raise AIGenerationError(
+                    f"AI provider unavailable after {attempt} attempts: {str(exc)[:200]}"
+                ) from exc
             if _is_retryable_529_error(exc) and attempt < MAX_529_RETRIES:
                 sleep_seconds = min(60, 5 * attempt)
                 print(
@@ -317,6 +390,19 @@ def _generate_pack_with_retry(
         try:
             return provider_client.generate_from_prompt(prompt, credential)
         except Exception as exc:
+            if _is_retryable_transient_error(exc) and attempt < MAX_TRANSIENT_RETRIES:
+                sleep_seconds = _transient_retry_delay(attempt)
+                print(
+                    f"{log_prefix} retryable_transient attempt={attempt} "
+                    f"sleep={sleep_seconds}s err={str(exc)[:200]}",
+                    flush=True,
+                )
+                time.sleep(sleep_seconds)
+                continue
+            if _is_retryable_transient_error(exc):
+                raise AIGenerationError(
+                    f"AI provider unavailable after {attempt} attempts: {str(exc)[:200]}"
+                ) from exc
             if _is_retryable_529_error(exc) and attempt < MAX_529_RETRIES:
                 sleep_seconds = min(60, 5 * attempt)
                 print(
@@ -421,6 +507,7 @@ def _run_chunk_modes_parallel(
     max_mcqs: int,
     log_prefix: str,
     executor: ThreadPoolExecutor,
+    failure_log: dict | None = None,
 ) -> tuple:
     """Run the 3 extraction modes (core/mechanisms/traps) for a single
     chunk in parallel via the supplied executor.
@@ -479,6 +566,8 @@ def _run_chunk_modes_parallel(
                 f"{log_prefix} ai pass failed mode={mode} err={str(e)[:200]}",
                 flush=True,
             )
+            if failure_log is not None:
+                failure_log[mode] = _classify_pass_failure(e)
             return (mode, None, e)
         except Exception as e:
             # Catch-all: a single broken mode must not abort the whole chunk.
@@ -486,6 +575,8 @@ def _run_chunk_modes_parallel(
                 f"{log_prefix} ai pass crashed mode={mode} err={str(e)[:200]}",
                 flush=True,
             )
+            if failure_log is not None:
+                failure_log[mode] = _classify_pass_failure(e)
             return (mode, None, e)
 
     failed_modes: set[str] = set()
@@ -761,6 +852,8 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"chunks={len(chunks)} provider={credential.provider}",
                 flush=True,
             )
+            failed_pass_total = 0
+            failed_pass_reasons: dict[str, int] = {}
             for chunk_index, chunk in enumerate(chunks, start=1):
                 db.refresh(file_record)
                 bulk = db.get(BulkAIUpload, job.reference_id)
@@ -773,6 +866,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     f"chunk={chunk_index}/{len(chunks)} chunk_len={len(chunk)}",
                     flush=True,
                 )
+                chunk_failure_log: dict = {}
                 chunk_pack, failed_modes = _run_chunk_modes_parallel(
                     provider=provider_client,
                     credential=credential,
@@ -786,9 +880,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         f"chunk={chunk_index}/{len(chunks)}"
                     ),
                     executor=mode_executor,
+                    failure_log=chunk_failure_log,
                 )
 
                 if failed_modes:
+                    failed_pass_total += len(failed_modes)
+                    for reason in chunk_failure_log.values():
+                        failed_pass_reasons[reason] = (
+                            failed_pass_reasons.get(reason, 0) + 1
+                        )
                     print(
                         f"[job-worker] chunk job={job.id} file={pdf_name} "
                         f"chunk={chunk_index}/{len(chunks)} partial_modes_failed="
@@ -877,6 +977,17 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 flush=True,
             )
             # bulk + file counters are already correct from per-chunk
+            # A file whose every AI pass failed must not be reported as a
+            # clean success - that is what hid a run that produced 10% of its
+            # cards behind a "completed" status.
+            total_passes = len(chunks) * len(modes)
+            if failed_pass_total and not flashcards_generated and not mcqs_generated:
+                raise AIGenerationError(
+                    f"All {failed_pass_total} AI passes failed "
+                    f"({_describe_pass_failures(failed_pass_reasons)}); "
+                    f"no cards were generated. Retry this file."
+                )
+
             # record_chunk_progress calls; just stamp final status and
             # the duplicate count.
             file_record.status = BulkAIUploadFileStatus.COMPLETED.value
@@ -884,6 +995,18 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             file_record.mcqs_generated = mcqs_generated
             file_record.duplicate_count = duplicate_count
             file_record.completed_at = datetime.utcnow()
+            if failed_pass_total:
+                file_record.error_message = (
+                    f"Partial generation: {failed_pass_total} of {total_passes} "
+                    f"AI passes failed ({_describe_pass_failures(failed_pass_reasons)}). "
+                    f"Retry this file to fill the gaps."
+                )[:500]
+                print(
+                    f"[job-worker] file partial job={job.id} file={pdf_name} "
+                    f"failed_passes={failed_pass_total}/{total_passes} "
+                    f"reasons={_describe_pass_failures(failed_pass_reasons)}",
+                    flush=True,
+                )
             # Enqueue revision-notes PDF generation for this child file.
             # The note_row is a long-lived tracker; the revision-notes
             # job is a separate Job that produces the actual bytes.
