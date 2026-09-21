@@ -761,6 +761,43 @@ def record_chunk_progress(
     db.commit()
 
 
+def _reclaim_orphaned_processing_files(db: Session, bulk_id) -> list[BulkAIUploadFile]:
+    """Return files left in PROCESSING by a worker that is no longer running.
+
+    A bulk job is only claimed once its lease has expired (or by the worker that
+    already owned it), so any row still marked PROCESSING when the job starts
+    belongs to a dead worker. Without this reset the reclaimed job selects no
+    PENDING files, fails with 'Missing queued upload files', and leaves the
+    upload stranded mid-file forever.
+    """
+    orphans = (
+        db.execute(
+            select(BulkAIUploadFile)
+            .where(BulkAIUploadFile.bulk_upload_id == bulk_id)
+            .where(
+                BulkAIUploadFile.status
+                == BulkAIUploadFileStatus.PROCESSING.value
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not orphans:
+        return []
+
+    for orphan in orphans:
+        orphan.status = BulkAIUploadFileStatus.PENDING.value
+        orphan.error_message = None
+    db.commit()
+    print(
+        "[job-worker] reclaimed "
+        f"{len(orphans)} file(s) left processing by a previous worker: "
+        f"{', '.join(row.original_filename or str(row.id) for row in orphans)}",
+        flush=True,
+    )
+    return list(orphans)
+
+
 def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
     """Process queued upload bytes and create one deck per PDF with AI-generated cards."""
@@ -787,6 +824,11 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         .order_by(BulkAIUploadFile.created_at)
     )
     file_records = db.execute(file_query).scalars().all()
+    if not file_records:
+        # The worker may have been restarted mid-file: its row is still
+        # PROCESSING with no live owner, so pick it back up rather than failing.
+        if _reclaim_orphaned_processing_files(db, bulk.id):
+            file_records = db.execute(file_query).scalars().all()
     if not file_records:
         bulk.status = BulkAIUploadStatus.FAILED.value
         bulk.error_message = "Missing queued upload files"
