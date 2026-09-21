@@ -347,8 +347,18 @@ def _is_retryable_transient_error(exc: Exception) -> bool:
     return False
 
 
+# Flat wait between attempts for transient provider failures (503s, timeouts,
+# connection resets). A fixed wait is deliberate: a ramp-up mostly just adds
+# latency to a provider that is already hiccuping.
+TRANSIENT_RETRY_DELAY_SECONDS = int(
+    os.environ.get("JOB_TRANSIENT_RETRY_DELAY", "15")
+)
+
+
 def _transient_retry_delay(attempt: int) -> int:
-    return min(45, 5 * attempt)
+    """Seconds to wait before retrying a transient provider failure."""
+    del attempt  # flat by design; kept for call-site compatibility
+    return max(1, TRANSIENT_RETRY_DELAY_SECONDS)
 
 
 def _classify_pass_failure(exc: Exception) -> str:

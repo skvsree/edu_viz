@@ -569,6 +569,20 @@ class DeepSeekRevisionProvider:
         return self._call_api(self.model, prompt, api_key)
 
 
+def _opencode_timeout() -> int:
+    """Read timeout for one OpenCode Go pass (seconds).
+
+    Passes run sequentially, so this is the block size for a hung request; a
+    healthy pass finishes in 10-40s.
+    """
+    try:
+        from app.core.config import settings
+
+        return max(10, int(getattr(settings, "opencode_request_timeout", 60) or 60))
+    except Exception:  # noqa: BLE001 - never fail a request over config lookup
+        return 60
+
+
 def _opencode_max_tokens() -> int:
     """Completion budget for OpenCode Go.
 
@@ -629,7 +643,7 @@ class OpencodeStudyPackProvider:
                 "max_tokens": _opencode_max_tokens(),
                 "temperature": 0.3,
             },
-            timeout=180,
+            timeout=_opencode_timeout(),
         )
         if response.status_code != 200:
             body = response.text[:300]

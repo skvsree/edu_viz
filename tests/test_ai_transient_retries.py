@@ -209,3 +209,28 @@ def test_timeouts_get_a_shorter_retry_budget(monkeypatch):
 
     assert provider.calls == jw.MAX_TIMEOUT_RETRIES
     assert jw.MAX_TIMEOUT_RETRIES < jw.MAX_TRANSIENT_RETRIES
+
+
+def test_transient_retries_wait_a_flat_fifteen_seconds():
+    """The wait between transient retries is flat, not a ramp-up.
+
+    Passes run sequentially, so time spent ramping backoff is time the whole
+    run spends blocked; the provider is either back by then or it is not.
+    """
+    assert jw.TRANSIENT_RETRY_DELAY_SECONDS == 15
+    delays = [jw._transient_retry_delay(attempt) for attempt in range(1, 6)]
+    assert delays == [15, 15, 15, 15, 15]
+
+
+def test_opencode_pass_timeout_is_short_enough_to_keep_a_sequential_run_moving():
+    """A hung pass must not block the run for minutes.
+
+    Measured: a healthy pass returns in 10-40s, while 180s hangs were the
+    single largest cost in a run (8 of them = ~24 minutes).
+    """
+    from app.core.config import settings
+    from app.services.ai_generation import _opencode_timeout
+
+    assert settings.opencode_request_timeout == 60
+    assert _opencode_timeout() == 60
+    assert _opencode_timeout() < 180

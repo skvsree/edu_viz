@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     ai_pass_rounds: int = 3
     # Completion budget sent to OpenCode Go. Long ones correlate with 503s.
     opencode_max_tokens: int = 4096
+    # Read timeout for a single study-pack pass. Passes are sequential (one in
+    # flight), so a hung request blocks the whole run: a healthy pass returns in
+    # 10-40s, and waiting 180s per hang was the single biggest cost in a run.
+    opencode_request_timeout: int = 60
     # Revision notes: pure AI model
     revision_notes_model: str = "deepseek-v4-pro"
     revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
