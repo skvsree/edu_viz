@@ -70,6 +70,9 @@ MAX_TRANSIENT_RETRIES = 4
 # A hung request costs its whole read timeout, so timeouts get fewer
 # attempts than an instantly-rejected 503 (a 20-minute pass blocks the run).
 MAX_TIMEOUT_RETRIES = 2
+# Two dead rounds in a row mean the provider is down for this chunk; the
+# remaining rounds would burn attempts for nothing.
+MAX_CONSECUTIVE_FAILED_ROUNDS = 2
 
 AI_FORMAT_RETRY_FAILURE_MESSAGE = (
     f"AI returned invalid structured output after {MAX_AI_FORMAT_RETRIES} attempts."
@@ -568,6 +571,7 @@ def _generate_chunk_pack(
     failed_passes = 0
     chunk_pack = merge_study_packs()
     total_rounds = max(1, rounds)
+    consecutive_failed_rounds = 0
 
     for round_index in range(1, total_rounds + 1):
         round_failure_log: dict = {}
@@ -592,13 +596,25 @@ def _generate_chunk_pack(
         if not round_pack.flashcards and not round_pack.mcqs:
             if len(round_failures) >= len(modes):
                 # Every pass failed this round (provider flakiness). That says
-                # nothing about the chunk being exhausted, so keep going.
+                # nothing about the chunk being exhausted, so try again - but
+                # two dead rounds in a row mean the provider is down, and the
+                # remaining rounds would only burn attempts.
+                consecutive_failed_rounds += 1
+                if consecutive_failed_rounds >= MAX_CONSECUTIVE_FAILED_ROUNDS:
+                    print(
+                        f"{log_prefix} round={round_index}/{total_rounds} "
+                        f"{consecutive_failed_rounds} consecutive all-failed rounds, "
+                        f"abandoning this chunk's remaining rounds",
+                        flush=True,
+                    )
+                    break
                 print(
                     f"{log_prefix} round={round_index}/{total_rounds} all passes "
                     f"failed, continuing",
                     flush=True,
                 )
                 continue
+            consecutive_failed_rounds = 0
             # Passes succeeded and returned nothing new: the chunk is exhausted.
             print(
                 f"{log_prefix} round={round_index}/{total_rounds} empty, "
@@ -1108,7 +1124,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             # A file whose every AI pass failed must not be reported as a
             # clean success - that is what hid a run that produced 10% of its
             # cards behind a "completed" status.
-            total_passes = len(chunks) * len(modes)
+            total_passes = len(chunks) * len(modes) * pass_rounds
             if failed_pass_total and not flashcards_generated and not mcqs_generated:
                 raise AIGenerationError(
                     f"All {failed_pass_total} AI passes failed "
@@ -1127,7 +1143,8 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 file_record.error_message = (
                     f"Partial generation: {failed_pass_total} of {total_passes} "
                     f"AI passes failed ({_describe_pass_failures(failed_pass_reasons)}). "
-                    f"Retry this file to fill the gaps."
+                    f"Retrying replaces this deck's cards (including review "
+                    f"progress) rather than adding to them."
                 )[:500]
                 print(
                     f"[job-worker] file partial job={job.id} file={pdf_name} "

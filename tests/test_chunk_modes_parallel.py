@@ -416,6 +416,13 @@ def test_generate_chunk_pack_keeps_going_when_a_whole_round_fails(monkeypatch):
 
     assert not pack.flashcards and not pack.mcqs
     assert failed_modes == {"core", "mechanisms", "traps"}
-    # 3 rounds x 3 modes were all attempted (each with its own retries).
+    # Rounds continue past a dead round (the chunk may still have material),
+    # but MAX_CONSECUTIVE_FAILED_ROUNDS stops a dead provider from burning the
+    # rest of the rounds.
+    full_budget = 3 * 3 * job_worker.MAX_AI_FORMAT_RETRIES
     assert provider.calls >= 9, f"only {provider.calls} passes attempted"
-    assert failed_passes >= 9
+    assert provider.calls < full_budget, (
+        f"a dead provider should abandon the chunk early, got {provider.calls} calls"
+    )
+    # Exactly MAX_CONSECUTIVE_FAILED_ROUNDS rounds of failures, then stop.
+    assert failed_passes == job_worker.MAX_CONSECUTIVE_FAILED_ROUNDS * 3
