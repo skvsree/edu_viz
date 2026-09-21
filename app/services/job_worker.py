@@ -761,6 +761,27 @@ def record_chunk_progress(
     db.commit()
 
 
+def _reset_file_attempt_counters(db: Session, file_record, bulk) -> None:
+    """Zero this file's counters for a fresh attempt.
+
+    A resumed or retried file regenerates from chunk 1 (its deck content is
+    cleared first), so carrying the previous attempt's totals would make the
+    file - and the bulk, which accumulates the same deltas - report cards that
+    no longer exist. The bulk's running total is reduced by what this file
+    previously contributed.
+    """
+    previous_flashcards = file_record.flashcards_generated or 0
+    previous_mcqs = file_record.mcqs_generated or 0
+    if bulk is not None and (previous_flashcards or previous_mcqs):
+        bulk.flashcards_generated = max(
+            0, (bulk.flashcards_generated or 0) - previous_flashcards
+        )
+        bulk.mcqs_generated = max(0, (bulk.mcqs_generated or 0) - previous_mcqs)
+    file_record.flashcards_generated = 0
+    file_record.mcqs_generated = 0
+    file_record.duplicate_count = 0
+
+
 def _reclaim_orphaned_processing_files(db: Session, bulk_id) -> list[BulkAIUploadFile]:
     """Return files left in PROCESSING by a worker that is no longer running.
 
@@ -894,6 +915,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             continue
 
         file_started_at = datetime.utcnow()
+        _reset_file_attempt_counters(db, file_record, bulk)
         file_record.status = BulkAIUploadFileStatus.PROCESSING.value
         file_record.started_at = file_started_at
         file_record.completed_at = None

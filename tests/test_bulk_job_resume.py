@@ -73,3 +73,56 @@ def test_reclaim_only_looks_at_processing_rows():
     compiled = str(statement.compile(compile_kwargs={"literal_binds": True})).lower()
     assert "bulk_ai_upload_files" in compiled
     assert "processing" in compiled, "the probe must target PROCESSING rows"
+
+
+class _CounterSession:
+    def __init__(self):
+        self.commits = 0
+
+    def commit(self):
+        self.commits += 1
+
+
+def test_resumed_attempt_resets_the_file_and_bulk_counters():
+    """A resumed file regenerates from scratch, so its totals must restart.
+
+    Otherwise a restarted upload reports the previous attempt's cards on top of
+    the new ones, and the bulk accumulates both.
+    """
+    file_record = SimpleNamespace(
+        flashcards_generated=102,
+        mcqs_generated=101,
+        duplicate_count=7,
+    )
+    bulk = SimpleNamespace(flashcards_generated=102, mcqs_generated=101)
+
+    job_worker._reset_file_attempt_counters(_CounterSession(), file_record, bulk)
+
+    assert file_record.flashcards_generated == 0
+    assert file_record.mcqs_generated == 0
+    assert file_record.duplicate_count == 0
+    assert bulk.flashcards_generated == 0
+    assert bulk.mcqs_generated == 0
+
+
+def test_counter_reset_never_goes_negative():
+    file_record = SimpleNamespace(
+        flashcards_generated=5, mcqs_generated=4, duplicate_count=1
+    )
+    bulk = SimpleNamespace(flashcards_generated=3, mcqs_generated=2)
+
+    job_worker._reset_file_attempt_counters(_CounterSession(), file_record, bulk)
+
+    assert bulk.flashcards_generated == 0
+    assert bulk.mcqs_generated == 0
+
+
+def test_counter_reset_is_a_noop_for_a_first_attempt():
+    file_record = SimpleNamespace(
+        flashcards_generated=0, mcqs_generated=0, duplicate_count=0
+    )
+    bulk = SimpleNamespace(flashcards_generated=0, mcqs_generated=0)
+
+    job_worker._reset_file_attempt_counters(_CounterSession(), file_record, bulk)
+
+    assert (file_record.flashcards_generated, bulk.flashcards_generated) == (0, 0)
