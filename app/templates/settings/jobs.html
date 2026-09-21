@@ -153,6 +153,7 @@
                             <th>Child file</th>
                             <th>Status</th>
                             <th>Deck</th>
+                            <th>Progress</th>
                             <th>Cards</th>
                             <th>MCQs</th>
                             <th>Attempts</th>
@@ -197,11 +198,35 @@
                                 —
                               {% endif %}
                             </td>
+                            <td data-label="Progress">
+                              {% if latest.chunks_total %}
+                                <div class="jobs-progress">
+                                  <div class="jobs-progress__line">
+                                    chunk {{ latest.chunks_completed or 0 }}/{{ latest.chunks_total }}
+                                    · passes {{ latest.passes_completed or 0 }}/{{ latest.passes_total }}
+                                    {% if latest.passes_failed %}· <span class="jobs-progress__failed">{{ latest.passes_failed }} failed</span>{% endif %}
+                                  </div>
+                                  {% if latest.current_stage %}
+                                    <div class="jobs-progress__stage">{{ latest.current_stage }}</div>
+                                  {% endif %}
+                                </div>
+                              {% else %}
+                                —
+                              {% endif %}
+                            </td>
                             <td data-label="Cards">{{ latest.flashcards_generated or 0 }}</td>
                             <td data-label="MCQs">{{ latest.mcqs_generated or 0 }}</td>
                             <td data-label="Attempts">{{ file_group.jobs|length }}</td>
                             <td data-label="Actions">
                               <div class="jobs-attempt-row__actions jobs-attempt-row__actions--inline">
+                                <button
+                                  type="button"
+                                  class="jobs-log-toggle"
+                                  data-log-url="/settings/jobs/files/{{ latest.id }}/events"
+                                  data-log-target="jobs-log-{{ latest.id }}"
+                                >
+                                  Log
+                                </button>
                                 {% set is_legacy_file_group = not file_group.child_file %}
                                 {% if can_retry_file %}
                                   <button
@@ -266,6 +291,11 @@
                                   </button>
                                 {% endif %}
                               </div>
+                            </td>
+                          </tr>
+                          <tr class="jobs-log-row" id="jobs-log-{{ latest.id }}" hidden>
+                            <td colspan="8">
+                              <pre class="jobs-log-pre" data-log-url="/settings/jobs/files/{{ latest.id }}/events">Open to load this file's log.</pre>
                             </td>
                           </tr>
                         {% endfor %}
@@ -856,6 +886,43 @@
     display: inline-block;
   }
 
+  .jobs-progress__line {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .jobs-progress__failed {
+    color: #b45309;
+    font-weight: 600;
+  }
+
+  .jobs-progress__stage {
+    margin-top: 2px;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+
+  .jobs-log-toggle {
+    border: 1px solid rgba(15, 23, 42, 0.15);
+    background: transparent;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .jobs-log-row > td {
+    background: rgba(15, 23, 42, 0.03);
+  }
+
+  .jobs-log-pre {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
   .jobs-retry-form {
     margin: 0;
   }
@@ -1435,6 +1502,41 @@
         if (typeof modal.close === 'function') {
           modal.close();
         }
+        return;
+      }
+
+      var logToggle = event.target.closest('.jobs-log-toggle');
+      if (logToggle) {
+        var row = document.getElementById(logToggle.dataset.logTarget);
+        if (!row) return;
+        if (!row.hidden) {
+          row.hidden = true;
+          return;
+        }
+        row.hidden = false;
+        var pre = row.querySelector('.jobs-log-pre');
+        if (pre.dataset.loaded === '1') return;
+        pre.textContent = 'Loading...';
+        fetch(logToggle.dataset.logUrl, {
+          headers: { 'Accept': 'application/json' },
+          credentials: 'same-origin'
+        })
+          .then(function (response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.json();
+          })
+          .then(function (data) {
+            pre.dataset.loaded = '1';
+            var lines = (data.events || []).map(function (item) {
+              return item.created_at + '  [' + item.level + ']  ' + item.message;
+            });
+            pre.textContent = lines.length
+              ? lines.join('\n')
+              : 'No events recorded for this file yet.';
+          })
+          .catch(function (err) {
+            pre.textContent = 'Could not load the log: ' + err.message;
+          });
         return;
       }
 

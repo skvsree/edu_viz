@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 import re
 from functools import lru_cache
 from hashlib import sha256
@@ -21,6 +22,7 @@ from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.models import (
+    JobEvent,
     BulkAIUpload,
     BulkAIUploadChildFile,
     BulkAIUploadFile,
@@ -976,6 +978,68 @@ def _deleted_decks_response(
         },
         status_code=status_code,
     )
+
+
+@router.get("/settings/jobs/files/{file_id}/events")
+def job_events_for_file(
+    file_id: str,
+    limit: int = 200,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Recent worker events for one upload file, for the jobs-page log panel.
+
+    Backs the expandable log on /settings/jobs: the same messages the worker
+    prints to stdout, so nobody has to tail the container to see why a run is
+    slow or which passes failed.
+    """
+    _require_system_admin(user)
+    try:
+        file_uuid = uuid.UUID(str(file_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=404, detail="Upload file not found")
+
+    file_record = db.get(BulkAIUploadFile, file_uuid)
+    if file_record is None:
+        raise HTTPException(status_code=404, detail="Upload file not found")
+
+    events = (
+        db.execute(
+            select(JobEvent)
+            .where(JobEvent.file_id == file_uuid)
+            .order_by(JobEvent.created_at.desc())
+            .limit(max(1, min(int(limit or 200), 500)))
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "file_id": str(file_uuid),
+        "stage": file_record.current_stage,
+        "status": file_record.status,
+        "chunks": {
+            "completed": file_record.chunks_completed or 0,
+            "total": file_record.chunks_total or 0,
+        },
+        "passes": {
+            "completed": file_record.passes_completed or 0,
+            "failed": file_record.passes_failed or 0,
+            "total": file_record.passes_total or 0,
+        },
+        "events": [
+            {
+                "created_at": (
+                    event.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                    if event.created_at
+                    else ""
+                ),
+                "level": event.level,
+                "message": event.message,
+            }
+            for event in reversed(events)
+        ],
+    }
 
 
 @router.get("/settings/deleted-decks", response_class=HTMLResponse)

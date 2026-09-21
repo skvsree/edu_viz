@@ -143,6 +143,15 @@ class BulkAIUploadFile(Base):
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True, index=True)
 
     status: Mapped[str] = mapped_column(String(50), default=BulkAIUploadFileStatus.PENDING.value, nullable=False)
+    # Generation progress, so the jobs page can show where a file is instead of
+    # only how many cards it has produced so far.
+    chunks_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    chunks_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    passes_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    passes_completed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    passes_failed: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    current_stage: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     flashcards_generated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     mcqs_generated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     duplicate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

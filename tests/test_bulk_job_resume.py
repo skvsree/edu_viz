@@ -29,10 +29,15 @@ class _ResumeSession:
         self.processing_rows = list(processing_rows)
         self.commits = 0
         self.statements: list[str] = []
+        self.added: list = []
 
     def execute(self, statement):
         self.statements.append(statement)
         return _Rows(self.processing_rows)
+
+    def add(self, _row):
+        # The reclaim path now also appends a JobEvent for the job log.
+        self.added.append(_row)
 
     def commit(self):
         self.commits += 1

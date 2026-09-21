@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
 from app.models import (
+    JobEvent,
+    JobEventLevel,
     BulkAIUpload,
     BulkAIUploadChildFile,
     BulkAIUploadFile,
@@ -567,6 +569,7 @@ def _generate_chunk_pack(
     log_prefix: str,
     executor,
     failure_log: dict | None = None,
+    pass_callback=None,
 ) -> tuple[GeneratedStudyPack, set[str], int]:
     """Generate one chunk's cards as several short passes.
 
@@ -596,6 +599,15 @@ def _generate_chunk_pack(
             log_prefix=f"{log_prefix} round={round_index}/{total_rounds}",
             executor=executor,
             failure_log=round_failure_log,
+            pass_callback=(
+                None
+                if pass_callback is None
+                else (
+                    lambda mode, ok, error, _round=round_index: pass_callback(
+                        mode, _round, ok, error
+                    )
+                )
+            ),
         )
         if failure_log is not None:
             for mode, reason in round_failure_log.items():
@@ -651,6 +663,7 @@ def _run_chunk_modes_parallel(
     log_prefix: str,
     executor: ThreadPoolExecutor,
     failure_log: dict | None = None,
+    pass_callback=None,
 ) -> tuple:
     """Run the 3 extraction modes (core/mechanisms/traps) for a single
     chunk in parallel via the supplied executor.
@@ -703,6 +716,8 @@ def _run_chunk_modes_parallel(
                 f"flashcards={len(pass_pack.flashcards)} mcqs={len(pass_pack.mcqs)}",
                 flush=True,
             )
+            if pass_callback is not None:
+                pass_callback(mode, True, None)
             return (mode, pass_pack, None)
         except AIGenerationError as e:
             print(
@@ -711,6 +726,8 @@ def _run_chunk_modes_parallel(
             )
             if failure_log is not None:
                 failure_log[mode] = _classify_pass_failure(e)
+            if pass_callback is not None:
+                pass_callback(mode, False, str(e)[:200])
             return (mode, None, e)
         except Exception as e:
             # Catch-all: a single broken mode must not abort the whole chunk.
@@ -720,6 +737,8 @@ def _run_chunk_modes_parallel(
             )
             if failure_log is not None:
                 failure_log[mode] = _classify_pass_failure(e)
+            if pass_callback is not None:
+                pass_callback(mode, False, str(e)[:200])
             return (mode, None, e)
 
     failed_modes: set[str] = set()
@@ -761,6 +780,75 @@ def record_chunk_progress(
     db.commit()
 
 
+def record_job_event(
+    db: Session,
+    *,
+    job=None,
+    bulk=None,
+    file_record=None,
+    level: str = JobEventLevel.INFO,
+    message: str = "",
+) -> None:
+    """Append one row to the job log the UI shows. Never fails a run."""
+    try:
+        db.add(
+            JobEvent(
+                job_id=getattr(job, "id", None),
+                bulk_upload_id=getattr(bulk, "id", None),
+                file_id=getattr(file_record, "id", None),
+                level=level,
+                message=(message or "")[:2000],
+            )
+        )
+        db.commit()
+    except Exception as exc:  # noqa: BLE001 - logging must not break generation
+        print(f"[job-worker] job event not recorded: {exc}", flush=True)
+
+
+def _make_pass_progress_recorder(*, job_id, bulk_id, file_id, chunks_total):
+    """Per-pass progress for the jobs page, called from the mode threads.
+
+    Each mode pass runs in its own thread, so this opens a short-lived session
+    per pass rather than sharing the worker's session.
+    """
+
+    def record(mode: str, round_index: int, ok: bool, error: str | None) -> None:
+        db = SessionLocal()
+        try:
+            row = db.get(BulkAIUploadFile, file_id)
+            if row is None:
+                return
+            total = chunks_total or row.chunks_total or 0
+            chunk_no = (row.chunks_completed or 0) + 1
+            where = f"chunk {chunk_no}/{total or '?'} round {round_index} · {mode}"
+            if ok:
+                row.passes_completed = (row.passes_completed or 0) + 1
+            else:
+                row.passes_failed = (row.passes_failed or 0) + 1
+            row.current_stage = where[:160]
+            row.last_event_at = datetime.utcnow()
+            db.add(
+                JobEvent(
+                    job_id=job_id,
+                    bulk_upload_id=bulk_id,
+                    file_id=file_id,
+                    level=JobEventLevel.INFO if ok else JobEventLevel.WARN,
+                    message=(
+                        f"pass ok · {where}"
+                        if ok
+                        else f"pass failed · {where} · {(error or 'unknown')[:160]}"
+                    )[:2000],
+                )
+            )
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[job-worker] pass progress not recorded: {exc}", flush=True)
+        finally:
+            db.close()
+
+    return record
+
+
 def _reset_file_attempt_counters(db: Session, file_record, bulk) -> None:
     """Zero this file's counters for a fresh attempt.
 
@@ -782,7 +870,9 @@ def _reset_file_attempt_counters(db: Session, file_record, bulk) -> None:
     file_record.duplicate_count = 0
 
 
-def _reclaim_orphaned_processing_files(db: Session, bulk_id) -> list[BulkAIUploadFile]:
+def _reclaim_orphaned_processing_files(
+    db: Session, bulk_id, job=None
+) -> list[BulkAIUploadFile]:
     """Return files left in PROCESSING by a worker that is no longer running.
 
     A bulk job is only claimed once its lease has expired (or by the worker that
@@ -809,6 +899,19 @@ def _reclaim_orphaned_processing_files(db: Session, bulk_id) -> list[BulkAIUploa
     for orphan in orphans:
         orphan.status = BulkAIUploadFileStatus.PENDING.value
         orphan.error_message = None
+        orphan.current_stage = "reclaimed after a worker restart"
+        orphan.last_event_at = datetime.utcnow()
+        db.add(
+            JobEvent(
+                job_id=getattr(job, "id", None),
+                bulk_upload_id=bulk_id,
+                file_id=orphan.id,
+                level=JobEventLevel.WARN,
+                message=(
+                    "reclaimed after a worker restart · regenerating from chunk 1"
+                ),
+            )
+        )
     db.commit()
     print(
         "[job-worker] reclaimed "
@@ -848,7 +951,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
     if not file_records:
         # The worker may have been restarted mid-file: its row is still
         # PROCESSING with no live owner, so pick it back up rather than failing.
-        if _reclaim_orphaned_processing_files(db, bulk.id):
+        if _reclaim_orphaned_processing_files(db, bulk.id, job=job):
             file_records = db.execute(file_query).scalars().all()
     if not file_records:
         bulk.status = BulkAIUploadStatus.FAILED.value
@@ -1068,6 +1171,31 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"passes={len(modes) * pass_rounds} items_per_pass={pass_items}",
                 flush=True,
             )
+            file_record.chunks_total = len(chunks)
+            file_record.chunks_completed = 0
+            file_record.passes_total = len(chunks) * len(modes) * pass_rounds
+            file_record.passes_completed = 0
+            file_record.passes_failed = 0
+            file_record.current_stage = f"chunk 1/{len(chunks)}"
+            file_record.last_event_at = datetime.utcnow()
+            db.commit()
+            record_job_event(
+                db,
+                job=job,
+                bulk=bulk,
+                file_record=file_record,
+                message=(
+                    f"generation started · {len(chunks)} chunks · "
+                    f"{len(chunks) * len(modes) * pass_rounds} passes · "
+                    f"{credential.provider}/{getattr(provider_client, 'model', '?')}"
+                ),
+            )
+            _pass_recorder = _make_pass_progress_recorder(
+                job_id=job.id,
+                bulk_id=getattr(bulk, "id", None),
+                file_id=file_record.id,
+                chunks_total=len(chunks),
+            )
             failed_pass_total = 0
             failed_pass_reasons: dict[str, int] = {}
             for chunk_index, chunk in enumerate(chunks, start=1):
@@ -1082,6 +1210,9 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     f"chunk={chunk_index}/{len(chunks)} chunk_len={len(chunk)}",
                     flush=True,
                 )
+                file_record.current_stage = f"chunk {chunk_index}/{len(chunks)}"
+                file_record.last_event_at = datetime.utcnow()
+                db.commit()
                 chunk_failure_log: dict = {}
                 chunk_pack, failed_modes, chunk_failed_passes = (
                     _generate_chunk_pack(
@@ -1098,6 +1229,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         ),
                         executor=mode_executor,
                         failure_log=chunk_failure_log,
+                        pass_callback=_pass_recorder,
                     )
                 )
 
@@ -1179,6 +1311,29 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                         (file_record.mcqs_generated or 0) + chunk_mcq_count
                     )
                     db.commit()
+                file_record.chunks_completed = chunk_index
+                file_record.current_stage = f"chunk {chunk_index}/{len(chunks)} done"
+                file_record.last_event_at = datetime.utcnow()
+                record_job_event(
+                    db,
+                    job=job,
+                    bulk=bulk,
+                    file_record=file_record,
+                    level=(
+                        JobEventLevel.WARN if chunk_failed_passes else JobEventLevel.INFO
+                    ),
+                    message=(
+                        f"chunk {chunk_index}/{len(chunks)} done · "
+                        f"+{chunk_flashcard_count} flashcards "
+                        f"+{chunk_mcq_count} mcqs"
+                        + (
+                            " · failed passes: "
+                            + ", ".join(sorted(chunk_failure_log))
+                            if chunk_failed_passes
+                            else ""
+                        )
+                    ),
+                )
                 aggregate = merge_study_packs(aggregate, chunk_pack)
 
             if not flashcards_generated and not mcqs_generated:
@@ -1193,6 +1348,19 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"flashcards={flashcards_generated} mcqs={mcqs_generated} "
                 f"duplicates={duplicate_count}",
                 flush=True,
+            )
+            record_job_event(
+                db,
+                job=job,
+                bulk=bulk,
+                file_record=file_record,
+                message=(
+                    f"file completed · {flashcards_generated} flashcards, "
+                    f"{mcqs_generated} mcqs, {duplicate_count} duplicates · "
+                    f"{file_record.chunks_completed}/{file_record.chunks_total} chunks, "
+                    f"{file_record.passes_completed} passes ok, "
+                    f"{file_record.passes_failed} failed"
+                ),
             )
             # bulk + file counters are already correct from per-chunk
             # A file whose every AI pass failed must not be reported as a
@@ -1225,6 +1393,17 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     f"failed_passes={failed_pass_total}/{total_passes} "
                     f"reasons={_describe_pass_failures(failed_pass_reasons)}",
                     flush=True,
+                )
+                record_job_event(
+                    db,
+                    job=job,
+                    bulk=bulk,
+                    file_record=file_record,
+                    level=JobEventLevel.WARN,
+                    message=(
+                        f"partial generation · {failed_pass_total}/{total_passes} "
+                        f"passes failed ({_describe_pass_failures(failed_pass_reasons)})"
+                    ),
                 )
             # Enqueue revision-notes PDF generation for this child file.
             # The note_row is a long-lived tracker; the revision-notes
@@ -1264,6 +1443,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             job.processed_items += 1
         except Exception as e:
             print(f"[job-worker] file failed job={job.id} file={pdf_name} err={str(e)[:300]}", flush=True)
+            record_job_event(
+                db,
+                job=job,
+                bulk=bulk,
+                file_record=file_record,
+                level=JobEventLevel.ERROR,
+                message=f"file failed · {str(e)[:300]}",
+            )
             if str(e) == 'File canceled by user':
                 file_record.status = BulkAIUploadFileStatus.STOPPED.value
             elif str(e) == 'Job stopped by user':
