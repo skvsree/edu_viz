@@ -218,6 +218,7 @@
                                     data-confirm-body="{{ 'This will retry only this failed file and start with a fresh deck.' if not is_legacy_file_group else 'This legacy upload row has no child file record, so retry will restart the whole ZIP upload.' }}"
                                     data-confirm-label="Retry file"
                                      data-action-url="{{ '/api/v1/bulk-ai-upload/' ~ bulk_id ~ '/resume?file_id=' ~ file_group.id if not is_legacy_file_group else '/api/v1/bulk-ai-upload/' ~ bulk_id ~ '/resume' }}"
+                                    data-wipe-preview-url="/api/v1/bulk-ai-upload/files/{{ latest.id }}/regeneration-preview"
 
                                   >
                                     Retry
@@ -239,6 +240,7 @@
                                     data-confirm-label="Force retry"
                                     data-success-message="Retry started. Click OK to refresh job details."
                                     data-action-url="/api/v1/bulk-ai-upload/{{ bulk_id }}/resume?deck_id={{ latest.created_deck_id }}&force=1"
+                                    data-wipe-preview-url="/api/v1/bulk-ai-upload/files/{{ latest.id }}/regeneration-preview"
                                   >
                                     Force retry
                                   </button>
@@ -1384,10 +1386,21 @@
       setFooterMode('confirm');
       actions.innerHTML = '';
 
-      if (scope === 'bulk') {
-        meta.innerHTML = '<strong>' + escapeHtml(filename) + '</strong><br>Status: ' + escapeHtml(status) + '<br>' + escapeHtml(confirmBody);
-      } else {
-        meta.innerHTML = '<strong>' + escapeHtml(itemTitle) + '</strong><br>File: ' + escapeHtml(filename) + '<br>Status: ' + escapeHtml(status) + '<br>' + escapeHtml(confirmBody);
+      function renderMeta(preview) {
+        var body = confirmBody;
+        if (preview && preview.has_deck) {
+          body += ' This deletes ' + preview.cards + ' card' + (preview.cards === 1 ? '' : 's') +
+            ', ' + preview.reviews + ' review record' + (preview.reviews === 1 ? '' : 's') +
+            (preview.card_states ? ' and ' + preview.card_states + ' card state' + (preview.card_states === 1 ? '' : 's') : '') +
+            ' from "' + preview.deck_name + '".';
+        } else if (preview) {
+          body += ' This file has no deck content yet, so nothing will be deleted.';
+        }
+        if (scope === 'bulk') {
+          meta.innerHTML = '<strong>' + escapeHtml(filename) + '</strong><br>Status: ' + escapeHtml(status) + '<br>' + escapeHtml(body);
+        } else {
+          meta.innerHTML = '<strong>' + escapeHtml(itemTitle) + '</strong><br>File: ' + escapeHtml(filename) + '<br>Status: ' + escapeHtml(status) + '<br>' + escapeHtml(body);
+        }
       }
 
       if (actionUrl) {
@@ -1396,7 +1409,24 @@
         actions.innerHTML = '<p class="muted">No retry action available for this item.</p>';
       }
 
+      var previewUrl = trigger.dataset.wipePreviewUrl || '';
+      if (!previewUrl) {
+        renderMeta(null);
+        modal.showModal();
+        return;
+      }
+
+      // A retry clears every card, card state and review in the deck, so ask
+      // the server how much is about to be destroyed before showing the popup.
+      meta.innerHTML = '<strong>' + escapeHtml(itemTitle) + '</strong><br>Checking what will be deleted...';
       modal.showModal();
+      fetch(previewUrl, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (preview) { renderMeta(preview); })
+        .catch(function () {
+          renderMeta(null);
+          setFeedback('Could not load what will be deleted. Proceed only if you are sure.', true);
+        });
     }
 
     document.addEventListener('click', function (event) {

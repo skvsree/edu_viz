@@ -32,7 +32,7 @@ from app.models import (
 )
 from app.models.deck import DeckAccessScope
 from app.services.access import normalize_deck_name
-from app.services.purge import PurgeError, purge_bulk_upload
+from app.services.purge import PurgeError, deck_wipe_preview, purge_bulk_upload
 from app.services.storage import StorageError, get_storage, guess_content_type
 
 logger = logging.getLogger(__name__)
@@ -1289,6 +1289,29 @@ def cancel_bulk_ai_upload(
         "cancel_requested": True,
         "canceled_files": len(active_files),
     }
+
+
+@router.get("/bulk-ai-upload/files/{file_id}/regeneration-preview")
+def regeneration_preview(
+    file_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """What a retry of this file would delete from its deck.
+
+    Backs the confirmation popup: a retry clears every card, card state and
+    review in the deck before regenerating, so the counts are shown first.
+    """
+    if user.role != "system_admin":
+        raise HTTPException(
+            status_code=403, detail="Only system admins can retry job records."
+        )
+    file_record = db.get(BulkAIUploadFile, file_id)
+    if file_record is None:
+        raise HTTPException(status_code=404, detail="Upload file not found")
+    preview = deck_wipe_preview(db, file_record.created_deck_id)
+    preview["file_id"] = str(file_id)
+    return preview
 
 
 @router.post("/bulk-ai-upload/{bulk_id}/purge")

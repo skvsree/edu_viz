@@ -14,9 +14,10 @@ removed by hand or by an older deployment cannot leave orphans behind.
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
-from sqlalchemy import delete, inspect, select
+from sqlalchemy import delete, func, inspect, select
 from sqlalchemy.orm import Session
 
 from app.models import (
@@ -167,6 +168,62 @@ def purge_bulk_upload(db: Session, bulk: BulkAIUpload) -> dict[str, int]:
     )
     logger.info("purge: bulk upload %s permanently deleted: %s", bulk_id, counts)
     return counts
+
+
+def deck_wipe_preview(db: Session, deck_id: uuid.UUID | None) -> dict[str, Any]:
+    """Count what a regeneration wipe would delete from ``deck_id``.
+
+    ``_clear_deck_generated_content`` in the job worker removes every card, card
+    state and review belonging to the deck, so a retry replaces the deck rather
+    than adding to it. The settings UI shows these numbers in its confirmation
+    popup so the user can see that before committing.
+    """
+    empty = {
+        "has_deck": False,
+        "deck_id": None,
+        "deck_name": None,
+        "cards": 0,
+        "card_states": 0,
+        "reviews": 0,
+    }
+    if deck_id is None:
+        return empty
+
+    deck = db.get(Deck, deck_id)
+    if deck is None:
+        return empty
+
+    card_ids = list(
+        db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
+    )
+    card_states = 0
+    reviews = 0
+    if card_ids:
+        card_states = int(
+            db.execute(
+                select(func.count())
+                .select_from(CardState)
+                .where(CardState.card_id.in_(card_ids))
+            ).scalar()
+            or 0
+        )
+        reviews = int(
+            db.execute(
+                select(func.count())
+                .select_from(Review)
+                .where(Review.card_id.in_(card_ids))
+            ).scalar()
+            or 0
+        )
+
+    return {
+        "has_deck": True,
+        "deck_id": str(deck_id),
+        "deck_name": deck.name,
+        "cards": len(card_ids),
+        "card_states": card_states,
+        "reviews": reviews,
+    }
 
 
 def purge_deck(db: Session, deck: Deck) -> dict[str, int]:
