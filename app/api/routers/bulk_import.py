@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from fastapi import File, UploadFile
 
-from app.api.deps import require_bulk_import_api_key
+from app.api.deps import bulk_import_system_admin, require_bulk_import_api_key
 from app.core.db import get_db
 from app.models import Card, CardState, Deck, Tag, User
-from app.services.access import ROLE_SYSTEM_ADMIN, normalize_deck_name
+from app.services.access import normalize_deck_name
 from app.services.anki_import import AnkiImportError, AnkiImportService
 
 router = APIRouter(prefix="/api/v1/import", tags=["bulk-import"])
@@ -128,21 +128,7 @@ def _assign_deck_tags(db: Session, deck: Deck, owner: User, tag_names: list[str]
 
 
 def _system_admin_user(db: Session) -> User:
-    user = (
-        db.execute(
-            select(User)
-            .where(User.role == ROLE_SYSTEM_ADMIN)
-            .order_by(User.created_at.asc())
-        )
-        .scalars()
-        .first()
-    )
-    if user is None:
-        raise HTTPException(
-            status_code=503,
-            detail="No system admin is available for bulk import",
-        )
-    return user
+    return bulk_import_system_admin(db)
 
 
 def _import_chapter_deck(payload: BulkImportDeckPayload, db: Session) -> BulkImportDeckResponse:

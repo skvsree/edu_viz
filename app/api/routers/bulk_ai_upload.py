@@ -14,7 +14,7 @@ from sqlalchemy import delete, select
 
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user
+from app.api.deps import bulk_import_or_session_user
 from app.core.db import get_db
 from app.models import (
     BulkAIUpload,
@@ -591,7 +591,7 @@ def _ensure_bulk_upload_deck(
 def start_bulk_ai_upload(
     source_file: UploadFile = File(...),
     folder_id: str | None = Form(default=None),
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Accept upload, create all file rows and decks up front, then queue worker processing."""
@@ -634,7 +634,7 @@ def start_single_deck_ai_upload(
     deck_id: str,
     request: Request,
     source_file: UploadFile = File(...),
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     deck = db.get(Deck, deck_id)
@@ -701,7 +701,7 @@ def start_single_deck_ai_upload(
 @router.get("/bulk-ai-upload/{bulk_id}")
 def get_bulk_ai_upload(
     bulk_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Get status of a bulk AI upload."""
@@ -757,7 +757,7 @@ def get_bulk_ai_upload(
 @router.post("/bulk-ai-upload/{bulk_id}/stop")
 def stop_bulk_ai_upload(
     bulk_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Stop a running bulk AI upload."""
@@ -796,7 +796,7 @@ def resume_bulk_ai_upload(
     file_id: str | None = None,
     deck_id: str | None = None,
     force: bool = False,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Resume a stopped or failed bulk AI upload, optionally for one file or one deck."""
@@ -1171,7 +1171,7 @@ def resume_bulk_ai_upload(
 def cancel_bulk_ai_upload(
     bulk_id: uuid.UUID,
     file_id: uuid.UUID | None = None,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     bulk = db.get(BulkAIUpload, bulk_id)
@@ -1294,7 +1294,7 @@ def cancel_bulk_ai_upload(
 @router.get("/bulk-ai-upload/files/{file_id}/regeneration-preview")
 def regeneration_preview(
     file_id: uuid.UUID,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """What a retry of this file would delete from its deck.
@@ -1317,7 +1317,7 @@ def regeneration_preview(
 @router.post("/bulk-ai-upload/{bulk_id}/purge")
 def purge_bulk_ai_upload(
     bulk_id: uuid.UUID,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Permanently delete a finished bulk upload and its bookkeeping rows.
@@ -1353,7 +1353,7 @@ def purge_bulk_ai_upload(
 
 @router.get("/jobs")
 def list_jobs(
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     limit: int = 20,
     db: Session = Depends(get_db),
 ):

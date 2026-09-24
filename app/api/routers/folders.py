@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user
+from app.api.deps import bulk_import_or_session_user, current_user
 from app.core.db import get_db
 from app.models import Deck, Folder, User
 from app.services.access import can_manage_deck, can_manage_decks, is_org_admin, is_system_admin
@@ -140,7 +140,7 @@ def _can_manage_folder(user: User, folder: Folder) -> bool:
 
 @router.get("/folders", response_model=list[FolderResponse])
 def list_root_folders(
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """List root folders (parent_id=null) for the current user/org."""
@@ -159,7 +159,7 @@ def list_root_folders(
 @router.get("/folders/{folder_id}", response_model=FolderResponse)
 def get_folder(
     folder_id: UUID,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Get a specific folder by ID."""
@@ -172,7 +172,7 @@ def get_folder(
 @router.get("/folders/{folder_id}/subfolders", response_model=list[FolderResponse])
 def list_subfolders(
     folder_id: UUID,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """List direct subfolders of a folder."""
@@ -192,7 +192,7 @@ def list_subfolders(
 @router.get("/folders/{folder_id}/breadcrumb", response_model=list[FolderBreadcrumb])
 def get_folder_breadcrumb(
     folder_id: UUID,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Get breadcrumb path for a folder."""
@@ -205,7 +205,7 @@ def get_folder_breadcrumb(
 @router.post("/folders", response_model=FolderResponse, status_code=201)
 def create_folder(
     folder_data: FolderCreate,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Create a new folder."""
@@ -290,7 +290,7 @@ def delete_folder(
 def list_folder_decks(
     folder_id: UUID,
     include_subfolders: bool = False,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """List decks in a folder, optionally including decks from subfolders."""
@@ -434,7 +434,7 @@ def move_folder(
 
 @router.get("/folders/tree", response_model=list[dict])
 def get_folder_tree(
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Get full folder tree structure for folder picker."""

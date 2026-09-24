@@ -23,21 +23,24 @@ a second chapter into the same deck wipes the first chapter's cards
 (`_clear_deck_generated_content`). One zip per book is the shape this API
 actually supports, and it gives one bulk job per book instead of one per chapter.
 
-Auth: the PDF bulk endpoints require the app session cookie, not the bulk-import
-API key. Supply it with ``--cookie`` / ``--cookie-file``, or let the script mint
-one from the app secret with ``--user-email`` (needs ``--secret-key`` and a
-checkout of the app on ``PYTHONPATH``).
+Auth: pass ``--api-key`` (or ``--api-key-file``, or export ``BULK_IMPORT_API_KEY``)
+and the script authenticates as the system admin — the same identity and key the
+``/api/v1/import/*`` endpoints use. The PDF bulk endpoints accept that key
+(``X-Api-Key``) alongside the browser session cookie. A cookie still works:
+``--cookie`` / ``--cookie-file``, or let the script mint one from the app secret
+with ``--user-email`` (needs ``--secret-key`` and a checkout of the app on
+``PYTHONPATH``).
 
 Examples
 --------
     # see what would be imported
     ./ncert_bulk_import.py --base-url https://qa.edu.selviz.in --dry-run
 
-    # import every English Class VI book
+    # import every English Class VI book, authenticating with the API key
     ./ncert_bulk_import.py --base-url https://qa.edu.selviz.in \
-        --cookie-file ~/.eduviz-session --class "Class VI"
+        --api-key "$BULK_IMPORT_API_KEY" --class "Class VI"
 
-    # one book, and keep the downloaded PDFs
+    # one book, and keep the downloaded PDFs, with a browser session instead
     ./ncert_bulk_import.py --base-url http://127.0.0.1:18000 \
         --cookie-file ~/.eduviz-session --book fecu1 --keep-pdfs
 """
@@ -105,15 +108,25 @@ class _ChainedBody:
 class ApiClient:
     """Minimal JSON/multipart client for edu_viz, stdlib only."""
 
-    def __init__(self, base_url: str, cookie: str | None, timeout: float = 120.0):
+    def __init__(
+        self,
+        base_url: str,
+        cookie: str | None = None,
+        *,
+        api_key: str | None = None,
+        timeout: float = 120.0,
+    ):
         self.base_url = base_url.rstrip("/")
         self.cookie = cookie
+        self.api_key = api_key
         self.timeout = timeout
 
     def _headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         if self.cookie:
             headers["Cookie"] = self.cookie
+        if self.api_key:
+            headers["X-Api-Key"] = self.api_key
         if extra:
             headers.update(extra)
         return headers
@@ -269,6 +282,18 @@ def resolve_cookie(args: argparse.Namespace) -> str | None:
     if args.user_email:
         return mint_cookie(args)
     return None
+
+
+def resolve_api_key(args: argparse.Namespace) -> str | None:
+    """The bulk-import API key, from the flag, a file, or the environment."""
+    key = (args.api_key or "").strip()
+    if not key and args.api_key_file:
+        key = Path(args.api_key_file).expanduser().read_text(encoding="utf-8").strip()
+        if not key:
+            raise ScriptError(f"API key file {args.api_key_file} is empty")
+    if not key:
+        key = (os.environ.get("BULK_IMPORT_API_KEY") or "").strip()
+    return key or None
 
 
 def mint_cookie(args: argparse.Namespace) -> str:
@@ -465,6 +490,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--base-url", required=True,
                         help="edu_viz base URL, e.g. http://127.0.0.1:18000")
+    parser.add_argument("--api-key",
+                        help="Bulk-import API key (or set BULK_IMPORT_API_KEY); "
+                             "authenticates as the system admin")
+    parser.add_argument("--api-key-file", help="File containing the bulk-import API key")
     parser.add_argument("--cookie", help="Raw session cookie value")
     parser.add_argument("--cookie-file", help="File containing the session cookie")
     parser.add_argument("--user-email",
@@ -557,15 +586,16 @@ def main() -> int:
         return 0
 
     cookie = resolve_cookie(args)
-    if not cookie:
+    api_key = resolve_api_key(args)
+    if not cookie and not api_key:
         print(
-            "No credentials. Pass --cookie/--cookie-file, or --user-email with "
-            "--secret-key.\nThe PDF bulk endpoints require the app session cookie "
-            "(the bulk-import API key only covers /api/v1/import/*).",
+            "No credentials. Pass --api-key (or --api-key-file, or set "
+            "BULK_IMPORT_API_KEY) to authenticate as the system admin, or use "
+            "--cookie/--cookie-file, or --user-email with --secret-key.",
             file=sys.stderr,
         )
         return 2
-    client = ApiClient(args.base_url, cookie, timeout=args.timeout)
+    client = ApiClient(args.base_url, cookie, api_key=api_key, timeout=args.timeout)
 
     workdir = Path(args.workdir).expanduser() if args.workdir else Path(
         tempfile.mkdtemp(prefix="ncert-import-")
