@@ -83,7 +83,7 @@ Add the callback URL in your provider's app registration before starting.
 | `SYSTEM_ADMIN_BOOTSTRAP_EMAIL` | `johdoe@email.com` | First user with this email is promoted to system_admin on login |
 | `AI_PROVIDER` | `openai` | AI provider: `openai`, `minimax`, or `claude` |
 | `AI_API_KEY` | empty | API key for AI content generation |
-| `BULK_IMPORT_API_KEY` | empty | API key for bulk deck import via `POST /api/v1/import/*` |
+| `BULK_IMPORT_API_KEY` | empty | API key for `X-Api-Key` automation: bulk deck import (`POST /api/v1/import/*`), the bulk AI upload (`/api/v1/bulk-ai-upload/*`), and folder reads/creation |
 | `FOOTER_COPYRIGHT_TEXT` | `SelViz Software Solutions` | Shown in page footer |
 | `TEST_DAILY_LIMIT` | `0` (unlimited) | Max tests per user per day |
 | `TEST_COOLDOWN_SECONDS` | `0` | Minimum seconds between test attempts |

@@ -2,12 +2,42 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Protocol
 import re
 import unicodedata
 
 logger = logging.getLogger(__name__)
+
+
+def opencode_session_id(suffix: str | None = None) -> str:
+    """Build a session id for the ``x-opencode-session`` header.
+
+    OpenCode Go wants one stable id per conversation so it can route and
+    cache prompts; pass the same ``suffix`` (job id, child file id, ...) to
+    share a session across the calls of a single conversation.
+    """
+    if suffix:
+        return f"eduviz-{suffix}"
+    return f"eduviz-{uuid.uuid4().hex[:12]}"
+
+
+def _opencode_headers(secret: str, session_id: str) -> dict[str, str]:
+    """Headers for an OpenCode Go chat-completions request.
+
+    Without ``x-opencode-session`` the endpoint answers 400
+    ``MissingSessionID``, and without a client user agent the request is
+    rejected at the edge (403, Cloudflare error code 1010).
+    """
+    from app.core.config import settings
+
+    return {
+        "Authorization": f"Bearer {secret}",
+        "Content-Type": "application/json",
+        "User-Agent": settings.opencode_client_ua,
+        "x-opencode-session": session_id,
+    }
 
 
 def _extract_minimax_text(data: dict) -> str:
@@ -448,7 +478,7 @@ def _parse_study_pack_json(raw: str) -> GeneratedStudyPack:
     return GeneratedStudyPack(flashcards=flashcards, mcqs=mcqs)
 
 
-def get_study_pack_provider(name: str) -> StudyPackProvider:
+def get_study_pack_provider(name: str, session_id: str | None = None) -> StudyPackProvider:
     name = name.strip().lower()
     if name == "openai":
         return OpenAIStudyPackProvider()
@@ -457,9 +487,9 @@ def get_study_pack_provider(name: str) -> StudyPackProvider:
     if name == "claude":
         return ClaudeStudyPackProvider()
     if name == "opencode":
-        return OpencodeStudyPackProvider()
+        return OpencodeStudyPackProvider(session_id=session_id)
     if name == "deepseek":
-        return DeepSeekRevisionProvider()
+        return DeepSeekRevisionProvider(session_id=session_id)
     raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
 
 
@@ -472,11 +502,14 @@ class DeepSeekRevisionProvider:
     """
     name = "deepseek"
 
-    def __init__(self) -> None:
+    def __init__(self, session_id: str | None = None) -> None:
         from app.core.config import settings
         self.api_endpoint = settings.revision_notes_api_endpoint
         self.model = settings.revision_notes_model
         self.max_tokens = settings.revision_notes_max_tokens
+        # Stick to one session per provider instance so every call of the
+        # same job/conversation reuses the same OpenCode routing bucket.
+        self.session_id = session_id or opencode_session_id()
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
@@ -490,10 +523,7 @@ class DeepSeekRevisionProvider:
         import requests
         response = requests.post(
             self.api_endpoint,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=_opencode_headers(api_key, self.session_id),
             json={
                 "model": model,
                 "messages": [
@@ -539,14 +569,45 @@ class DeepSeekRevisionProvider:
         return self._call_api(self.model, prompt, api_key)
 
 
+def _opencode_timeout() -> int:
+    """Read timeout for one OpenCode Go pass (seconds).
+
+    Passes run sequentially, so this is the block size for a hung request; a
+    healthy pass finishes in 10-40s.
+    """
+    try:
+        from app.core.config import settings
+
+        return max(10, int(getattr(settings, "opencode_request_timeout", 60) or 60))
+    except Exception:  # noqa: BLE001 - never fail a request over config lookup
+        return 60
+
+
+def _opencode_max_tokens() -> int:
+    """Completion budget for OpenCode Go.
+
+    Requests asking for a long completion come back as empty-bodied 503s, so
+    this is configurable and deliberately smaller than the old 16384.
+    """
+    try:
+        from app.core.config import settings
+
+        return max(256, int(getattr(settings, "opencode_max_tokens", 4096) or 4096))
+    except Exception:  # noqa: BLE001 - never fail a request over config lookup
+        return 4096
+
+
 class OpencodeStudyPackProvider:
     """OpenCode provider via OpenAI-compatible HTTP API."""
     name = "opencode"
 
-    def __init__(self) -> None:
+    def __init__(self, session_id: str | None = None) -> None:
         from app.core.config import settings
         self.api_endpoint = settings.opencode_api_endpoint
         self.model = settings.opencode_model
+        # One session per provider instance: OpenCode Go wants a stable
+        # x-opencode-session per conversation for routing + prompt caching.
+        self.session_id = session_id or opencode_session_id()
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
@@ -565,10 +626,7 @@ class OpencodeStudyPackProvider:
         import requests
         response = requests.post(
             self.api_endpoint,
-            headers={
-                "Authorization": f"Bearer {credential.secret}",
-                "Content-Type": "application/json",
-            },
+            headers=_opencode_headers(credential.secret, self.session_id),
             json={
                 "model": self.model,
                 "messages": [
@@ -582,15 +640,21 @@ class OpencodeStudyPackProvider:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                "max_tokens": 16384,
+                "max_tokens": _opencode_max_tokens(),
                 "temperature": 0.3,
             },
-            timeout=180,
+            timeout=_opencode_timeout(),
         )
         if response.status_code != 200:
             body = response.text[:300]
+            hint = ""
+            if "MissingSessionID" in body:
+                hint = (
+                    " (the x-opencode-session header was rejected; check "
+                    "OPENCODE_CLIENT_UA / provider session id)"
+                )
             raise AIGenerationError(
-                f"OpenCode API error ({response.status_code}): {body}"
+                f"OpenCode API error ({response.status_code}): {body}{hint}"
             )
 
         data = response.json()

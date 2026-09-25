@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 import re
 from functools import lru_cache
 from hashlib import sha256
@@ -21,6 +22,7 @@ from app.api.deps import current_user, optional_current_user
 from app.core.config import settings
 from app.core.db import get_db
 from app.models import (
+    JobEvent,
     BulkAIUpload,
     BulkAIUploadChildFile,
     BulkAIUploadFile,
@@ -31,7 +33,6 @@ from app.models import (
     ConceptMapStatus,
     Deck,
     Job,
-    JobStatus,
     Organization,
     Review,
     Tag,
@@ -68,6 +69,7 @@ from app.services.ai_auth import (
 )
 from app.services.csv_import import CsvImportError, parse_cards_csv
 from app.services.dashboard import list_accessible_deck_stats
+from app.services.purge import PurgeError, deleted_decks, purge_deck
 from app.services.review_service import ReviewService
 from app.services.storage import deck_media_prefix, get_storage
 
@@ -272,6 +274,13 @@ def _settings_home_response(
         if user.role == ROLE_SYSTEM_ADMIN
         else 0
     )
+    deleted_deck_count = (
+        db.execute(
+            select(func.count(Deck.id)).where(Deck.is_deleted.is_(True))
+        ).scalar_one()
+        if user.role == ROLE_SYSTEM_ADMIN
+        else 0
+    )
 
     return templates.TemplateResponse(
         "settings/index.html",
@@ -285,6 +294,7 @@ def _settings_home_response(
             ),
             "visible_user_count": len(visible_users),
             "job_count": job_count,
+            "deleted_deck_count": deleted_deck_count,
             "settings_error": (
                 settings_error
                 if settings_error is not None
@@ -837,6 +847,241 @@ def _jobs_response(
             "title": "Jobs | edu selviz",
         },
         status_code=status_code,
+    )
+
+
+@router.post("/settings/decks/purge-selected")
+def purge_selected_decks(
+    deck_ids: list[str] | None = Form(default=None),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently remove several deleted decks in one action.
+
+    Reports how many were removed, and lists the ones that were skipped (no
+    longer deleted) or refused (a job or upload is still running) so a partial
+    failure is never silently swallowed.
+    """
+    _require_system_admin(user)
+
+    selected = [deck_id for deck_id in (deck_ids or []) if deck_id]
+    if not selected:
+        return RedirectResponse(
+            url="/settings/deleted-decks?error=No+decks+were+selected.",
+            status_code=303,
+        )
+
+    purged = 0
+    records_removed = 0
+    objects_removed = 0
+    skipped: list[str] = []
+    refused: list[str] = []
+
+    for raw_id in selected:
+        try:
+            deck_uuid = UUID(raw_id)
+        except (ValueError, TypeError):
+            skipped.append("an unknown deck")
+            continue
+
+        deck = db.get(Deck, deck_uuid)
+        if deck is None:
+            skipped.append("a deck that no longer exists")
+            continue
+        if not getattr(deck, "is_deleted", False):
+            skipped.append(f"{deck.name or 'a deck'} (restored since the page loaded)")
+            continue
+
+        name = deck.name or "Untitled deck"
+        try:
+            counts = purge_deck(db, deck)
+        except PurgeError as exc:
+            refused.append(f"{name}: {exc}")
+            continue
+
+        purged += 1
+        objects_removed += counts.get("storage_objects", 0)
+        records_removed += sum(
+            value for key, value in counts.items() if key != "storage_objects"
+        )
+
+    query: list[tuple[str, str]] = []
+    skip_reasons = skipped + refused
+    if purged:
+        query.append(
+            (
+                "success",
+                f"{purged} deck(s) permanently deleted — {records_removed} records and "
+                f"{objects_removed} stored objects removed.",
+            )
+        )
+    else:
+        query.append(("error", "No decks were deleted."))
+    if skip_reasons:
+        label = "Skipped" if purged else "Details"
+        query.append((f"{'warning' if purged else 'error'}", f"{label} " + "; ".join(skip_reasons) + "."))
+
+    return RedirectResponse(
+        url="/settings/deleted-decks?" + urlencode(query), status_code=303
+    )
+
+
+def _deleted_decks_response(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    status_code: int = 200,
+):
+    """Admin listing of soft-deleted decks that can still be purged."""
+    _require_system_admin(user)
+
+    decks = deleted_decks(db)
+    deck_ids = [deck.id for deck in decks]
+
+    card_counts: dict = {}
+    if deck_ids:
+        card_rows = db.execute(
+            select(Card.deck_id, func.count(Card.id))
+            .where(Card.deck_id.in_(deck_ids))
+            .group_by(Card.deck_id)
+        ).all()
+        card_counts = {row[0]: row[1] for row in card_rows}
+
+    owner_ids = {deck.user_id for deck in decks if deck.user_id}
+    owner_emails: dict = {}
+    if owner_ids:
+        owner_emails = {
+            owner.id: owner.email
+            for owner in db.execute(
+                select(User).where(User.id.in_(owner_ids))
+            ).scalars().all()
+        }
+
+    return templates.TemplateResponse(
+        "settings/deleted_decks.html",
+        {
+            "request": request,
+            "user": user,
+            "deleted_decks": [
+                {
+                    "deck": deck,
+                    "card_count": card_counts.get(deck.id, 0),
+                    "owner_email": owner_emails.get(deck.user_id),
+                }
+                for deck in decks
+            ],
+            "settings_error": request.query_params.get("error"),
+            "settings_success": request.query_params.get("success"),
+            "settings_warning": request.query_params.get("warning"),
+            "title": "Deleted decks | edu selviz",
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/settings/jobs/files/{file_id}/events")
+def job_events_for_file(
+    file_id: str,
+    limit: int = 200,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Recent worker events for one upload file, for the jobs-page log panel.
+
+    Backs the expandable log on /settings/jobs: the same messages the worker
+    prints to stdout, so nobody has to tail the container to see why a run is
+    slow or which passes failed.
+    """
+    _require_system_admin(user)
+    try:
+        file_uuid = uuid.UUID(str(file_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=404, detail="Upload file not found")
+
+    file_record = db.get(BulkAIUploadFile, file_uuid)
+    if file_record is None:
+        raise HTTPException(status_code=404, detail="Upload file not found")
+
+    events = (
+        db.execute(
+            select(JobEvent)
+            .where(JobEvent.file_id == file_uuid)
+            .order_by(JobEvent.created_at.desc())
+            .limit(max(1, min(int(limit or 200), 500)))
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "file_id": str(file_uuid),
+        "stage": file_record.current_stage,
+        "status": file_record.status,
+        "chunks": {
+            "completed": file_record.chunks_completed or 0,
+            "total": file_record.chunks_total or 0,
+        },
+        "passes": {
+            "completed": file_record.passes_completed or 0,
+            "failed": file_record.passes_failed or 0,
+            "total": file_record.passes_total or 0,
+        },
+        "events": [
+            {
+                "created_at": (
+                    event.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                    if event.created_at
+                    else ""
+                ),
+                "level": event.level,
+                "message": event.message,
+            }
+            for event in reversed(events)
+        ],
+    }
+
+
+@router.get("/settings/deleted-decks", response_class=HTMLResponse)
+def deleted_decks_page(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    return _deleted_decks_response(request, user=user, db=db)
+
+
+@router.post("/settings/decks/{deck_id}/purge")
+def purge_deck_permanently(
+    deck_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently remove a soft-deleted deck and everything it owns."""
+    _require_system_admin(user)
+
+    deck = db.get(Deck, deck_id)
+    if not deck or not getattr(deck, "is_deleted", False):
+        raise HTTPException(status_code=404, detail="Deleted deck not found")
+
+    deck_name = deck.name or "Deck"
+    try:
+        counts = purge_deck(db, deck)
+    except PurgeError as exc:
+        return RedirectResponse(
+            url=f"/settings/deleted-decks?error={quote_plus(str(exc))}",
+            status_code=303,
+        )
+
+    removed = sum(
+        value for key, value in counts.items() if key != "storage_objects"
+    )
+    message = quote_plus(
+        f"{deck_name} permanently deleted — {removed} records and "
+        f"{counts.get('storage_objects', 0)} stored objects removed."
+    )
+    return RedirectResponse(
+        url=f"/settings/deleted-decks?success={message}", status_code=303
     )
 
 
@@ -3058,330 +3303,141 @@ def review_rate(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/decks/{deck_id}/concept-map", response_class=HTMLResponse)
-def deck_concept_map(
-    request: Request,
-    deck_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Render the concept map page for a deck."""
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_access_deck(user, deck):
-        raise HTTPException(status_code=404)
+def _deck_ai_credential(db: Session, user: User):
+    """Resolve the credential to use for an on-demand generation.
 
-    concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
-        .first()
-    )
-    can_edit = can_manage_deck(user, deck)
-
-    return _html_no_store(
-        templates.TemplateResponse(
-            "decks/concept_map.html",
-            {
-                "request": request,
-                "user": user,
-                "deck": deck,
-                "concept_map": concept_map,
-                "can_edit": can_edit,
-                "title": f"Concept Map | {deck.name}",
-            },
-        )
-    )
-
-
-@router.post("/decks/{deck_id}/concept-map/generate-revision-pdf")
-def deck_concept_map_request_revision_pdf(
-    request: Request,
-    deck_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Queue a background job to generate AI-selected revision notes PDF.
-
-    The job runs AI-as-selector on each topic, generates a low-ink PDF,
-    and stores it to SeaweedFS. The ConceptMap.revision_pdf_status field
-    tracks progress (pending → processing → ready/failed).
-
-    Returns JSON with status and job info so the frontend can poll.
+    Mirrors ``job_worker._resolve_ai_provider_and_credential``: user scope, then
+    the user's organization (when AI is enabled there), then the environment
+    key. Returns ``(provider_name, credential)``; the credential may be None
+    when nothing is configured, in which case generation falls back to the
+    heuristic path.
     """
-    from fastapi.responses import JSONResponse
+    from app.services.ai_auth import (
+        get_env_ai_provider_name,
+        get_scope_provider,
+        resolve_ai_credential,
+    )
 
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_access_deck(user, deck):
-        raise HTTPException(status_code=404)
-    if not can_manage_deck(user, deck):
-        return JSONResponse(
-            {"message": "You don't have permission."},
-            status_code=403,
-        )
+    provider = get_scope_provider(db, "user", user.id) if user.id else None
+    if not provider and getattr(user, "organization_id", None):
+        org = db.get(Organization, user.organization_id)
+        if org and getattr(org, "is_ai_enabled", False):
+            provider = get_scope_provider(db, "organization", org.id)
+    if not provider:
+        provider = get_env_ai_provider_name() or "openai"
+    try:
+        resolution = resolve_ai_credential(db, user, provider)
+    except Exception as exc:  # noqa: BLE001 - heuristic fallback is fine
+        logger.warning("revision notes: credential resolution failed: %s", exc)
+        return provider, None
+    return provider, resolution.credential
 
+
+def _deck_concept_map(db: Session, deck: Deck, *, create: bool = False):
+    """The deck's ConceptMap row, optionally created so a PDF has somewhere to live."""
     concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
-        .first()
+        db.query(ConceptMap).filter(ConceptMap.deck_id == deck.id).first()
     )
-    if not concept_map or not concept_map.graph_data:
-        return JSONResponse(
-            {"message": "No concept map available. Generate the outline first."},
-            status_code=400,
+    if concept_map is None and create:
+        concept_map = ConceptMap(
+            deck_id=deck.id,
+            status=ConceptMapStatus.PENDING.value,
         )
+        db.add(concept_map)
+        db.commit()
+        db.refresh(concept_map)
+    return concept_map
 
-    # If revision PDF is already ready, serve immediately
-    if concept_map.revision_pdf_status == "ready":
-        return {"status": "ready", "message": "Revision PDF is ready"}
 
-    # If already processing, don't queue another
-    if concept_map.revision_pdf_status in ("pending", "processing"):
-        return {"status": "processing", "message": "Revision PDF is being generated"}
+def ensure_deck_revision_pdf(db: Session, *, deck: Deck, user: User) -> ConceptMap:
+    """Return the deck's revision notes PDF, generating it if needed.
 
-    # Mark as pending and enqueue job
-    concept_map.revision_pdf_status = "pending"
-    db.commit()
+    This is what backs the one-click download: a ready PDF is reused, anything
+    else is generated inline (AI topics when a credential resolves, heuristic
+    fallback otherwise) and stored before the file is streamed back.
+    """
+    from app.services.concept_map import generate_concept_map_revision_pdf
 
-    new_job = Job(
-        job_type="concept_map_revision",
-        reference_id=concept_map.id,
-        total_items=1,
-        status=JobStatus.PENDING.value,
+    concept_map = _deck_concept_map(db, deck, create=True)
+    if (
+        concept_map.revision_pdf_status == "ready"
+        and concept_map.revision_pdf_storage_key
+    ):
+        return concept_map
+
+    provider_name, credential = _deck_ai_credential(db, user)
+    return generate_concept_map_revision_pdf(
+        db,
+        concept_map_id=concept_map.id,
+        credential_provider_name=provider_name,
+        credential=credential,
     )
-    db.add(new_job)
-    db.commit()
-
-    return {
-        "status": "pending",
-        "job_id": str(new_job.id),
-        "message": "Revision PDF generation queued",
-    }
 
 
-@router.get("/decks/{deck_id}/concept-map/revision-pdf-status")
-def deck_concept_map_revision_pdf_status(
-    request: Request,
-    deck_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Check the status of the revision notes PDF generation job."""
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_access_deck(user, deck):
-        raise HTTPException(status_code=404)
-
-    concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id)
-        .first()
-    )
-    if not concept_map:
-        return {"status": "none", "message": "No concept map"}
-
-    return {
-        "status": concept_map.revision_pdf_status or "none",
-        "error": concept_map.error_message if concept_map.revision_pdf_status == "failed" else None,
-    }
-
-
-@router.get("/decks/{deck_id}/concept-map/revision-notes.pdf")
-def deck_concept_map_revision_notes(
-    request: Request,
-    deck_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Download the generated revision notes PDF from storage."""
+def _revision_pdf_response(*, deck: Deck, concept_map: ConceptMap):
+    """Stream a generated revision notes PDF back to the browser."""
     from fastapi.responses import Response
-    from app.services.storage import get_storage, StorageError
-
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_access_deck(user, deck):
-        raise HTTPException(status_code=404)
-
-    concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id, ConceptMap.revision_pdf_status == "ready")
-        .first()
-    )
-    if not concept_map or not concept_map.revision_pdf_storage_key:
-        raise HTTPException(status_code=404, detail="Revision PDF not ready")
+    from app.services.storage import StorageError, get_storage
 
     try:
-        storage = get_storage()
-        pdf_bytes, content_type = storage.open_bytes(key=concept_map.revision_pdf_storage_key)
-        return Response(
-            content=pdf_bytes,
-            media_type=content_type or "application/pdf",
-            headers={
-                "Content-Disposition": f'inline; filename="{deck.name} - Revision Notes.pdf"',
-            },
+        pdf_bytes, content_type = get_storage().open_bytes(
+            key=concept_map.revision_pdf_storage_key
         )
     except (StorageError, FileNotFoundError):
-        raise HTTPException(status_code=404, detail="Revision PDF file not found in storage")
+        raise HTTPException(status_code=404, detail="Revision notes file not found")
+
+    filename = f"{(deck.name or 'Deck').strip()} - Revision Notes.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type=content_type or "application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
-@router.get("/api/v1/decks/{deck_id}/concept-map", response_class=HTMLResponse)
-def deck_concept_map_json(
+@router.get("/decks/{deck_id}/revision-notes.pdf")
+def deck_revision_notes_download(
     request: Request,
     deck_id: str,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Serve the concept map graph data as JSON for the mind map renderer."""
+    """Download this deck's revision notes, generating them on first click.
+
+    No separate page: the deck overview button points straight here, and the
+    PDF is built and stored when it does not exist yet. A failure is reported
+    as an HTML page with the reason and a link back to the deck.
+    """
+    from fastapi.responses import HTMLResponse
+
     deck = db.get(Deck, deck_id)
     if not deck or not can_access_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id, ConceptMap.status == ConceptMapStatus.READY.value)
-        .first()
-    )
+    concept_map = ensure_deck_revision_pdf(db, deck=deck, user=user)
 
-    if not concept_map or not concept_map.graph_data:
-        from fastapi.responses import JSONResponse
-
-        return JSONResponse(
-            {"status": "not_found", "message": "No concept map available for this deck."},
-            status_code=404,
+    if concept_map.revision_pdf_status != "ready" or not concept_map.revision_pdf_storage_key:
+        reason = concept_map.error_message or "Revision notes could not be generated."
+        return HTMLResponse(
+            status_code=502,
+            content=_revision_notes_error_page(deck, reason),
         )
 
-    return {
-        "status": "ready",
-        "title": concept_map.title or deck.name,
-        "node_count": concept_map.node_count,
-        "graph": concept_map.graph_data,
-    }
+    return _revision_pdf_response(deck=deck, concept_map=concept_map)
 
 
-@router.get("/decks/{deck_id}/concept-map/status")
-def deck_concept_map_status(
-    request: Request,
-    deck_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Poll concept map generation status.
+def _revision_notes_error_page(deck: Deck, reason: str) -> str:
+    import html
 
-    Returns {status: "ready"|"pending"|"processing"|"failed"|"none",
-              node_count?, error? }
-    """
-    from fastapi.responses import JSONResponse
-
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_access_deck(user, deck):
-        return JSONResponse({"status": "none", "message": "Not found"}, status_code=404)
-
-    concept_map = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id)
-        .first()
+    deck_name = html.escape(deck.name or "this deck")
+    return (
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        f"<title>Revision notes — {deck_name}</title></head>"
+        "<body style=\"font-family:system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem\">"
+        "<h1 style=\"font-size:1.25rem\">Revision notes could not be generated</h1>"
+        f"<p style=\"color:#555\">{html.escape(reason)}</p>"
+        f"<p><a href=\"/decks/{deck.id}\">Back to {deck_name}</a></p>"
+        "</body></html>"
     )
-
-    if not concept_map:
-        return {"status": "none", "message": "No concept map"}
-
-    resp: dict = {"status": (concept_map.status or ConceptMapStatus.PENDING.value)}
-    if concept_map.status == ConceptMapStatus.READY.value:
-        resp["node_count"] = concept_map.node_count
-    if concept_map.status == ConceptMapStatus.FAILED.value:
-        resp["error"] = concept_map.error_message
-    return resp
-
-
-@router.post("/decks/{deck_id}/concept-map/generate")
-def generate_deck_concept_map(
-    request: Request,
-    deck_id: str,
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    """Enqueue a background job to generate (or hard-regenerate) a concept map.
-
-    Unlike revision notes (which skip if READY), concept map generation is
-    always a hard regenerate — it overwrites any existing map.
-
-    Returns JSON with status so the frontend can poll.
-    """
-    from datetime import datetime as dt
-    from fastapi.responses import JSONResponse
-
-    deck = db.get(Deck, deck_id)
-    if not deck or not can_access_deck(user, deck):
-        raise HTTPException(status_code=404)
-    if not can_manage_deck(user, deck):
-        return JSONResponse(
-            {"message": "You don't have permission to generate concept maps for this deck."},
-            status_code=403,
-        )
-
-    # Check source file exists
-    source_file = (
-        db.query(BulkAIUploadFile)
-        .filter(
-            BulkAIUploadFile.created_deck_id == deck.id,
-            BulkAIUploadFile.status == BulkAIUploadFileStatus.COMPLETED.value,
-            BulkAIUploadFile.content_text.isnot(None),
-            BulkAIUploadFile.content_text != "",
-        )
-        .order_by(BulkAIUploadFile.completed_at.desc())
-        .first()
-    )
-
-    if not source_file:
-        return JSONResponse(
-            {"message": "No uploaded content found for this deck. Upload a file first."},
-            status_code=400,
-        )
-
-    # Check if a concept_map job is already pending/running (dedup)
-    existing_job = (
-        db.query(Job)
-        .filter(
-            Job.job_type == "concept_map",
-            Job.reference_id.in_(
-                db.query(ConceptMap.id).filter(ConceptMap.deck_id == deck.id)
-            ),
-            Job.status.in_([JobStatus.PENDING.value, JobStatus.RUNNING.value]),
-        )
-        .first()
-    )
-    if existing_job:
-        return {"status": "processing", "message": "Concept map generation is already in progress"}
-
-    # Create / reset the ConceptMap row (hard-regenerate: always overwrite)
-    cm = (
-        db.query(ConceptMap)
-        .filter(ConceptMap.deck_id == deck.id)
-        .first()
-    )
-    if cm:
-        cm.source_file_id = source_file.id
-        cm.status = ConceptMapStatus.PENDING.value
-        cm.error_message = None
-        cm.started_at = dt.utcnow()
-    else:
-        cm = ConceptMap(
-            deck_id=deck.id,
-            source_file_id=source_file.id,
-            status=ConceptMapStatus.PENDING.value,
-            started_at=dt.utcnow(),
-        )
-        db.add(cm)
-    db.flush()
-
-    # Enqueue the background job
-    job = Job(
-        job_type="concept_map",
-        reference_id=cm.id,
-        total_items=1,
-        status=JobStatus.PENDING.value,
-    )
-    db.add(job)
-    db.commit()
-
-    return {
-        "status": "pending",
-        "concept_map_id": str(cm.id),
-        "message": "Concept map generation queued",
-    }

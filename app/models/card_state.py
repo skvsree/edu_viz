@@ -11,7 +11,11 @@ from app.core.db import Base
 class CardState(Base):
     __tablename__ = "card_states"
 
-    card_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cards.id"), primary_key=True)
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
 
     stability: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     difficulty: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)

@@ -11,8 +11,8 @@ from app.core.db import Base
 deck_tags = Table(
     "deck_tags",
     Base.metadata,
-    Column("deck_id", UUID(as_uuid=True), ForeignKey("decks.id"), primary_key=True),
-    Column("tag_id", UUID(as_uuid=True), ForeignKey("tags.id"), primary_key=True),
+    Column("deck_id", UUID(as_uuid=True), ForeignKey("decks.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
 )
 
 

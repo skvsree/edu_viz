@@ -21,6 +21,30 @@ class Settings(BaseSettings):
     openai_generation_enabled: bool = True
     opencode_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
     opencode_model: str = "deepseek-v4-flash"
+    # OpenCode Go requires every client to identify itself with its own user
+    # agent (generic/absent UAs are blocked at the edge with Cloudflare 1010)
+    # and to send a stable ``x-opencode-session`` per conversation
+    # (missing header -> 400 MissingSessionID). See
+    # https://opencode.ai/docs/go/#where-can-i-use-it
+    opencode_client_ua: str = "eduviz/1.0"
+    # How many AI generation passes may be in flight at once. Measured against
+    # the provider: 1 pass in flight never failed, 3 lost one in three, 6 lost
+    # one in two (empty-bodied 503s and 300s read timeouts). Serial by default so
+    # bulk runs complete; raise it if the provider gets sturdier.
+    ai_pass_concurrency: int = 1
+    # Bulk generation used to ask for 18 flashcards + 18 MCQs in one call. The
+    # provider answers those long completions with empty-bodied 503s, while a
+    # 6+6 ask of the same chunk returns 200 in under 10s, so each chunk is
+    # covered by ai_pass_rounds short passes per mode of ai_pass_items items.
+    # Coverage ceiling per chunk = modes x ai_pass_rounds x ai_pass_items.
+    ai_pass_items: int = 6
+    ai_pass_rounds: int = 3
+    # Completion budget sent to OpenCode Go. Long ones correlate with 503s.
+    opencode_max_tokens: int = 4096
+    # Read timeout for a single study-pack pass. Passes are sequential (one in
+    # flight), so a hung request blocks the whole run: a healthy pass returns in
+    # 10-40s, and waiting 180s per hang was the single biggest cost in a run.
+    opencode_request_timeout: int = 60
     # Revision notes: pure AI model
     revision_notes_model: str = "deepseek-v4-pro"
     revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"

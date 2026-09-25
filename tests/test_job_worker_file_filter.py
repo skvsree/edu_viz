@@ -53,6 +53,7 @@ class _CapturingDB:
     def __init__(self, bulk):
         self.bulk = bulk
         self.captured_stmt = None
+        self.statements: list = []
         self.commits = 0
 
     def get(self, model, key):
@@ -63,7 +64,13 @@ class _CapturingDB:
         return None
 
     def execute(self, stmt):
-        self.captured_stmt = stmt
+        # The worker now issues a second query when the file list comes back
+        # empty: a probe for rows a dead worker left in PROCESSING. The
+        # regression this test pins is about the FILE LIST query, so capture the
+        # first statement (and keep every statement for inspection).
+        if self.captured_stmt is None:
+            self.captured_stmt = stmt
+        self.statements.append(stmt)
         return SimpleNamespace(
             scalars=lambda: SimpleNamespace(all=lambda: [], first=lambda: None),
         )

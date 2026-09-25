@@ -36,6 +36,7 @@ from app.models.analytics import (
 from app.models.deck_access import DeckAccess, DeckAccessLevel
 from app.models.ai_credentials import AICredentialScope
 from app.models.job import Job, JobStatus  # noqa: F401
+from app.models.job_event import JobEvent, JobEventLevel  # noqa: F401
 
 __all__ = [
     "Organization",
@@ -76,5 +77,7 @@ __all__ = [
     "ConceptMap",
     "ConceptMapStatus",
     "Job",
+    "JobEvent",
+    "JobEventLevel",
     "JobStatus",
 ]  # noqa: E501,F401

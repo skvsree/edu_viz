@@ -12,7 +12,12 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    card_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cards.id"), index=True, nullable=False)
+    card_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cards.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
 
     rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1..4
     review_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

@@ -14,7 +14,7 @@ from sqlalchemy import delete, select
 
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user
+from app.api.deps import bulk_import_or_session_user
 from app.core.db import get_db
 from app.models import (
     BulkAIUpload,
@@ -32,6 +32,7 @@ from app.models import (
 )
 from app.models.deck import DeckAccessScope
 from app.services.access import normalize_deck_name
+from app.services.purge import PurgeError, deck_wipe_preview, purge_bulk_upload
 from app.services.storage import StorageError, get_storage, guess_content_type
 
 logger = logging.getLogger(__name__)
@@ -590,7 +591,7 @@ def _ensure_bulk_upload_deck(
 def start_bulk_ai_upload(
     source_file: UploadFile = File(...),
     folder_id: str | None = Form(default=None),
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Accept upload, create all file rows and decks up front, then queue worker processing."""
@@ -633,7 +634,7 @@ def start_single_deck_ai_upload(
     deck_id: str,
     request: Request,
     source_file: UploadFile = File(...),
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     deck = db.get(Deck, deck_id)
@@ -700,7 +701,7 @@ def start_single_deck_ai_upload(
 @router.get("/bulk-ai-upload/{bulk_id}")
 def get_bulk_ai_upload(
     bulk_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Get status of a bulk AI upload."""
@@ -756,7 +757,7 @@ def get_bulk_ai_upload(
 @router.post("/bulk-ai-upload/{bulk_id}/stop")
 def stop_bulk_ai_upload(
     bulk_id: str,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Stop a running bulk AI upload."""
@@ -795,7 +796,7 @@ def resume_bulk_ai_upload(
     file_id: str | None = None,
     deck_id: str | None = None,
     force: bool = False,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     """Resume a stopped or failed bulk AI upload, optionally for one file or one deck."""
@@ -1170,7 +1171,7 @@ def resume_bulk_ai_upload(
 def cancel_bulk_ai_upload(
     bulk_id: uuid.UUID,
     file_id: uuid.UUID | None = None,
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     db: Session = Depends(get_db),
 ):
     bulk = db.get(BulkAIUpload, bulk_id)
@@ -1290,9 +1291,69 @@ def cancel_bulk_ai_upload(
     }
 
 
+@router.get("/bulk-ai-upload/files/{file_id}/regeneration-preview")
+def regeneration_preview(
+    file_id: uuid.UUID,
+    user: User = Depends(bulk_import_or_session_user),
+    db: Session = Depends(get_db),
+):
+    """What a retry of this file would delete from its deck.
+
+    Backs the confirmation popup: a retry clears every card, card state and
+    review in the deck before regenerating, so the counts are shown first.
+    """
+    if user.role != "system_admin":
+        raise HTTPException(
+            status_code=403, detail="Only system admins can retry job records."
+        )
+    file_record = db.get(BulkAIUploadFile, file_id)
+    if file_record is None:
+        raise HTTPException(status_code=404, detail="Upload file not found")
+    preview = deck_wipe_preview(db, file_record.created_deck_id)
+    preview["file_id"] = str(file_id)
+    return preview
+
+
+@router.post("/bulk-ai-upload/{bulk_id}/purge")
+def purge_bulk_ai_upload(
+    bulk_id: uuid.UUID,
+    user: User = Depends(bulk_import_or_session_user),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete a finished bulk upload and its bookkeeping rows.
+
+    Decks the upload produced are kept — they are real study content; only the
+    upload record, its child files, attempts, revision notes and jobs go away.
+    Refuses while files or jobs are still running.
+    """
+    if user.role != "system_admin":
+        raise HTTPException(
+            status_code=403, detail="Only system admins can delete job records."
+        )
+
+    bulk = db.get(BulkAIUpload, bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk upload not found")
+
+    try:
+        counts = purge_bulk_upload(db, bulk)
+    except PurgeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    logger.info("purge: bulk upload %s removed by %s", bulk_id, user.email)
+    return {
+        "id": str(bulk_id),
+        "status": "purged",
+        "records_removed": sum(
+            value for key, value in counts.items() if key != "storage_objects"
+        ),
+        "counts": counts,
+    }
+
+
 @router.get("/jobs")
 def list_jobs(
-    user: User = Depends(current_user),
+    user: User = Depends(bulk_import_or_session_user),
     limit: int = 20,
     db: Session = Depends(get_db),
 ):

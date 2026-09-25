@@ -11,14 +11,68 @@ from app.api.routers import pages
 from app.services.access import ROLE_ADMIN, ROLE_SYSTEM_ADMIN, ROLE_USER
 
 
+class _ScalarResult:
+    """Minimal stand-in for SQLAlchemy's ``Result`` / ``ScalarResult``."""
+
+    def __init__(self, items: list[object]):
+        self.items = list(items)
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return list(self.items)
+
+    def first(self):
+        return self.items[0] if self.items else None
+
+    def __iter__(self):
+        return iter(self.items)
+
+
+class _QueryResult:
+    """Minimal stand-in for SQLAlchemy's legacy ``Query`` object.
+
+    ``pages.py`` still calls ``db.query(Model).filter(...).first()`` in the
+    concept-map / credential code paths, so the fake session has to answer
+    that API too — not just ``db.execute(select(...))``.
+    """
+
+    def __init__(self, items: list[object]):
+        self.items = list(items)
+
+    def filter(self, *criteria, **kwargs):
+        return self
+
+    def filter_by(self, **kwargs):
+        return self
+
+    def order_by(self, *criteria):
+        return self
+
+    def limit(self, count):
+        return _QueryResult(self.items[:count])
+
+    def first(self):
+        return self.items[0] if self.items else None
+
+    def all(self):
+        return list(self.items)
+
+    def count(self):
+        return len(self.items)
+
+
 class FakeDB:
     def __init__(
         self,
         objects: dict[object, object] | None = None,
         execute_results: list[object] | None = None,
+        query_results: list[object] | None = None,
     ):
         self.objects = objects or {}
         self.execute_results = execute_results or []
+        self.query_results = query_results or []
         self.added: list[object] = []
         self.committed = False
         self.rolled_back = False
@@ -30,17 +84,11 @@ class FakeDB:
         self.added.append(value)
 
     def execute(self, stmt):
-        class _ScalarResult:
-            def __init__(self, items):
-                self.items = items
-
-            def scalars(self):
-                return self
-
-            def all(self):
-                return self.items
-
         return _ScalarResult(self.execute_results)
+
+    def query(self, *entities):
+        """Legacy ``Session.query()`` answers from ``query_results``."""
+        return _QueryResult(self.query_results)
 
     def flush(self):
         pass
