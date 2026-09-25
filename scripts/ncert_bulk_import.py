@@ -8,8 +8,9 @@ reporting exactly as it does for a manual upload.
 
 What it does, per book:
 
-    ensure folder  Class_XII              (POST /api/v1/folders)
-      ensure folder  English              (POST /api/v1/folders, parent_id=class)
+    ensure folder  <--parent-path>        (e.g. India -> ncert; default: root)
+      ensure folder  Class_XII            (POST /api/v1/folders)
+        ensure folder  English            (POST /api/v1/folders, parent_id=class)
         download every chapter PDF
         zip them and upload ONCE         (POST /api/v1/bulk-ai-upload/start,
                                           folder_id=<subject folder>)
@@ -369,6 +370,21 @@ def ensure_folder(client: ApiClient, name: str, parent_id: str | None) -> str:
         raise
 
 
+def resolve_parent_path(client: ApiClient, path: str) -> str | None:
+    """Ensure a slash-separated folder chain and return the deepest folder id.
+
+    ``--parent-path India/ncert`` files every Class/Subject folder under
+    ``India > ncert`` instead of at the root. Each segment is slugged the same way
+    a Class folder is (``folder_slug``), existing folders are reused, and an empty
+    path returns ``None`` — which is the root, i.e. the old behaviour.
+    """
+    parent_id: str | None = None
+    for segment in (part.strip() for part in (path or "").split("/")):
+        if segment:
+            parent_id = ensure_folder(client, segment, parent_id)
+    return parent_id
+
+
 # Deck creation is deliberately NOT done here. The bulk pipeline names each deck
 # from the title it derives from the PDF's content, and the single-deck endpoint
 # clears the deck's folder, so pre-creating a "book" deck does not survive. One
@@ -504,6 +520,10 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--ncert-base-url", default=DEFAULT_BASE_URL,
                         help="Where to download textbooks from")
+    parser.add_argument("--parent-path", default="",
+                        help="Slash-separated folder path to file everything under, "
+                             'e.g. "India/ncert" (default: root). Each segment is '
+                             "slugged and created if missing.")
     parser.add_argument("--class", dest="classes", action="append", default=[],
                         help='Class name, e.g. "Class VI"; repeatable')
     parser.add_argument("--subject", dest="subjects", action="append", default=[],
@@ -605,6 +625,10 @@ def main() -> int:
     state = load_state(state_path)
     print(f"  workdir: {workdir}")
 
+    parent_folder_id = resolve_parent_path(client, args.parent_path)
+    if args.parent_path:
+        print(f"  folder path: {args.parent_path} -> {parent_folder_id}")
+
     print(f"\n[2/3] Downloading and uploading {len(planned)} book(s) ...")
     totals = {"books": 0, "chapters": 0, "failed": 0, "skipped": 0}
 
@@ -639,7 +663,7 @@ def main() -> int:
         print(f"  {len(chapters)} chapter(s) found")
 
         try:
-            class_folder = ensure_folder(client, ncert_class.name, None)
+            class_folder = ensure_folder(client, ncert_class.name, parent_folder_id)
             subject_folder = ensure_folder(client, subject.name, class_folder)
         except ScriptError as exc:
             print(f"  could not set up folders: {exc}")
