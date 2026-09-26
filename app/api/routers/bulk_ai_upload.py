@@ -1180,6 +1180,145 @@ def resume_bulk_ai_upload(
     }
 
 
+@router.post("/bulk-ai-upload/{bulk_id}/retitle")
+def retitle_bulk_ai_upload(
+    bulk_id: uuid.UUID,
+    folder_id: uuid.UUID | None = None,
+    user: User = Depends(bulk_import_or_session_user),
+    db: Session = Depends(get_db),
+):
+    """Re-derive deck names from each chapter's own navigation block.
+
+    Metadata only: reads the stored PDF, recomputes the name, writes the deck
+    name (and, when ``folder_id`` is given, the deck's folder). Cards, card
+    states and review progress are never touched — this is the counterpart to a
+    force retry, which regenerates and therefore replaces cards, for the case
+    where only the title or the placement is wrong.
+
+    Names come from ``app.services.textbook_nav``: ``Unit 2 · Ch 1 · Picture
+    Time``, with the unit carried forward for chapters whose PDF prints only
+    ``Chapter N``. Files whose document declares no navigation block keep their
+    current name (reported under ``skipped``).
+    """
+    from app.services.job_worker import extract_text_from_pdf
+    from app.services.textbook_nav import build_deck_title, extract_nav_block
+
+    bulk = db.get(BulkAIUpload, bulk_id)
+    if not bulk:
+        raise HTTPException(status_code=404, detail="Bulk upload not found")
+
+    storage = get_storage()
+
+    # Latest attempt per file, in upload order (which is the book order and is
+    # stable across retries, because the child file is reused).
+    child_files = db.execute(
+        select(BulkAIUploadChildFile)
+        .where(BulkAIUploadChildFile.bulk_upload_id == bulk.id)
+        .order_by(BulkAIUploadChildFile.created_at.asc())
+    ).scalars().all()
+    target_rows: list[BulkAIUploadFile] = []
+    for child in child_files:
+        attempt = child.latest_attempt
+        if attempt is not None:
+            target_rows.append(attempt)
+    if not target_rows:
+        target_rows = list(
+            db.execute(
+                select(BulkAIUploadFile)
+                .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+                .order_by(BulkAIUploadFile.created_at.asc())
+            ).scalars().all()
+        )
+
+    # Names already taken by this user's other decks, so a derived name can be
+    # made unique without disturbing them.
+    taken: dict[str, str] = {
+        row.normalized_name: str(row.id)
+        for row in db.execute(
+            select(Deck)
+            .where(Deck.user_id == user.id)
+            .where(Deck.is_deleted.is_(False))
+        ).scalars().all()
+        if row.normalized_name
+    }
+
+    updated: list[dict] = []
+    skipped: list[dict] = []
+    carried_unit: int | None = None
+
+    for file_record in target_rows:
+        deck = db.get(Deck, file_record.created_deck_id) if file_record.created_deck_id else None
+        if deck is None:
+            skipped.append({"file": file_record.original_filename, "reason": "no deck"})
+            continue
+
+        text = None
+        if file_record.storage_key:
+            try:
+                pdf_bytes, _content_type = storage.open_bytes(key=file_record.storage_key)
+                text = extract_text_from_pdf(pdf_bytes)
+            except (FileNotFoundError, StorageError) as exc:
+                skipped.append(
+                    {"file": file_record.original_filename, "reason": f"source unreadable: {exc}"}
+                )
+                continue
+
+        block = extract_nav_block(text)
+        nav_title = build_deck_title(block, carried_unit=carried_unit)
+        if block is not None and block.unit_no is not None:
+            carried_unit = block.unit_no
+        if not nav_title:
+            skipped.append(
+                {"file": file_record.original_filename, "reason": "no navigation block in source"}
+            )
+            if folder_id is not None and deck.folder_id != folder_id:
+                deck.folder_id = folder_id
+            continue
+
+        old_name = deck.name
+        final_name = nav_title
+        if normalize_deck_name(final_name) != deck.normalized_name:
+            suffix = 2
+            while str(taken.get(normalize_deck_name(final_name), "")) not in ("", str(deck.id)):
+                trimmed = nav_title[: max(1, 255 - len(f" ({suffix})"))].rstrip()
+                final_name = f"{trimmed} ({suffix})"
+                suffix += 1
+
+        if deck.normalized_name:
+            taken.pop(deck.normalized_name, None)
+        deck.name = final_name[:255]
+        deck.normalized_name = normalize_deck_name(deck.name)
+        taken[deck.normalized_name] = str(deck.id)
+        if folder_id is not None:
+            deck.folder_id = folder_id
+        file_record.extracted_title = final_name[:255]
+        if file_record.child_file_id:
+            child_row = db.get(BulkAIUploadChildFile, file_record.child_file_id)
+            if child_row is not None:
+                child_row.display_title = final_name[:255]
+        if deck.description is None and file_record.extracted_description:
+            deck.description = (file_record.extracted_description or "")[:5000] or None
+
+        updated.append(
+            {
+                "deck_id": str(deck.id),
+                "file": file_record.original_filename,
+                "old_name": old_name,
+                "new_name": deck.name,
+            }
+        )
+
+    db.commit()
+    return {
+        "bulk_id": str(bulk.id),
+        "updated_count": len(updated),
+        "skipped_count": len(skipped),
+        "folder_id": str(folder_id) if folder_id else None,
+        "updated": updated,
+        "skipped": skipped,
+    }
+
+
 @router.post("/bulk-ai-upload/{bulk_id}/cancel")
 def cancel_bulk_ai_upload(
     bulk_id: uuid.UUID,

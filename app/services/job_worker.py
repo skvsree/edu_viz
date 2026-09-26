@@ -57,6 +57,7 @@ from app.services.ai_generation import (
     parse_title_generation_json,
 )
 from app.services.storage import get_storage, StorageError
+from app.services.textbook_nav import build_deck_title, extract_nav_block
 from app.services.concept_map import generate_concept_map
 
 
@@ -922,6 +923,69 @@ def _reclaim_orphaned_processing_files(
     return list(orphans)
 
 
+def pick_file_title(*, nav_title: str | None, derived_title: str | None) -> tuple[str | None, str]:
+    """Choose the deck title for one uploaded file.
+
+    A title read off the document's own navigation block (``Unit 2 · Ch 1 ·
+    Picture Time``) wins over an AI/derived one. The derived titles are guesses:
+    on NCERT Mridang the model returned "Chapter 02 - Life Around Us" — the unit
+    number on the unit's title — for the chapter that is *Ch 1 of Unit 2*, which
+    made four different decks look like "Chapter 2".
+
+    Returns ``(title, source)`` with ``source`` in ``{"nav", "derived", "none"}``.
+    """
+    if nav_title:
+        return nav_title[:250], "nav"
+    if derived_title:
+        return derived_title[:250], "derived"
+    return None, "none"
+
+
+def _inherited_unit_from_siblings(db: Session, bulk, file_record, storage) -> int | None:
+    """Unit number declared by the nearest earlier chapter of the same book.
+
+    A per-deck retry processes a single file, so the in-run carry-forward has no
+    history to work with, and some chapter PDFs omit the unit line entirely
+    (Mridang's ``Chapter 2 / Greetings`` belongs to Unit 1, which only
+    ``aemr101.pdf`` prints). Walk back over the book's earlier files — ordered by
+    child-file creation, which is upload order and stays put across retries —
+    reading stored PDFs until one declares a unit.
+    """
+    try:
+        if bulk is None or file_record is None or not getattr(file_record, "child_file_id", None):
+            return None
+        current_child = db.get(BulkAIUploadChildFile, file_record.child_file_id)
+        if current_child is None or current_child.created_at is None:
+            return None
+        earlier = db.execute(
+            select(BulkAIUploadChildFile)
+            .where(BulkAIUploadChildFile.bulk_upload_id == bulk.id)
+            .where(BulkAIUploadChildFile.created_at < current_child.created_at)
+            .order_by(BulkAIUploadChildFile.created_at.desc())
+            .limit(6)
+        ).scalars().all()
+        for sibling in earlier:
+            attempt = sibling.latest_attempt
+            storage_key = getattr(attempt, "storage_key", None)
+            if not storage_key:
+                continue
+            try:
+                pdf_bytes, _content_type = storage.open_bytes(key=storage_key)
+            except (FileNotFoundError, StorageError):
+                continue
+            block = extract_nav_block(extract_text_from_pdf(pdf_bytes))
+            if block is not None and block.unit_no is not None:
+                print(
+                    f"[job-worker] inherited unit {block.unit_no} from "
+                    f"{getattr(sibling, 'original_filename', sibling.id)}",
+                    flush=True,
+                )
+                return block.unit_no
+    except Exception as exc:  # never let a title nicety fail a generation run
+        print(f"[job-worker] unit inheritance skipped: {type(exc).__name__} {exc}", flush=True)
+    return None
+
+
 def _requeue_job_for_late_files(db: Session, job: Job, bulk) -> int:
     """Re-queue the job when files are still pending after the per-file loop.
 
@@ -1033,6 +1097,9 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
     hard_fail_job = False
     hard_fail_message = None
+    # Navigation-block carry-forward: a chapter PDF may print only "Chapter N"
+    # without the unit it belongs to, so remember the last unit this run saw.
+    nav_carried_unit: int | None = None
 
     for file_record in file_records:
         bulk = db.get(BulkAIUpload, job.reference_id)
@@ -1098,6 +1165,18 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         try:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
             text = extract_text_from_pdf(pdf_data)
+
+            # Prefer the title the document prints about itself. Only chapters
+            # that declare a chapter but no unit need the walk-back (Maths has no
+            # navigation block at all, and must not pay for PDF lookups).
+            nav_block = extract_nav_block(text)
+            nav_unit = nav_carried_unit
+            if nav_unit is None and nav_block is not None and nav_block.unit_no is None:
+                nav_unit = _inherited_unit_from_siblings(db, bulk, file_record, storage)
+            nav_title = build_deck_title(nav_block, carried_unit=nav_unit)
+            if nav_block is not None and nav_block.unit_no is not None:
+                nav_carried_unit = nav_block.unit_no
+
             title = None
             description = None
             try:
@@ -1138,11 +1217,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     flush=True,
                 )
 
+            title, title_source = pick_file_title(nav_title=nav_title, derived_title=title)
             if not title:
                 raise AIGenerationError('Unable to derive a usable title from document content.')
             print(
                 f"[job-worker] extracted title job={job.id} file={pdf_name} "
-                f"title={title!r} text_len={len(text or '')}",
+                f"title={title!r} source={title_source} text_len={len(text or '')}",
                 flush=True,
             )
 
