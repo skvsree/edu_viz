@@ -511,13 +511,26 @@ def _prepare_fresh_retry_attempt(
             )
 
     old_deck_id = source_file.created_deck_id
+    # Preserve the deck's folder across a retry. A per-deck force retry used to
+    # pass folder_id=None here, and _ensure_bulk_upload_deck assigns the value
+    # whenever it differs — so every retry silently moved the deck back to the
+    # root (verified on prod 2026-09-26: four Class I NCERT decks lost their
+    # India > ncert > Class_I > <Subject> placement). The worker cannot repair
+    # it either: this path clears bulk.error_message (which is where the
+    # "folder_id=…" hint lives) before the worker runs.
+    old_folder_id: uuid.UUID | None = None
+    if old_deck_id:
+        old_deck = db.get(Deck, old_deck_id)
+        if old_deck is not None and getattr(old_deck, "folder_id", None) is not None:
+            old_folder_id = old_deck.folder_id
+
     if old_deck_id:
         _clear_deck_generated_content(db, old_deck_id)
         replacement_deck = _ensure_bulk_upload_deck(
             db,
             user,
             source_file.original_filename or bulk.filename,
-            None,
+            old_folder_id,
             existing_deck_id=old_deck_id,
         )
     else:
@@ -525,7 +538,7 @@ def _prepare_fresh_retry_attempt(
             db,
             user,
             source_file.original_filename or bulk.filename,
-            None,
+            old_folder_id,
         )
 
     retry_row = BulkAIUploadFile(
@@ -560,7 +573,7 @@ def _ensure_bulk_upload_deck(
     db: Session,
     user: User,
     filename: str,
-    folder_id: str | None,
+    folder_id: str | uuid.UUID | None,
     existing_deck_id=None,
 ) -> Deck:
     if existing_deck_id:

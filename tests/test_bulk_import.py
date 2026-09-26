@@ -460,6 +460,7 @@ def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
     user_id = uuid4()
     deck_id = uuid4()
     child_file_id = uuid4()
+    folder_id = uuid4()
     bulk = SimpleNamespace(id=uuid4(), filename="same.zip")
     user = SimpleNamespace(id=user_id, organization_id=None)
     source_file = SimpleNamespace(
@@ -475,7 +476,7 @@ def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
         id=deck_id,
         user_id=user_id,
         is_deleted=False,
-        folder_id=uuid4(),
+        folder_id=folder_id,
     )
     existing_child = SimpleNamespace(
         id=child_file_id,
@@ -515,7 +516,10 @@ def test_retry_reuses_existing_deck_id_instead_of_name_lookup(monkeypatch):
 
     assert retry_row.created_deck_id == deck_id
     assert retry_row.status == BulkAIUploadFileStatus.PENDING.value
-    assert existing_deck.folder_id is None
+    # The retry must keep the deck in the folder it already lived in. This
+    # assertion used to require folder_id is None, which pinned the bug that
+    # detached every force-retried deck back to the root (prod, 2026-09-26).
+    assert existing_deck.folder_id == folder_id
     assert db.added == [retry_row]
     assert db.flushed is True
     # Retry row links to the source's existing child_file, preserving identity.

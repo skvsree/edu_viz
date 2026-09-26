@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pypdf
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
@@ -922,6 +922,44 @@ def _reclaim_orphaned_processing_files(
     return list(orphans)
 
 
+def _requeue_job_for_late_files(db: Session, job: Job, bulk) -> int:
+    """Re-queue the job when files are still pending after the per-file loop.
+
+    A per-deck force retry can land while this run is already mid-flight: the
+    pending-file list is snapshotted at the top of ``process_bulk_ai_upload``,
+    so the row created by that second retry is never processed here. Stamping
+    the job COMPLETED in that state orphans the row forever (the scheduler only
+    picks up pending/failed jobs) — and because the retry wipes the deck before
+    regenerating it, the deck is left EMPTY rather than merely stale. Verified
+    on prod 2026-09-26 with two decks of the same bulk retried 10 s apart.
+
+    Returns the number of pending files found; ``0`` means the job may finish
+    normally.
+    """
+    pending = db.execute(
+        select(func.count())
+        .select_from(BulkAIUploadFile)
+        .where(BulkAIUploadFile.bulk_upload_id == bulk.id)
+        .where(BulkAIUploadFile.status == BulkAIUploadFileStatus.PENDING.value)
+    ).scalar_one()
+    if not pending:
+        return 0
+
+    bulk.status = BulkAIUploadStatus.PENDING.value
+    bulk.completed_at = None
+    job.status = JobStatus.PENDING.value
+    job.completed_at = None
+    job.worker_id = None
+    job.locked_at = None
+    db.commit()
+    print(
+        f"[job-worker] re-queued job={job.id} bulk={bulk.id} "
+        f"pending_files={pending} (retry arrived mid-run)",
+        flush=True,
+    )
+    return int(pending)
+
+
 def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
     """Process queued upload bytes and create one deck per PDF with AI-generated cards."""
@@ -1011,6 +1049,15 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         if file_record.child_file_id:
             child_file = db.get(BulkAIUploadChildFile, file_record.child_file_id)
             if child_file and child_file.latest_attempt_id and child_file.latest_attempt_id != file_record.id:
+                # Superseded by a newer retry attempt of the same file. Mark it
+                # stopped rather than leaving it pending: a row that stays
+                # pending forever is what would let a re-queued job (see
+                # _requeue_job_for_late_files) loop without end.
+                file_record.status = BulkAIUploadFileStatus.STOPPED.value
+                file_record.error_message = "Superseded by a newer retry attempt"
+                file_record.completed_at = datetime.utcnow()
+                job.failed_items += 1
+                db.commit()
                 continue
         if (file_record.status or '').lower() == BulkAIUploadFileStatus.STOPPED.value:
             job.failed_items += 1
@@ -1535,6 +1582,12 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         f"failed={job.failed_items} hard_fail={hard_fail_job}",
         flush=True,
     )
+    # A per-deck retry can be enqueued while this run is already mid-flight; its
+    # row is not in the snapshot taken at the top of this function. Re-queue
+    # rather than completing, or that deck stays empty (see the helper).
+    if bulk is not None and not bulk.is_auto_stop and not hard_fail_job:
+        if _requeue_job_for_late_files(db, job, bulk):
+            return
     if bulk and bulk.is_auto_stop:
         job.status = JobStatus.FAILED.value
         job.error_message = 'Job stopped by user'
