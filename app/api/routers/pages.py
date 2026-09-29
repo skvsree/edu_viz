@@ -3306,30 +3306,22 @@ def review_rate(
 def _deck_ai_credential(db: Session, user: User):
     """Resolve the credential to use for an on-demand generation.
 
-    Mirrors ``job_worker._resolve_ai_provider_and_credential``: user scope, then
-    the user's organization (when AI is enabled there), then the environment
-    key. Returns ``(provider_name, credential)``; the credential may be None
-    when nothing is configured, in which case generation falls back to the
-    heuristic path.
+    Uses the app-configured provider (AI_PROVIDER) and model (AI_MODEL), the same
+    as every other generation path, instead of letting a per-user/per-org setting
+    redirect this one at a different vendor. Returns ``(provider_name,
+    credential)``; the credential may be None when nothing is configured, in
+    which case generation falls back to the heuristic path.
     """
-    from app.services.ai_auth import (
-        get_env_ai_provider_name,
-        get_scope_provider,
-        resolve_ai_credential,
-    )
+    from app.core.config import settings
+    from app.services.ai_auth import resolve_configured_ai_credential
 
-    provider = get_scope_provider(db, "user", user.id) if user.id else None
-    if not provider and getattr(user, "organization_id", None):
-        org = db.get(Organization, user.organization_id)
-        if org and getattr(org, "is_ai_enabled", False):
-            provider = get_scope_provider(db, "organization", org.id)
-    if not provider:
-        provider = get_env_ai_provider_name() or "openai"
+    configured = (settings.ai_provider or "").strip().lower()
     try:
-        resolution = resolve_ai_credential(db, user, provider)
+        resolution = resolve_configured_ai_credential(db, user)
     except Exception as exc:  # noqa: BLE001 - heuristic fallback is fine
         logger.warning("revision notes: credential resolution failed: %s", exc)
-        return provider, None
+        return configured, None
+    provider = resolution.credential.provider if resolution.credential else configured
     return provider, resolution.credential
 
 

@@ -44,7 +44,7 @@ from app.models import (
     User,
 )
 from app.services.access import normalize_deck_name
-from app.services.ai_auth import get_env_ai_provider_name, get_scope_provider, resolve_ai_credential
+from app.services.ai_auth import resolve_configured_ai_credential
 from app.services.ai_generation import (
     AIGenerationError,
     GeneratedStudyPack,
@@ -493,20 +493,17 @@ def _generate_pack_with_retry(
 def _resolve_ai_provider_and_credential(
     db: Session, user: User
 ):
-    from app.models import Organization
+    """The app-configured provider (AI_PROVIDER) plus a usable credential.
 
-    provider = get_scope_provider(db, "user", user.id) if user.id else None
-    if not provider and user.organization_id:
-        org = db.get(Organization, user.organization_id)
-        if org and org.is_ai_enabled:
-            provider = get_scope_provider(db, "organization", org.id)
-    if not provider:
-        provider = get_env_ai_provider_name() or "openai"
-    resolution = resolve_ai_credential(db, user, provider)
+    One provider, one model for every generation path. This used to let a
+    per-user/per-org setting choose a different provider, so bulk uploads and
+    MCQ/card generation could run on different vendors and models.
+    """
+    resolution = resolve_configured_ai_credential(db, user)
     credential = resolution.credential
     if not credential:
         raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
-    return provider, credential
+    return credential.provider, credential
 
 
 def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars: int = 800) -> list[str]:

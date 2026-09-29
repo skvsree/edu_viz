@@ -164,6 +164,23 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
     return AIResolution(None, reason="No AI credential configured for your user, organization, or environment.")
 
 
+def resolve_configured_ai_credential(
+    db: Session, user: User, *, allow_env: bool = True
+) -> AIResolution:
+    """Resolve a credential for the provider the app is configured to use.
+
+    One provider, one model: AI_MODEL names a model on the configured
+    provider's endpoint, so a call site must never pick its own provider from
+    a per-user or per-org setting - a scope that selected another vendor would
+    be sent a model id that vendor does not serve. Scope credentials are still
+    honoured *for that provider*, so bring-your-own-key keeps working.
+    """
+    provider = (settings.ai_provider or "").strip().lower()
+    if not provider:
+        return AIResolution(None, reason="No AI provider configured (set AI_PROVIDER).")
+    return resolve_ai_credential(db, user, provider, allow_env=allow_env)
+
+
 def save_ai_credential(
     db: Session,
     *,

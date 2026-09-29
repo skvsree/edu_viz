@@ -6,6 +6,8 @@ packs, ``REVISION_NOTES_MODEL`` for revision notes) plus a hardcoded
 drift apart, so a model change fixed bulk generation while revision notes kept
 running on something else. These tests pin the collapse into a single AI_MODEL.
 """
+from pathlib import Path
+
 from app.core.config import Settings
 
 
@@ -101,3 +103,49 @@ def test_revision_notes_gets_a_longer_ceiling_than_a_bulk_pass():
 
     assert settings.revision_notes_request_timeout > settings.opencode_request_timeout
     assert settings.revision_notes_request_timeout >= 300
+
+
+def test_generation_paths_use_the_configured_provider(monkeypatch):
+    """A per-scope provider setting must not redirect a generation path.
+
+    resolve_ai_credential() looks up a credential *for a given provider*, so
+    choosing the provider from a user/org scope meant MCQ and card generation
+    could run on a different vendor (and a different model) than bulk uploads -
+    while AI_MODEL still named a model that vendor does not serve.
+    """
+    from app.core.config import settings
+    from app.services import ai_auth
+
+    seen = {}
+
+    def fake_resolve(db, user, provider, *, allow_env=True):
+        seen["provider"] = provider
+        return ai_auth.AIResolution(credential=None, reason="stub")
+
+    monkeypatch.setattr(ai_auth, "resolve_ai_credential", fake_resolve)
+    monkeypatch.setattr(settings, "ai_provider", "opencode", raising=False)
+
+    ai_auth.resolve_configured_ai_credential(db=object(), user=object())
+    assert seen["provider"] == "opencode"
+
+
+def test_no_scope_provider_lookup_in_generation_paths():
+    """Both generation modules must resolve through the configured provider.
+
+    get_scope_provider() returns whatever provider a user/org stored; leaving a
+    call to it in a generation path is how the split creeps back.
+    """
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("app/api/routers/content.py", "app/services/job_worker.py"):
+        text = (root / rel).read_text()
+        assert "get_scope_provider(" not in text, f"{rel} still picks a scope provider"
+
+
+def test_mcq_generation_has_no_inline_provider_dispatch():
+    """MCQ generation used to switch on the provider inline, hardcoding
+    gpt-4.1-mini / claude-sonnet-4 / MiniMax-M3, so it could use a different
+    model than the rest of the app."""
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "app/api/routers/content.py").read_text()
+    for hardcoded in ('"gpt-4.1-mini"', '"claude-sonnet-4-20250514"', '"MiniMax-M3"'):
+        assert hardcoded not in text, f"{hardcoded} is still hardcoded"

@@ -45,14 +45,9 @@ from app.services.access import (
     can_open_test_center,
     can_use_ai_generation,
 )
-from app.services.ai_auth import (
-    get_env_ai_provider_name,
-    get_scope_provider,
-    resolve_ai_credential,
-)
+from app.services.ai_auth import resolve_configured_ai_credential
 from app.services.ai_generation import (
     AIGenerationError,
-    _parse_study_pack_json,
     build_iterative_study_pack_prompt,
     build_study_pack_prompt,
     generate_study_pack,
@@ -253,19 +248,12 @@ def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) ->
 
 
 def _resolve_ai_provider_and_credential(db: Session, user: User):
-    from app.models import Organization
-    provider = get_scope_provider(db, "user", user.id) if user.id else None
-    if not provider and user.organization_id:
-        org = db.get(Organization, user.organization_id)
-        if org and org.is_ai_enabled:
-            provider = get_scope_provider(db, "organization", org.id)
-    if not provider:
-        provider = get_env_ai_provider_name() or "openai"
-    resolution = resolve_ai_credential(db, user, provider)
+    """The app-configured provider (AI_PROVIDER) plus a usable credential."""
+    resolution = resolve_configured_ai_credential(db, user)
     credential = resolution.credential
     if not credential:
         raise AIGenerationError(resolution.reason or "No AI credential configured for you or your organization.")
-    return provider, credential
+    return credential.provider, credential
 
 
 def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str, filename: str, payload: bytes) -> None:
@@ -499,17 +487,8 @@ def generate_mcqs_for_deck(
     if not deck or not can_manage_deck(user, deck):
         raise HTTPException(status_code=404)
 
-    # Determine provider: user > org > global env
-    from app.models import Organization
-    provider = get_scope_provider(db, "user", user.id) if user.id else None
-    if not provider and user.organization_id:
-        org = db.get(Organization, user.organization_id)
-        if org and org.is_ai_enabled:
-            provider = get_scope_provider(db, "organization", org.id)
-    if not provider:
-        provider = get_env_ai_provider_name() or "openai"
-
-    resolution = resolve_ai_credential(db, user, provider)
+    # One provider, one model for every generation path (AI_PROVIDER/AI_MODEL).
+    resolution = resolve_configured_ai_credential(db, user)
     credential = resolution.credential
     if not credential:
         return RedirectResponse(
@@ -1109,17 +1088,15 @@ def attempt_report_page(
 
 
 def _resolve_generation_provider_and_credential(db: Session, user: User):
-    from app.models import Organization
+    """MCQ generation uses the same provider and model as everything else."""
+    from app.core.config import settings
 
-    provider = get_scope_provider(db, "user", user.id) if user.id else None
-    if not provider and user.organization_id:
-        org = db.get(Organization, user.organization_id)
-        if org and org.is_ai_enabled:
-            provider = get_scope_provider(db, "organization", org.id)
-    if not provider:
-        provider = get_env_ai_provider_name() or "openai"
-
-    resolution = resolve_ai_credential(db, user, provider)
+    resolution = resolve_configured_ai_credential(db, user)
+    provider = (
+        resolution.credential.provider
+        if resolution.credential
+        else (settings.ai_provider or "").strip().lower()
+    )
     return provider, resolution
 
 
@@ -1189,77 +1166,18 @@ def _generate_mcqs_background(deck_id: str, user_id: str, generation_id: str) ->
             num_mcqs_local = mcq_target if mcq_target is not None else min(6, max(3, len(batch_cards)))
             prompt = build_study_pack_prompt(batch_text, num_flashcards=0, num_mcqs=num_mcqs_local)
             provider_client = get_study_pack_provider(credential.provider)
-            if not hasattr(provider_client, "generate"):
+            if not hasattr(provider_client, "generate_from_prompt"):
                 raise AIGenerationError(f"Unsupported AI study pack provider: {credential.provider}")
 
-            if credential.provider == "openai":
-                from openai import OpenAI
-                client = OpenAI(api_key=credential.secret)
-                response = client.responses.create(model="gpt-4.1-mini", input=prompt)
-                return _parse_study_pack_json(response.output_text)
-            elif credential.provider == "claude":
-                import requests
-                response = requests.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": credential.secret,
-                        "anthropic-version": "2023-06-01",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": "claude-sonnet-4-20250514",
-                        "max_tokens": 8192,
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                    timeout=120,
-                )
-                if response.status_code != 200:
-                    raise AIGenerationError(f"Claude API error: {response.status_code} - {response.text[:200]}")
-                data = response.json()
-                content = data.get("content", [{}])[0].get("text", "")
-                if not content:
-                    raise AIGenerationError("Claude returned empty response.")
-                return _parse_study_pack_json(content)
-            elif credential.provider == "opencode":
-                pack = provider_client.generate_from_prompt(prompt, credential)
-                if not pack.flashcards and not pack.mcqs:
-                    raise AIGenerationError("OpenCode returned no usable study material.")
-                return pack
-            elif credential.provider in {"minimax"}:
-                import requests
-                response = requests.post(
-                    "https://api.minimax.io/v1/text/chatcompletion_v2",
-                    headers={"Authorization": f"Bearer {credential.secret}", "Content-Type": "application/json"},
-                    json={
-                        "model": "MiniMax-M3",
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": (
-                                    "Return compact strict JSON only. No markdown, "
-                                    "no code fences, no commentary, no prose, "
-                                    "no trailing text."
-                                ),
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                        "max_completion_tokens": 2048,
-                        "temperature": 0.2,
-                    },
-                    timeout=60,
-                )
-                if response.status_code != 200:
-                    raise AIGenerationError(f"Minimax API error: {response.status_code} - {response.text[:200]}")
-                data = response.json()
-                base_resp = data.get("base_resp") or {}
-                if base_resp.get("status_code") not in {None, 0}:
-                    raise AIGenerationError(base_resp.get("status_msg") or "Minimax request failed.")
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                if not content:
-                    raise AIGenerationError(f"Minimax returned empty response. Raw: {response.text[:300]}")
-                return _parse_study_pack_json(content)
-            else:
-                raise AIGenerationError(f"Unsupported AI study pack provider: {credential.provider}")
+            # One provider, one model: go through the shared adapter so the model
+            # comes from AI_MODEL. This was an inline per-provider switch that
+            # hardcoded gpt-4.1-mini / claude-sonnet-4 / MiniMax-M3, so MCQ
+            # generation could run on a different provider and model than every
+            # other generation path (and than the deck UI reported).
+            pack = provider_client.generate_from_prompt(prompt, credential)
+            if not pack.flashcards and not pack.mcqs:
+                raise AIGenerationError("AI provider returned no usable study material.")
+            return pack
 
         def save_batch_success(batch_cards, pack):
             nonlocal processed_this_run
