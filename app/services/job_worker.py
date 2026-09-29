@@ -1970,8 +1970,10 @@ def process_revision_notes(db: Session, job: Job) -> None:
                 _resolved_name, credential = _resolve_ai_provider_and_credential(
                     db, owner
                 )
-                # Force deepseek provider for revision notes
-                provider_name = "deepseek"
+                # One provider for the whole app: the resolved provider is
+                # the same one bulk uploads use, so a model change cannot
+                # leave revision notes behind on a different model.
+                provider_name = _resolved_name
     except Exception as exc:
         logger.warning(
             "process_revision_notes: credential resolution failed for note %s: %s",

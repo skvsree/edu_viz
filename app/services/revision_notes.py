@@ -212,7 +212,18 @@ def select_topic_recall_bullets(
     try:
         provider = get_study_pack_provider(credential_provider_name, session_id=session_id)
         prompt = build_topic_recall_prompt(topic_title, source_paragraphs)
-        raw = provider.generate_text(prompt, credential)
+        from app.core.config import settings
+
+        # Shared provider/model, but revision notes is not a study-card ask:
+        # no study-card system message, and its own budget/timeout (it
+        # streams ~15K chars over ~75s, far past the bulk pass ceiling).
+        raw = provider.generate_text(
+            prompt,
+            credential,
+            system_prompt=None,
+            max_tokens=settings.revision_notes_max_tokens,
+            timeout=settings.revision_notes_request_timeout,
+        )
         candidates = _parse_recall_bullets_json(raw)
         if not candidates:
             logger.warning(
@@ -1006,7 +1017,18 @@ def generate_ai_topics(
     try:
         provider = get_study_pack_provider(credential_provider_name, session_id=session_id)
         prompt = build_revision_notes_prompt(source_text, chapter_label)
-        raw = provider.generate_text(prompt, credential)
+        from app.core.config import settings
+
+        # Shared provider/model, but revision notes is not a study-card ask:
+        # no study-card system message, and its own budget/timeout (it
+        # streams ~15K chars over ~75s, far past the bulk pass ceiling).
+        raw = provider.generate_text(
+            prompt,
+            credential,
+            system_prompt=None,
+            max_tokens=settings.revision_notes_max_tokens,
+            timeout=settings.revision_notes_request_timeout,
+        )
     except Exception as exc:
         logger.warning(
             "revision_notes: AI generation failed for chapter %r: %s",

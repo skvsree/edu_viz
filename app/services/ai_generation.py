@@ -505,7 +505,7 @@ class DeepSeekRevisionProvider:
     def __init__(self, session_id: str | None = None) -> None:
         from app.core.config import settings
         self.api_endpoint = settings.revision_notes_api_endpoint
-        self.model = settings.revision_notes_model
+        self.model = settings.ai_model or settings.revision_notes_model
         self.max_tokens = settings.revision_notes_max_tokens
         # Stick to one session per provider instance so every call of the
         # same job/conversation reuses the same OpenCode routing bucket.
@@ -597,6 +597,18 @@ def _opencode_max_tokens() -> int:
         return 4096
 
 
+_UNSET = object()
+
+# The study-card system message. Call sites that are not generating study
+# cards (revision notes) pass system_prompt=None to keep their original
+# prompt shape instead of inheriting "return flashcards and mcqs".
+STUDY_CARD_SYSTEM_PROMPT = (
+    "You are a precise study-card generator. "
+    "Always produce valid JSON with keys flashcards and mcqs in your response. "
+    "No markdown code fences, no extra commentary."
+)
+
+
 class OpencodeStudyPackProvider:
     """OpenCode provider via OpenAI-compatible HTTP API."""
     name = "opencode"
@@ -604,10 +616,21 @@ class OpencodeStudyPackProvider:
     def __init__(self, session_id: str | None = None) -> None:
         from app.core.config import settings
         self.api_endpoint = settings.opencode_api_endpoint
-        self.model = settings.opencode_model
+        self.model = settings.ai_model or settings.opencode_model
         # One session per provider instance: OpenCode Go wants a stable
         # x-opencode-session per conversation for routing + prompt caching.
         self.session_id = session_id or opencode_session_id()
+
+    @staticmethod
+    def _messages_for(prompt: str, system_prompt: object) -> list[dict[str, str]]:
+        """Build the message list; system_prompt=None means no system turn."""
+        if system_prompt is _UNSET:
+            system_prompt = STUDY_CARD_SYSTEM_PROMPT
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": str(system_prompt)})
+        messages.append({"role": "user", "content": prompt})
+        return messages
 
     def generate(self, text: str, credential: AICredential | None = None) -> GeneratedStudyPack:
         return self.generate_from_prompt(_build_prompt(text), credential)
@@ -616,7 +639,23 @@ class OpencodeStudyPackProvider:
         raw = self.generate_text(prompt, credential)
         return _parse_study_pack_json(raw)
 
-    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
+    def generate_text(
+        self,
+        prompt: str,
+        credential: AICredential | None = None,
+        *,
+        system_prompt: str | None | object = _UNSET,
+        max_tokens: int | None = None,
+        timeout: int | None = None,
+    ) -> str:
+        """Call the endpoint once.
+
+        One provider and one model serve every AI call in the app. The
+        completion budget and read timeout stay per-call because they are
+        properties of the ask rather than of the model: a bulk pass wants a
+        short ceiling so one hung request cannot block the serial worker,
+        while revision notes legitimately streams ~15K chars over ~75s.
+        """
         if not credential or not credential.secret:
             raise AIGenerationError(
                 "OpenCode credential (API key) is required. "
@@ -629,21 +668,11 @@ class OpencodeStudyPackProvider:
             headers=_opencode_headers(credential.secret, self.session_id),
             json={
                 "model": self.model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a precise study-card generator. "
-                            "Always produce valid JSON with keys flashcards and mcqs in your response. "
-                            "No markdown code fences, no extra commentary."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": _opencode_max_tokens(),
+                "messages": self._messages_for(prompt, system_prompt),
+                "max_tokens": max_tokens or _opencode_max_tokens(),
                 "temperature": 0.3,
             },
-            timeout=_opencode_timeout(),
+            timeout=timeout or _opencode_timeout(),
         )
         if response.status_code != 200:
             body = response.text[:300]

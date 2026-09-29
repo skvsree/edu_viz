@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,10 +18,18 @@ class Settings(BaseSettings):
     ai_study_pack_provider: str = "openai"
     ai_api_key: str | None = None
     ai_provider: str = "openai"
+    # ONE model for EVERY AI call in the app: bulk study packs, revision
+    # notes, and anything added later. Paired with AI_PROVIDER this is the
+    # whole AI configuration - per-call-site models drift apart in quality
+    # with nothing to catch it.
+    ai_model: str = ""
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
     opencode_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
-    opencode_model: str = "deepseek-v4-flash"
+    # Legacy per-call-site model name. Do NOT set it in new deployments -
+    # AI_MODEL governs both call sites. It is only read to seed AI_MODEL
+    # when that is empty, so an older .env keeps resolving.
+    opencode_model: str = ""
     # OpenCode Go requires every client to identify itself with its own user
     # agent (generic/absent UAs are blocked at the edge with Cloudflare 1010)
     # and to send a stable ``x-opencode-session`` per conversation
@@ -45,10 +54,15 @@ class Settings(BaseSettings):
     # flight), so a hung request blocks the whole run: a healthy pass returns in
     # 10-40s, and waiting 180s per hang was the single biggest cost in a run.
     opencode_request_timeout: int = 60
-    # Revision notes: pure AI model
-    revision_notes_model: str = "deepseek-v4-pro"
+    # Legacy; AI_MODEL governs revision notes too.
+    revision_notes_model: str = ""
     revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
     revision_notes_max_tokens: int = 16384
+    # Read timeout for a revision-notes call. Much longer than a bulk pass:
+    # a full chapter response measured 14,490 chars over 74s, so the bulk
+    # ceiling of 60s would silently drop revision notes to the heuristic
+    # fallback. Per-task, not per-provider - the model is shared.
+    revision_notes_request_timeout: int = 300
     # Max source chars fed to the AI prompt. NCERT chapters extract to
     # 50-70K chars; the old hardcoded 22000 silently dropped trailing
     # sections of long chapters (e.g. 5.4-5.6). Raised default keeps the
@@ -56,6 +70,27 @@ class Settings(BaseSettings):
     revision_notes_max_source_chars: int = 60000
     ai_secrets_fernet_key: str | None = None
     bulk_import_api_key: str | None = None
+
+    @model_validator(mode="after")
+    def collapse_to_single_ai_model(self) -> "Settings":
+        """Collapse every per-call-site model name into one AI_MODEL.
+
+        AI_MODEL wins whenever it is set. When it is empty the legacy knobs
+        seed it (opencode_model, then revision_notes_model) so an older .env
+        keeps working; failing that the historical default is used. All three
+        attributes then hold the SAME string, which is what makes "one
+        provider, one model" true rather than aspirational.
+        """
+        chosen = (
+            (self.ai_model or "").strip()
+            or (self.opencode_model or "").strip()
+            or (self.revision_notes_model or "").strip()
+            or "deepseek-v4.1-flash"
+        )
+        self.ai_model = chosen
+        self.opencode_model = chosen
+        self.revision_notes_model = chosen
+        return self
 
     # Default question count for auto-starting tests. When set (positive integer),
     # the Test button will skip the question count modal and create a test with
