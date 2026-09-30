@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # whole AI configuration - per-call-site models drift apart in quality
     # with nothing to catch it.
     ai_model: str = ""
+    # ONE endpoint for the one provider. Each provider class carries its own
+    # default endpoint (OpenCode Zen for ``opencode``, DeepSeek's own platform
+    # for ``deepseek``); set AI_ENDPOINT to override whichever is in play.
+    ai_endpoint: str = ""
     openai_model: str = "gpt-4.1-mini"
     openai_generation_enabled: bool = True
     opencode_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
@@ -56,7 +60,11 @@ class Settings(BaseSettings):
     opencode_request_timeout: int = 60
     # Legacy; AI_MODEL governs revision notes too.
     revision_notes_model: str = ""
-    revision_notes_api_endpoint: str = "https://opencode.ai/zen/go/v1/chat/completions"
+    # Endpoint for the ``deepseek`` provider = DeepSeek's own platform. This
+    # used to default to the OpenCode Zen URL, which meant AI_PROVIDER=deepseek
+    # posted a DeepSeek-platform key AT ZEN and every call failed 401. AI_ENDPOINT
+    # overrides it; the name is legacy (the one model now serves both call sites).
+    revision_notes_api_endpoint: str = "https://api.deepseek.com/chat/completions"
     revision_notes_max_tokens: int = 16384
     # Read timeout for a revision-notes call. Much longer than a bulk pass:
     # a full chapter response measured 14,490 chars over 74s, so the bulk
@@ -70,6 +78,19 @@ class Settings(BaseSettings):
     revision_notes_max_source_chars: int = 60000
     ai_secrets_fernet_key: str | None = None
     bulk_import_api_key: str | None = None
+
+    def _default_ai_model(self) -> str:
+        """The model to use when nothing is configured.
+
+        A model id is only meaningful against the endpoint that serves it, so the
+        fallback has to follow AI_PROVIDER: DeepSeek's own platform serves
+        ``deepseek-flash``, while OpenCode Zen names the same model
+        ``deepseek-v4.1-flash``. Getting this wrong sends an id the endpoint does
+        not serve and every call fails with "Model is unavailable".
+        """
+        if (self.ai_provider or "").strip().lower() == "deepseek":
+            return "deepseek-flash"
+        return "deepseek-v4.1-flash"
 
     @model_validator(mode="after")
     def collapse_to_single_ai_model(self) -> "Settings":
@@ -85,7 +106,7 @@ class Settings(BaseSettings):
             (self.ai_model or "").strip()
             or (self.opencode_model or "").strip()
             or (self.revision_notes_model or "").strip()
-            or "deepseek-v4.1-flash"
+            or self._default_ai_model()
         )
         self.ai_model = chosen
         self.opencode_model = chosen

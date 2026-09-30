@@ -504,7 +504,10 @@ class DeepSeekRevisionProvider:
 
     def __init__(self, session_id: str | None = None) -> None:
         from app.core.config import settings
-        self.api_endpoint = settings.revision_notes_api_endpoint
+        self.api_endpoint = (
+            (settings.ai_endpoint or "").strip()
+            or settings.revision_notes_api_endpoint
+        )
         self.model = settings.ai_model or settings.revision_notes_model
         self.max_tokens = settings.revision_notes_max_tokens
         # Stick to one session per provider instance so every call of the
@@ -615,7 +618,10 @@ class OpencodeStudyPackProvider:
 
     def __init__(self, session_id: str | None = None) -> None:
         from app.core.config import settings
-        self.api_endpoint = settings.opencode_api_endpoint
+        self.api_endpoint = (
+            (settings.ai_endpoint or "").strip()
+            or settings.opencode_api_endpoint
+        )
         self.model = settings.ai_model or settings.opencode_model
         # One session per provider instance: OpenCode Go wants a stable
         # x-opencode-session per conversation for routing + prompt caching.

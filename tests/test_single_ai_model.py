@@ -52,6 +52,27 @@ def test_ai_model_defaults_when_nothing_is_configured():
     assert s.opencode_model == s.revision_notes_model == "deepseek-v4.1-flash"
 
 
+def test_default_model_follows_the_provider():
+    """A model id is only valid on the endpoint that serves it.
+
+    DeepSeek's platform names it ``deepseek-flash``; OpenCode Zen names it
+    ``deepseek-v4.1-flash``. Defaulting to the Zen id while pointing at
+    DeepSeek fails every call with "Model is unavailable".
+    """
+    on_deepseek = _settings(ai_provider="deepseek", ai_model="", opencode_model="",
+                            revision_notes_model="")
+    assert on_deepseek.ai_model == "deepseek-flash"
+
+    on_opencode = _settings(ai_provider="opencode", ai_model="", opencode_model="",
+                            revision_notes_model="")
+    assert on_opencode.ai_model == "deepseek-v4.1-flash"
+
+
+def test_explicit_ai_model_beats_the_provider_default():
+    s = _settings(ai_provider="deepseek", ai_model="deepseek-v4-pro")
+    assert s.ai_model == "deepseek-v4-pro"
+
+
 def test_whitespace_only_ai_model_falls_through_to_legacy():
     s = _settings(ai_model="   ", opencode_model="glm-5.3-flash")
     assert s.ai_model == "glm-5.3-flash"
@@ -149,3 +170,53 @@ def test_mcq_generation_has_no_inline_provider_dispatch():
     text = (root / "app/api/routers/content.py").read_text()
     for hardcoded in ('"gpt-4.1-mini"', '"claude-sonnet-4-20250514"', '"MiniMax-M3"'):
         assert hardcoded not in text, f"{hardcoded} is still hardcoded"
+
+
+# --- the endpoint must match the provider (2026-09-30 prod outage) ---------
+#
+# The deepseek provider took its endpoint from a setting whose default was the
+# OpenCode Zen URL. So AI_PROVIDER=deepseek posted a DeepSeek-platform key AT
+# ZEN, every call returned 401, and a chapter produced 0 cards in ~39s while the
+# identical job on opencode produced 695. A provider name is only half of a
+# provider: the endpoint has to belong to the same vendor as the key.
+
+
+def test_deepseek_provider_posts_to_deepseek_not_zen():
+    from app.services.ai_generation import DeepSeekRevisionProvider
+
+    endpoint = DeepSeekRevisionProvider(session_id="test-deepseek").api_endpoint
+    assert "api.deepseek.com" in endpoint
+    assert "opencode.ai" not in endpoint
+
+
+def test_opencode_provider_still_posts_to_zen():
+    from app.services.ai_generation import OpencodeStudyPackProvider
+
+    endpoint = OpencodeStudyPackProvider(session_id="test-opencode").api_endpoint
+    assert "opencode.ai" in endpoint
+
+
+def test_ai_endpoint_overrides_every_provider(monkeypatch):
+    """One AI_ENDPOINT governs whichever provider is selected."""
+    from app.core.config import settings
+    from app.services.ai_generation import (
+        DeepSeekRevisionProvider,
+        OpencodeStudyPackProvider,
+    )
+
+    override = "https://gateway.example/v1/chat/completions"
+    monkeypatch.setattr(settings, "ai_endpoint", override, raising=False)
+    for cls in (DeepSeekRevisionProvider, OpencodeStudyPackProvider):
+        assert cls(session_id="t").api_endpoint == override, cls.__name__
+
+
+def test_blank_ai_endpoint_falls_back_to_the_provider_default(monkeypatch):
+    """Whitespace must not be treated as a configured endpoint."""
+    from app.core.config import settings
+    from app.services.ai_generation import DeepSeekRevisionProvider
+
+    monkeypatch.setattr(settings, "ai_endpoint", "   ", raising=False)
+    assert (
+        DeepSeekRevisionProvider(session_id="t").api_endpoint
+        == settings.revision_notes_api_endpoint
+    )
