@@ -12,7 +12,7 @@ from uuid import UUID
 from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -1054,20 +1054,50 @@ def deleted_decks_page(
 @router.post("/settings/decks/{deck_id}/purge")
 def purge_deck_permanently(
     deck_id: str,
+    request: Request,
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    """Permanently remove a soft-deleted deck and everything it owns."""
-    _require_system_admin(user)
+    """Permanently remove a soft-deleted deck and everything it owns.
 
-    deck = db.get(Deck, deck_id)
+    The page's batch runner posts here once per deck (``Accept:
+    application/json``) so that a long run can report progress deck by deck and
+    one problem deck cannot abort the others. A plain form post gets the
+    redirect-and-banner behaviour instead, so the page still works without
+    JavaScript.
+    """
+    _require_system_admin(user)
+    wants_json = "application/json" in (request.headers.get("accept") or "")
+
+    try:
+        deck_uuid = UUID(str(deck_id))
+    except (TypeError, ValueError):
+        deck_uuid = None
+
+    deck = db.get(Deck, deck_uuid) if deck_uuid else None
     if not deck or not getattr(deck, "is_deleted", False):
+        detail = "This deck was already removed or restored."
+        if wants_json:
+            return JSONResponse(
+                {"status": "skipped", "deck_id": str(deck_id), "detail": detail},
+                status_code=404,
+            )
         raise HTTPException(status_code=404, detail="Deleted deck not found")
 
     deck_name = deck.name or "Deck"
     try:
         counts = purge_deck(db, deck)
     except PurgeError as exc:
+        if wants_json:
+            return JSONResponse(
+                {
+                    "status": "refused",
+                    "deck_id": str(deck_id),
+                    "deck_name": deck_name,
+                    "detail": str(exc),
+                },
+                status_code=409,
+            )
         return RedirectResponse(
             url=f"/settings/deleted-decks?error={quote_plus(str(exc))}",
             status_code=303,
@@ -1076,12 +1106,25 @@ def purge_deck_permanently(
     removed = sum(
         value for key, value in counts.items() if key != "storage_objects"
     )
-    message = quote_plus(
+    stored = counts.get("storage_objects", 0)
+    message = (
         f"{deck_name} permanently deleted — {removed} records and "
-        f"{counts.get('storage_objects', 0)} stored objects removed."
+        f"{stored} stored objects removed."
     )
+    if wants_json:
+        return JSONResponse(
+            {
+                "status": "purged",
+                "deck_id": str(deck_id),
+                "deck_name": deck_name,
+                "records_removed": removed,
+                "storage_objects": stored,
+                "counts": counts,
+                "message": message,
+            }
+        )
     return RedirectResponse(
-        url=f"/settings/deleted-decks?success={message}", status_code=303
+        url=f"/settings/deleted-decks?success={quote_plus(message)}", status_code=303
     )
 
 

@@ -100,7 +100,11 @@ class FakeDB:
         self.rolled_back = True
 
 
-def make_request(path: str = "/dashboard", query_string: bytes = b"") -> Request:
+def make_request(
+    path: str = "/dashboard",
+    query_string: bytes = b"",
+    headers: list[tuple[bytes, bytes]] | None = None,
+) -> Request:
     return Request(
         {
             "type": "http",
@@ -109,7 +113,7 @@ def make_request(path: str = "/dashboard", query_string: bytes = b"") -> Request
             "scheme": "http",
             "path": path,
             "query_string": query_string,
-            "headers": [],
+            "headers": list(headers or []),
             "client": ("testclient", 50000),
             "server": ("testserver", 80),
         }

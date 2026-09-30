@@ -10,7 +10,7 @@ from pathlib import Path
 import pypdf
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from sqlalchemy.orm import Session
 
@@ -22,17 +22,19 @@ from app.models import (
     BulkAIUploadFile,
     BulkAIUploadFileStatus,
     BulkAIUploadStatus,
-    Card,
-    CardState,
     Deck,
     Job,
     JobStatus,
-    Review,
     User,
 )
 from app.models.deck import DeckAccessScope
 from app.services.access import normalize_deck_name
-from app.services.purge import PurgeError, deck_wipe_preview, purge_bulk_upload
+from app.services.purge import (
+    PurgeError,
+    clear_deck_generated_content,
+    deck_wipe_preview,
+    purge_bulk_upload,
+)
 from app.services.storage import StorageError, get_storage, guess_content_type
 
 logger = logging.getLogger(__name__)
@@ -354,13 +356,9 @@ def _make_unique_deck_name(db: Session, user: User, base_title: str) -> str:
 
 
 def _clear_deck_generated_content(db: Session, deck_id):
-    card_ids = db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
-    card_id_list = list(card_ids)
-    if not card_id_list:
-        return
-    db.execute(delete(CardState).where(CardState.card_id.in_(card_id_list)))
-    db.execute(delete(Review).where(Review.card_id.in_(card_id_list)))
-    db.execute(delete(Card).where(Card.id.in_(card_id_list)))
+    # Shared with the purge path: a subquery instead of a materialised card id
+    # list, so a very large deck cannot exceed Postgres' bind parameter ceiling.
+    clear_deck_generated_content(db, deck_id)
 
 
 def _latest_bulk_attempt_rows(db: Session, bulk_upload_id) -> list[BulkAIUploadFile]:

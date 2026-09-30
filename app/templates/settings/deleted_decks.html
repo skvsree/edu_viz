@@ -11,6 +11,37 @@
     <section class="status-banner status-banner--error"><strong>Skipped.</strong> <span>{{ settings_warning }}</span></section>
   {% endif %}
 
+  {# Shown by the batch runner: with JavaScript the page deletes one deck per
+     request so it can report progress and keep going when a single deck is
+     refused. Without JavaScript the form below posts every selected deck at
+     once and the outcome arrives in the banner instead. #}
+  <section class="card purge-progress" id="purge-progress" hidden>
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Permanent deletion</p>
+        <h2 class="section-subtitle" id="purge-progress-title">Deleting decks…</h2>
+      </div>
+      <span class="muted" id="purge-progress-percent">0%</span>
+    </div>
+    <div
+      class="purge-progress__track"
+      id="purge-progress-track"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <div class="purge-progress__bar" id="purge-progress-bar"></div>
+    </div>
+    <p class="muted purge-progress__status" id="purge-progress-status" aria-live="polite">Starting…</p>
+    <p class="muted purge-progress__totals" id="purge-progress-totals"></p>
+    <ul class="purge-progress__log" id="purge-progress-log"></ul>
+    <div class="purge-progress__actions">
+      <button type="button" class="button button-secondary button-small" id="purge-progress-stop">Stop after this deck</button>
+      <a class="button button-secondary button-small" id="purge-progress-reload" href="/settings/deleted-decks" hidden>Reload list</a>
+    </div>
+  </section>
+
   <section class="card">
     <div class="section-heading">
       <div>
@@ -85,6 +116,7 @@
         {% endfor %}
         </ul>
       </form>
+      <p class="muted" id="purge-empty" hidden>No deleted decks right now.</p>
     {% else %}
       <p class="muted">No deleted decks right now.</p>
     {% endif %}
@@ -124,6 +156,64 @@
     border: 1px solid var(--border);
     border-radius: 14px;
     background: color-mix(in srgb, var(--surface) 92%, transparent);
+  }
+
+  /* .card sets its own display, which would beat the [hidden] attribute. */
+  .purge-progress[hidden],
+  #purge-empty[hidden] {
+    display: none !important;
+  }
+
+  .purge-progress__track {
+    height: 10px;
+    margin: 4px 0 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--border) 55%, transparent);
+    overflow: hidden;
+  }
+
+  .purge-progress__bar {
+    width: 0;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--danger, #dc2626);
+    transition: width 0.18s ease-out;
+  }
+
+  .purge-progress__status,
+  .purge-progress__totals {
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+  }
+
+  .purge-progress__log {
+    list-style: none;
+    margin: 8px 0 12px;
+    padding: 0;
+    display: grid;
+    gap: 4px;
+    max-height: 16rem;
+    overflow-y: auto;
+    font-size: 0.85rem;
+  }
+
+  .purge-progress__log li {
+    overflow-wrap: anywhere;
+  }
+
+  .purge-progress__log li[data-outcome="purged"] {
+    color: var(--success, #16a34a);
+  }
+
+  .purge-progress__log li[data-outcome="refused"],
+  .purge-progress__log li[data-outcome="failed"] {
+    color: var(--danger, #dc2626);
+  }
+
+  .purge-progress__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
   }
 
   .purge-toolbar__select-all {
@@ -246,6 +336,19 @@
     var checkboxes = Array.prototype.slice.call(
       document.querySelectorAll('[data-purge-select]')
     );
+    var progressPanel = document.getElementById('purge-progress');
+    var progressTitle = document.getElementById('purge-progress-title');
+    var progressTrack = document.getElementById('purge-progress-track');
+    var progressBar = document.getElementById('purge-progress-bar');
+    var progressPercent = document.getElementById('purge-progress-percent');
+    var progressStatus = document.getElementById('purge-progress-status');
+    var progressTotals = document.getElementById('purge-progress-totals');
+    var progressLog = document.getElementById('purge-progress-log');
+    var stopButton = document.getElementById('purge-progress-stop');
+    var reloadLink = document.getElementById('purge-progress-reload');
+    var emptyNote = document.getElementById('purge-empty');
+    var running = false;
+    var stopRequested = false;
 
     if (!dialog || !confirmBtn) {
       return;
@@ -272,13 +375,21 @@
       dialog.classList.remove('modal--open');
     }
 
+    function liveCheckboxes() {
+      // Re-queried rather than cached: a successful purge removes its row, and
+      // the toolbar counts must follow the rows that are actually left.
+      return Array.prototype.slice.call(
+        document.querySelectorAll('[data-purge-select]')
+      );
+    }
+
     function selected() {
-      return checkboxes.filter(function (box) { return box.checked; });
+      return liveCheckboxes().filter(function (box) { return box.checked; });
     }
 
     function refreshSelectionUi() {
       var picked = selected();
-      var total = checkboxes.length;
+      var total = liveCheckboxes().length;
       if (countTarget) {
         countTarget.textContent = picked.length
           ? picked.length + ' of ' + total + ' selected'
@@ -307,6 +418,227 @@
       openModal();
     }
 
+    // ---- batched permanent deletion, one deck per request -----------------
+    // Each deck is its own request so the run can show progress, survive a
+    // single refused deck, and be stopped between decks. Refused/skipped decks
+    // are reported inline instead of aborting the whole selection.
+    function closestRow(node) {
+      return node && node.closest ? node.closest('.purge-item') : null;
+    }
+
+    function logLine(outcome, text) {
+      if (!progressLog) {
+        return;
+      }
+      var entry = document.createElement('li');
+      entry.dataset.outcome = outcome;
+      entry.textContent = text;
+      progressLog.appendChild(entry);
+      progressLog.scrollTop = progressLog.scrollHeight;
+    }
+
+    function setProgress(done, total) {
+      var percent = total ? Math.round((done / total) * 100) : 100;
+      if (progressBar) {
+        progressBar.style.width = percent + '%';
+      }
+      if (progressTrack) {
+        progressTrack.setAttribute('aria-valuenow', String(percent));
+      }
+      if (progressPercent) {
+        progressPercent.textContent = percent + '%';
+      }
+    }
+
+    function purgeOne(deckId) {
+      return fetch('/settings/decks/' + encodeURIComponent(deckId) + '/purge', {
+        method: 'POST',
+        headers: { 'Accept': 'application/json' },
+        credentials: 'same-origin'
+      })
+        .then(function (response) {
+          return response
+            .json()
+            .catch(function () { return null; })
+            .then(function (body) {
+              if (body && body.status) {
+                return body;
+              }
+              return { status: 'failed', detail: 'HTTP ' + response.status };
+            });
+        })
+        .catch(function (error) {
+          return { status: 'failed', detail: String(error || 'request failed') };
+        });
+    }
+
+    function updateEmptyState() {
+      var list = document.querySelector('.purge-list');
+      var toolbar = document.querySelector('.purge-toolbar');
+      if (!list || !list.querySelectorAll('.purge-item').length) {
+        if (list) {
+          list.hidden = true;
+        }
+        if (toolbar) {
+          toolbar.hidden = true;
+        }
+        if (emptyNote) {
+          emptyNote.hidden = false;
+        }
+      }
+    }
+
+    function runPurge(items) {
+      if (running || !items.length) {
+        return;
+      }
+      running = true;
+      stopRequested = false;
+
+      if (progressPanel) {
+        progressPanel.hidden = false;
+        if (progressPanel.scrollIntoView) {
+          progressPanel.scrollIntoView({ block: 'nearest' });
+        }
+      }
+      if (progressLog) {
+        progressLog.textContent = '';
+      }
+      if (reloadLink) {
+        reloadLink.hidden = true;
+      }
+      if (stopButton) {
+        stopButton.hidden = false;
+        stopButton.disabled = false;
+      }
+      if (bulkButton) {
+        bulkButton.disabled = true;
+      }
+      document.querySelectorAll('[data-purge-deck]').forEach(function (button) {
+        button.disabled = true;
+      });
+      setProgress(0, items.length);
+
+      var deleted = 0;
+      var skipped = 0;
+      var refused = 0;
+      var failed = 0;
+      var records = 0;
+      var objects = 0;
+
+      function reportTotals() {
+        if (!progressTotals) {
+          return;
+        }
+        progressTotals.textContent =
+          deleted + ' deck(s) deleted · ' + records + ' records and ' +
+          objects + ' stored objects removed' +
+          (skipped ? ' · ' + skipped + ' skipped' : '') +
+          (refused ? ' · ' + refused + ' refused' : '') +
+          (failed ? ' · ' + failed + ' failed' : '');
+      }
+
+      function finish(stopped) {
+        running = false;
+        var processed = deleted + skipped + refused + failed;
+        if (progressTitle) {
+          progressTitle.textContent = stopped
+            ? 'Stopped'
+            : 'Permanent deletion finished';
+        }
+        if (progressStatus) {
+          progressStatus.textContent = stopped
+            ? 'Stopped after ' + processed + ' of ' + items.length + ' deck(s).'
+            : 'Processed ' + items.length + ' deck(s).';
+        }
+        if (stopButton) {
+          stopButton.hidden = true;
+        }
+        if (reloadLink) {
+          reloadLink.hidden = deleted === 0;
+        }
+        document.querySelectorAll('[data-purge-deck]').forEach(
+          function (button) { button.disabled = false; }
+        );
+        refreshSelectionUi();
+        updateEmptyState();
+        reportTotals();
+      }
+
+      function step(index) {
+        if (index >= items.length) {
+          setProgress(items.length, items.length);
+          finish(false);
+          return;
+        }
+        if (stopRequested) {
+          finish(true);
+          return;
+        }
+        var item = items[index];
+        if (progressTitle) {
+          progressTitle.textContent =
+            'Deleting deck ' + (index + 1) + ' of ' + items.length;
+        }
+        if (progressStatus) {
+          progressStatus.textContent = '“' + item.name + '” …';
+        }
+        purgeOne(item.id).then(function (result) {
+          if (result.status === 'purged') {
+            deleted += 1;
+            records += result.records_removed || 0;
+            objects += result.storage_objects || 0;
+            logLine(
+              'purged',
+              '✔ ' + (result.deck_name || item.name) + ' — ' +
+                (result.records_removed || 0) + ' records, ' +
+                (result.storage_objects || 0) + ' stored objects'
+            );
+            if (item.row && item.row.parentNode) {
+              item.row.parentNode.removeChild(item.row);
+            }
+          } else if (result.status === 'refused') {
+            refused += 1;
+            logLine(
+              'refused',
+              '✕ ' + (result.deck_name || item.name) + ' — ' +
+                (result.detail || 'refused')
+            );
+          } else if (result.status === 'skipped') {
+            skipped += 1;
+            logLine(
+              'skipped',
+              '• ' + item.name + ' — ' + (result.detail || 'already gone')
+            );
+            if (item.row && item.row.parentNode) {
+              item.row.parentNode.removeChild(item.row);
+            }
+          } else {
+            failed += 1;
+            logLine(
+              'failed',
+              '! ' + item.name + ' — ' + (result.detail || 'request failed')
+            );
+          }
+          setProgress(index + 1, items.length);
+          reportTotals();
+          step(index + 1);
+        });
+      }
+
+      step(0);
+    }
+
+    if (stopButton) {
+      stopButton.addEventListener('click', function () {
+        stopRequested = true;
+        stopButton.disabled = true;
+        if (progressStatus) {
+          progressStatus.textContent = 'Stopping after the current deck…';
+        }
+      });
+    }
+
     // ---- single deck ------------------------------------------------------
     document.querySelectorAll('[data-purge-deck]').forEach(function (trigger) {
       trigger.addEventListener('click', function () {
@@ -317,11 +649,7 @@
           'Delete “' + name + '” permanently?',
           cards + ' card(s) of “' + name + '”',
           function () {
-            var form = document.createElement('form');
-            form.method = 'post';
-            form.action = '/settings/decks/' + deckId + '/purge';
-            document.body.appendChild(form);
-            form.submit();
+            runPurge([{ id: deckId, name: name, row: closestRow(trigger) }]);
           }
         );
       });
@@ -330,7 +658,7 @@
     // ---- multi-selection --------------------------------------------------
     if (selectAll) {
       selectAll.addEventListener('change', function () {
-        checkboxes.forEach(function (box) { box.checked = selectAll.checked; });
+        liveCheckboxes().forEach(function (box) { box.checked = selectAll.checked; });
         refreshSelectionUi();
       });
     }
@@ -354,7 +682,15 @@
         showConfirm(
           'Delete ' + picked.length + ' deck' + (picked.length === 1 ? '' : 's') + ' permanently?',
           detail + ' — every card, test, attempt and stored file',
-          function () { bulkForm.submit(); }
+          function () {
+            runPurge(picked.map(function (box) {
+              return {
+                id: box.value,
+                name: box.dataset.purgeName || 'deck',
+                row: closestRow(box)
+              };
+            }));
+          }
         );
       });
     }

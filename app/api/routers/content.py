@@ -55,6 +55,7 @@ from app.services.ai_generation import (
     merge_study_packs,
     normalize_generated_text,
 )
+from app.services.batch import delete_in_chunks, select_scalars_in_chunks
 from app.services.content_extraction import extract_text
 from app.services.mcq_import import McqImportError, parse_mcq_json
 from app.services.tests import (
@@ -227,24 +228,40 @@ def _generate_iterative_ai_upload_pack(text: str, *, credential) -> tuple:
 
 
 def _delete_cards_with_test_dependencies(db: Session, *, card_ids: list[str]) -> None:
-    affected_test_ids = db.execute(
-        select(TestQuestion.test_id).where(TestQuestion.card_id.in_(card_ids)).distinct()
-    ).scalars().all()
+    """Remove cards plus everything that hangs off them.
+
+    ``card_ids`` comes from a checkbox selection, so its size is the user's, not
+    ours: every ``in_()`` here runs one chunk at a time instead of binding the
+    whole list, because Postgres rejects a statement with more than 65,535
+    parameters ("select all" on a huge deck used to fail with OperationalError
+    -> https://sqlalche.me/e/20/e3q8).
+    """
+    affected_test_ids = {
+        test_id
+        for test_id in select_scalars_in_chunks(
+            db,
+            lambda chunk: select(TestQuestion.test_id)
+            .where(TestQuestion.card_id.in_(chunk))
+            .distinct(),
+            card_ids,
+        )
+    }
     if affected_test_ids:
+        test_ids = list(affected_test_ids)
         db.execute(
             delete(TestAttemptAnswer).where(
                 TestAttemptAnswer.attempt_id.in_(
-                    select(TestAttempt.id).where(TestAttempt.test_id.in_(affected_test_ids))
+                    select(TestAttempt.id).where(TestAttempt.test_id.in_(test_ids))
                 )
             )
         )
-        db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(affected_test_ids)))
-        db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(affected_test_ids)))
-        db.execute(delete(Test).where(Test.id.in_(affected_test_ids)))
+        db.execute(delete(TestAttempt).where(TestAttempt.test_id.in_(test_ids)))
+        db.execute(delete(TestQuestion).where(TestQuestion.test_id.in_(test_ids)))
+        db.execute(delete(Test).where(Test.id.in_(test_ids)))
 
-    db.execute(delete(CardState).where(CardState.card_id.in_(card_ids)))
-    db.execute(delete(CardReview).where(CardReview.card_id.in_(card_ids)))
-    db.execute(delete(Card).where(Card.id.in_(card_ids)))
+    delete_in_chunks(db, CardState, CardState.card_id, card_ids)
+    delete_in_chunks(db, CardReview, CardReview.card_id, card_ids)
+    delete_in_chunks(db, Card, Card.id, card_ids)
 
 
 def _resolve_ai_provider_and_credential(db: Session, user: User):

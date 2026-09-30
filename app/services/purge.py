@@ -74,6 +74,29 @@ def _deleted_rows(result: Any) -> int:
     return int(getattr(result, "rowcount", 0) or 0)
 
 
+def _deck_card_ids(deck_id: uuid.UUID):
+    """A subquery for a deck's card ids — never a materialised, bound list.
+
+    Binding a deck's card ids one by one hits Postgres' 65,535-parameter limit
+    on large decks (SQLAlchemy surfaces it as ``OperationalError``,
+    https://sqlalche.me/e/20/e3q8) and aborts the whole purge. As a subquery the
+    same ``IN`` costs no parameters and stays a single statement.
+    """
+    return select(Card.id).where(Card.deck_id == deck_id)
+
+
+def clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
+    """Remove every card of ``deck_id`` plus the states and reviews behind them.
+
+    Used by the regeneration/retry paths (job worker and bulk upload) to replace
+    a deck's content instead of appending to it.
+    """
+    deck_cards = _deck_card_ids(deck_id)
+    db.execute(delete(CardState).where(CardState.card_id.in_(deck_cards)))
+    db.execute(delete(Review).where(Review.card_id.in_(deck_cards)))
+    db.execute(delete(Card).where(Card.deck_id == deck_id))
+
+
 def _table_present(db: Session, table_name: str) -> bool:
     """Whether ``table_name`` exists in this environment's schema.
 
@@ -193,34 +216,39 @@ def deck_wipe_preview(db: Session, deck_id: uuid.UUID | None) -> dict[str, Any]:
     if deck is None:
         return empty
 
-    card_ids = list(
-        db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
+    # Counts only: a deck-wide card id list would have to be materialised and
+    # then bound, and Postgres refuses more than 65,535 bind parameters per
+    # statement (the purge used to die with OperationalError / e3q8 on decks
+    # that big). A correlated subquery costs no parameters and counts the same.
+    deck_cards = _deck_card_ids(deck_id)
+    card_states = int(
+        db.execute(
+            select(func.count())
+            .select_from(CardState)
+            .where(CardState.card_id.in_(deck_cards))
+        ).scalar()
+        or 0
     )
-    card_states = 0
-    reviews = 0
-    if card_ids:
-        card_states = int(
-            db.execute(
-                select(func.count())
-                .select_from(CardState)
-                .where(CardState.card_id.in_(card_ids))
-            ).scalar()
-            or 0
-        )
-        reviews = int(
-            db.execute(
-                select(func.count())
-                .select_from(Review)
-                .where(Review.card_id.in_(card_ids))
-            ).scalar()
-            or 0
-        )
+    reviews = int(
+        db.execute(
+            select(func.count())
+            .select_from(Review)
+            .where(Review.card_id.in_(deck_cards))
+        ).scalar()
+        or 0
+    )
+    cards = int(
+        db.execute(
+            select(func.count()).select_from(Card).where(Card.deck_id == deck_id)
+        ).scalar()
+        or 0
+    )
 
     return {
         "has_deck": True,
         "deck_id": str(deck_id),
         "deck_name": deck.name,
-        "cards": len(card_ids),
+        "cards": cards,
         "card_states": card_states,
         "reviews": reviews,
     }
@@ -292,17 +320,17 @@ def purge_deck(db: Session, deck: Deck) -> dict[str, int]:
             db.execute(delete(Test).where(Test.id.in_(test_ids)))
         )
 
-    # Reviews and card states before the cards they point at.
-    card_ids = list(
-        db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
+    # Reviews and card states before the cards they point at. The IN argument is
+    # a subquery on purpose: materialising a deck's card ids used to break the
+    # purge of a large deck ("number of parameters must be between 0 and 65535"
+    # -> OperationalError -> e3q8), and it also kept the whole id list in memory.
+    deck_cards = _deck_card_ids(deck_id)
+    counts["reviews"] = _deleted_rows(
+        db.execute(delete(Review).where(Review.card_id.in_(deck_cards)))
     )
-    if card_ids:
-        counts["reviews"] = _deleted_rows(
-            db.execute(delete(Review).where(Review.card_id.in_(card_ids)))
-        )
-        counts["card_states"] = _deleted_rows(
-            db.execute(delete(CardState).where(CardState.card_id.in_(card_ids)))
-        )
+    counts["card_states"] = _deleted_rows(
+        db.execute(delete(CardState).where(CardState.card_id.in_(deck_cards)))
+    )
     counts["deck_tags"] = _deleted_rows(
         db.execute(delete(deck_tags).where(deck_tags.c.deck_id == deck_id))
     )

@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pypdf
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.db import SessionLocal
@@ -40,7 +40,6 @@ from app.models import (
     Deck,
     Job,
     JobStatus,
-    Review,
     User,
 )
 from app.services.access import normalize_deck_name
@@ -56,6 +55,7 @@ from app.services.ai_generation import (
     opencode_session_id,
     parse_title_generation_json,
 )
+from app.services.purge import clear_deck_generated_content
 from app.services.storage import get_storage, StorageError
 from app.services.textbook_nav import build_deck_title, extract_nav_block
 from app.services.concept_map import generate_concept_map
@@ -546,13 +546,10 @@ def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars
 
 
 def _clear_deck_generated_content(db: Session, deck_id: uuid.UUID) -> None:
-    card_ids = db.execute(select(Card.id).where(Card.deck_id == deck_id)).scalars().all()
-    card_id_list = list(card_ids)
-    if not card_id_list:
-        return
-    db.execute(delete(CardState).where(CardState.card_id.in_(card_id_list)))
-    db.execute(delete(Review).where(Review.card_id.in_(card_id_list)))
-    db.execute(delete(Card).where(Card.id.in_(card_id_list)))
+    # Shared with the purge path: it uses a subquery instead of a materialised
+    # card id list, which is what broke regeneration on very large decks
+    # ("number of parameters must be between 0 and 65535").
+    clear_deck_generated_content(db, deck_id)
 
 
 def _generate_chunk_pack(

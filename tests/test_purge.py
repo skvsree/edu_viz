@@ -12,9 +12,11 @@ from html.parser import HTMLParser
 from types import SimpleNamespace
 from urllib.parse import unquote_plus
 from uuid import uuid4
+import json
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from app.api.routers import pages
 from app.services import purge as purge_service
@@ -416,12 +418,55 @@ def test_deleted_decks_page_lists_deleted_decks(monkeypatch):
     assert "purge-deck-modal" in body  # the confirmation popup
 
 
+def test_deleted_decks_page_ships_the_batched_runner(monkeypatch):
+    """Deletion runs one deck per request and reports progress as it goes.
+
+    Sending a whole selection in one request is what a very large deck used to
+    break on (the deck-wide id list exceeded Postgres' bind parameter ceiling),
+    and it gave the admin no feedback until the last deck was finished.
+    """
+    deck = _deck()
+    monkeypatch.setattr(pages, "deleted_decks", lambda db: [deck])
+
+    class PageDB(FakeDB):
+        def execute(self, stmt):
+            text = str(stmt).lower()
+            if "from cards" in text:
+                return _Result([(deck.id, 3)])
+            if "from users" in text:
+                return _Result(
+                    [SimpleNamespace(id=deck.user_id, email="owner@example.com")]
+                )
+            return _Result([])
+
+    response = pages._deleted_decks_response(
+        make_request(path="/settings/deleted-decks"),
+        user=_system_admin(),
+        db=PageDB(),
+    )
+
+    body = render_body(response)
+    # Progress panel with a live bar, counters and log.
+    assert 'id="purge-progress"' in body
+    assert 'id="purge-progress-bar"' in body
+    assert 'id="purge-progress-percent"' in body
+    assert 'id="purge-progress-log"' in body
+    assert 'id="purge-progress-stop"' in body  # stop between decks
+    # The runner walks the selection one request at a time, asking for JSON.
+    assert "runPurge" in body
+    assert "'Accept': 'application/json'" in body
+    assert "closestRow" in body  # rows disappear as they are deleted
+    # The no-JavaScript fallback still posts the whole selection to the route.
+    assert 'action="/settings/decks/purge-selected"' in body
+
+
 def test_purge_deck_route_404s_for_a_deck_that_is_not_deleted():
     deck = _deck(is_deleted=False)
 
     with pytest.raises(HTTPException) as excinfo:
         pages.purge_deck_permanently(
             deck_id=str(deck.id),
+            request=make_request(path=f"/settings/decks/{deck.id}/purge"),
             user=_system_admin(),
             db=FakeDB({str(deck.id): deck, deck.id: deck}),
         )
@@ -441,6 +486,7 @@ def test_purge_deck_route_redirects_with_a_success_message(monkeypatch):
 
     response = pages.purge_deck_permanently(
         deck_id=str(deck.id),
+        request=make_request(path=f"/settings/decks/{deck.id}/purge"),
         user=_system_admin(),
         db=FakeDB({str(deck.id): deck, deck.id: deck}),
     )
@@ -464,6 +510,7 @@ def test_purge_deck_route_reports_a_guard_failure(monkeypatch):
 
     response = pages.purge_deck_permanently(
         deck_id=str(deck.id),
+        request=make_request(path=f"/settings/decks/{deck.id}/purge"),
         user=_system_admin(),
         db=FakeDB({str(deck.id): deck, deck.id: deck}),
     )
@@ -472,6 +519,96 @@ def test_purge_deck_route_reports_a_guard_failure(monkeypatch):
     assert response.status_code == 303
     assert "/settings/deleted-decks?error=" in location
     assert "running job" in location
+
+
+# --------------------------------------------------------------------------
+# the batch runner's JSON mode (one deck per request, progress in the page)
+# --------------------------------------------------------------------------
+
+JSON_ACCEPT = [(b"accept", b"application/json")]
+
+
+def _json_request(deck_id) -> Request:
+    return make_request(
+        path=f"/settings/decks/{deck_id}/purge", headers=JSON_ACCEPT
+    )
+
+
+def _json_body(response) -> dict:
+    return json.loads(response.body.decode("utf-8"))
+
+
+def test_json_purge_reports_counts_for_one_deck(monkeypatch):
+    deck = _deck()
+    monkeypatch.setattr(
+        pages,
+        "purge_deck",
+        lambda db, target: {"decks": 1, "cards": 4, "storage_objects": 2},
+    )
+
+    response = pages.purge_deck_permanently(
+        deck_id=str(deck.id),
+        request=_json_request(deck.id),
+        user=_system_admin(),
+        db=FakeDB({str(deck.id): deck, deck.id: deck}),
+    )
+
+    body = _json_body(response)
+    assert response.status_code == 200
+    assert body["status"] == "purged"
+    assert body["deck_id"] == str(deck.id)
+    assert body["records_removed"] == 5
+    assert body["storage_objects"] == 2
+    assert "Biology permanently deleted" in body["message"]
+
+
+def test_json_purge_marks_a_refused_deck_without_raising(monkeypatch):
+    """One deck that cannot be removed must not abort the rest of the batch."""
+
+    def failing_purge(db, target):
+        raise PurgeError("This deck still has a running job.")
+
+    monkeypatch.setattr(pages, "purge_deck", failing_purge)
+    deck = _deck()
+
+    response = pages.purge_deck_permanently(
+        deck_id=str(deck.id),
+        request=_json_request(deck.id),
+        user=_system_admin(),
+        db=FakeDB({str(deck.id): deck, deck.id: deck}),
+    )
+
+    body = _json_body(response)
+    assert response.status_code == 409
+    assert body["status"] == "refused"
+    assert "running job" in body["detail"]
+
+
+def test_json_purge_reports_an_already_restored_deck():
+    deck = _deck(is_deleted=False)
+
+    response = pages.purge_deck_permanently(
+        deck_id=str(deck.id),
+        request=_json_request(deck.id),
+        user=_system_admin(),
+        db=FakeDB({str(deck.id): deck, deck.id: deck}),
+    )
+
+    body = _json_body(response)
+    assert response.status_code == 404
+    assert body["status"] == "skipped"
+
+
+def test_json_purge_survives_a_malformed_deck_id():
+    response = pages.purge_deck_permanently(
+        deck_id="not-a-uuid",
+        request=_json_request("not-a-uuid"),
+        user=_system_admin(),
+        db=FakeDB(),
+    )
+
+    assert response.status_code == 404
+    assert _json_body(response)["status"] == "skipped"
 
 
 # --------------------------------------------------------------------------

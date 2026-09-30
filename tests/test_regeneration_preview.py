@@ -97,14 +97,30 @@ def test_preview_without_a_deck_says_nothing_will_be_deleted():
     assert all("cards" not in statement for statement in session.statements)
 
 
-def test_preview_skips_count_queries_for_an_empty_deck():
+def test_preview_never_materialises_the_deck_s_card_ids():
+    """The preview must count, not load: a deck-wide id list is what broke the
+    wipe on huge decks (Postgres caps a statement at 65,535 parameters)."""
+    deck = _deck()
+    session = _PreviewSession(deck=deck, card_ids=[uuid4() for _ in range(3)])
+
+    preview = deck_wipe_preview(session, deck.id)
+
+    assert preview["cards"] == 3
+    # Every statement is a count; none of them selects the ids themselves, and
+    # the counts reach the card table through a subquery, not a bound id list.
+    assert session.statements
+    assert all("count(" in statement for statement in session.statements)
+    scoped = [s for s in session.statements if "review" in s or "card_states" in s]
+    assert scoped and all("in (select" in statement for statement in scoped)
+
+
+def test_preview_reports_zero_for_an_empty_deck():
     deck = _deck()
     session = _PreviewSession(deck=deck, card_ids=[])
 
     preview = deck_wipe_preview(session, deck.id)
 
-    assert preview["cards"] == 0 and preview["reviews"] == 0
-    assert not any("count(" in statement for statement in session.statements)
+    assert preview["cards"] == 0 and preview["reviews"] == 0 and preview["card_states"] == 0
 
 
 def test_route_returns_counts_for_the_file_deck():
