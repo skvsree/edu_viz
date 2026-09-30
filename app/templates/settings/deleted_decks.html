@@ -27,20 +27,25 @@
     </div>
 
     {% if deleted_decks %}
-      <form method="post" action="/settings/decks/purge-selected" id="purge-selected-form" class="purge-toolbar">
-        <label class="purge-toolbar__select-all">
-          <input type="checkbox" id="purge-select-all" />
-          <span>Select all</span>
-        </label>
-        <span class="purge-toolbar__count muted" id="purge-selection-count">No decks selected</span>
-        <div class="purge-toolbar__actions">
-          <button type="button" class="button button-danger button-small" id="purge-selected-btn" disabled>
-            Delete selected
-          </button>
+      {# The select-all toolbar and the deck checkboxes below must stay inside
+         this one form: a browser only submits a form's own associated
+         controls, so a deck_ids input declared outside it is never posted and
+         every bulk delete silently behaves like an empty selection. #}
+      <form method="post" action="/settings/decks/purge-selected" id="purge-selected-form">
+        <div class="purge-toolbar">
+          <label class="purge-toolbar__select-all">
+            <input type="checkbox" id="purge-select-all" />
+            <span>Select all</span>
+          </label>
+          <span class="purge-toolbar__count muted" id="purge-selection-count">No decks selected</span>
+          <div class="purge-toolbar__actions">
+            <button type="button" class="button button-danger button-small" id="purge-selected-btn" disabled>
+              Delete selected
+            </button>
+          </div>
         </div>
-      </form>
 
-      <ul class="purge-list">
+        <ul class="purge-list">
         {% for entry in deleted_decks %}
         <li class="purge-item">
           <label class="purge-item__check">
@@ -78,7 +83,8 @@
           </div>
         </li>
         {% endfor %}
-      </ul>
+        </ul>
+      </form>
     {% else %}
       <p class="muted">No deleted decks right now.</p>
     {% endif %}

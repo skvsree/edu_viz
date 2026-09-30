@@ -8,6 +8,7 @@ guards honoured, stored objects cleaned up) without needing a live database.
 """
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from types import SimpleNamespace
 from urllib.parse import unquote_plus
 from uuid import uuid4
@@ -659,3 +660,85 @@ def test_deleted_decks_page_offers_multi_select(monkeypatch):
     # are scoped to jobs.html's own stylesheet and left this page unstyled.
     assert "jobs-files-table" not in body
     assert "purge-item" in body
+
+
+# --------------------------------------------------------------------------
+# regression: the bulk form must own its checkboxes
+# --------------------------------------------------------------------------
+
+
+class _FormControlAudit(HTMLParser):
+    """Which controls does a browser associate with the given form?
+
+    Only a descendant of that form, or one carrying a matching
+    ``form="..."`` attribute, is submitted. Nothing else is sent.
+    """
+
+    VOID = {"input", "br", "img", "hr", "meta", "link", "source"}
+
+    def __init__(self, form_id):
+        super().__init__()
+        self.form_id = form_id
+        self.stack = []
+        self.form_depth = None
+        self.checkboxes = []  # every data-purge-select input on the page
+        self.associated = []  # the ones the browser would actually POST
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        inside = self.form_depth is not None
+        if tag == "input" and "data-purge-select" in attrs:
+            entry = (attrs.get("name"), attrs.get("value"))
+            self.checkboxes.append(entry)
+            if inside or attrs.get("form") == self.form_id:
+                self.associated.append(entry)
+        if tag == "form" and attrs.get("id") == self.form_id:
+            self.form_depth = len(self.stack)
+        if tag not in self.VOID:
+            self.stack.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.VOID:
+            return
+        while self.stack:
+            if self.stack.pop() == tag:
+                break
+        if self.form_depth is not None and len(self.stack) <= self.form_depth:
+            self.form_depth = None
+
+
+def test_bulk_purge_checkboxes_are_associated_with_the_bulk_form(monkeypatch):
+    """Regression: the bulk toolbar used to submit an empty selection.
+
+    The deck checkboxes sat *outside* ``#purge-selected-form``, so the browser
+    posted no ``deck_ids`` at all and the route answered "No decks were
+    selected." — shown as the "Nothing was deleted." banner with every deck
+    still listed.
+    """
+    first, second = _deck(), _deck()
+    monkeypatch.setattr(pages, "deleted_decks", lambda db: [first, second])
+
+    class PageDB(FakeDB):
+        def execute(self, stmt):
+            text = str(stmt).lower()
+            if "from cards" in text:
+                return _Result([(first.id, 2), (second.id, 1)])
+            return _Result([])
+
+    response = pages._deleted_decks_response(
+        make_request(path="/settings/deleted-decks"),
+        user=_system_admin(),
+        db=PageDB(),
+    )
+    body = render_body(response)
+
+    audit = _FormControlAudit("purge-selected-form")
+    audit.feed(body)
+
+    # Both decks are selectable...
+    assert len(audit.checkboxes) == 2
+    # ...and the browser will really POST both of them.
+    assert audit.associated == [
+        ("deck_ids", str(first.id)),
+        ("deck_ids", str(second.id)),
+    ]
