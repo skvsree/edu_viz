@@ -64,8 +64,15 @@
          every bulk delete silently behaves like an empty selection. #}
       <form method="post" action="/settings/decks/purge-selected" id="purge-selected-form">
         <div class="purge-toolbar">
+          {# The app's own switch control (cards/flashcards.html uses it for the
+             same "select all" job): the real checkbox is a hidden 1px input, so
+             the global `input { width: 100% }` rule cannot stretch it and the
+             44x26 slider is a comfortable touch target. #}
           <label class="purge-toolbar__select-all">
-            <input type="checkbox" id="purge-select-all" />
+            <span class="toggle-switch">
+              <input type="checkbox" id="purge-select-all" />
+              <span class="toggle-switch__slider" aria-hidden="true"></span>
+            </span>
             <span>Select all</span>
           </label>
           <span class="purge-toolbar__count muted" id="purge-selection-count">No decks selected</span>
@@ -78,30 +85,35 @@
 
         <ul class="purge-list">
         {% for entry in deleted_decks %}
-        <li class="purge-item">
+        {# One deck = one card from the app's list vocabulary (deck-card with its
+           eyebrow / meta pills / action row), the same shape the other settings
+           lists use, so it picks up the global card styles and breakpoints. #}
+        <li class="deck-card purge-item">
           <label class="purge-item__check">
-            <input
-              type="checkbox"
-              name="deck_ids"
-              value="{{ entry.deck.id }}"
-              data-purge-select
-              data-purge-name="{{ entry.deck.name or 'Untitled deck' }}"
-            />
+            <span class="toggle-switch">
+              <input
+                type="checkbox"
+                name="deck_ids"
+                value="{{ entry.deck.id }}"
+                aria-label="Select {{ entry.deck.name or 'Untitled deck' }}"
+                data-purge-select
+                data-purge-name="{{ entry.deck.name or 'Untitled deck' }}"
+              />
+              <span class="toggle-switch__slider" aria-hidden="true"></span>
+            </span>
             <span class="purge-item__body">
+              <span class="deck-card__eyebrow">{{ entry.owner_email or "Unknown owner" }}</span>
               <span class="purge-item__title">{{ entry.deck.name or "Untitled deck" }}</span>
               {% if entry.deck.description %}
                 <span class="purge-item__description muted">{{ entry.deck.description[:140] }}</span>
               {% endif %}
-              <span class="purge-item__meta muted">
-                <span>{{ entry.owner_email or "Unknown owner" }}</span>
-                <span aria-hidden="true">·</span>
+              <span class="deck-card__meta purge-item__meta">
                 <span>Deleted {{ entry.deck.deleted_at.strftime('%Y-%m-%d %H:%M') if entry.deck.deleted_at else '—' }}</span>
-                <span aria-hidden="true">·</span>
                 <span>{{ entry.card_count }} card{{ '' if entry.card_count == 1 else 's' }}</span>
               </span>
             </span>
           </label>
-          <div class="purge-item__actions">
+          <div class="deck-card__actions deck-card__actions--inline purge-item__actions">
             <button
               type="button"
               class="button button-danger button-small"
@@ -219,7 +231,9 @@
   .purge-toolbar__select-all {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+    /* Comfortable tap target on a phone. */
+    padding: 4px 2px;
     font-weight: 600;
     cursor: pointer;
   }
@@ -240,34 +254,43 @@
     gap: 10px;
   }
 
+  /* One row = one deck-card. The layout is scoped here (compact list row
+     instead of the tall dashboard card), the look comes from .deck-card. */
   .purge-item {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 12px;
+    gap: 12px 16px;
     padding: 14px 16px;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--surface-strong, var(--surface));
   }
 
   .purge-item__check {
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    flex: 1 1 22rem;
+    align-items: center;
+    gap: 14px;
+    /* Grows into the free space but can never collapse: this span used to
+       render 0px wide (the global `input {width:100%}` stretch made the raw
+       checkbox ~870px, squeezing the text span to nothing) and wrapped every
+       deck name one character per line. */
+    flex: 1 1 20rem;
     min-width: 0;
     cursor: pointer;
   }
 
-  .purge-item__check input[type="checkbox"] {
-    margin-top: 3px;
+  .purge-item__check .toggle-switch,
+  .purge-toolbar__select-all .toggle-switch {
+    /* .toggle-switch only supplies position:relative; the slider is an inline
+       span, so its 44x26 size is dropped unless the wrapper lays out as a flex
+       container (the app's own bulk-select toolbars use inline-flex for this). */
+    display: inline-flex;
+    align-items: center;
     flex: 0 0 auto;
   }
 
   .purge-item__body {
     display: grid;
     gap: 4px;
+    flex: 1 1 auto;
     min-width: 0;
   }
 
@@ -282,16 +305,34 @@
     overflow-wrap: anywhere;
   }
 
+  /* Bound the row: a long description used to add as many lines as it liked,
+     which is what made phone rows tall. */
+  .purge-item__description {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
   .purge-item__meta {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
   }
 
+  /* Keep the row's action inline. Left to the shared .deck-card__actions rules
+     the button stretched the full row width, which pushed the deck name onto
+     its own line and made every row ~200px tall. */
   .purge-item__actions {
     display: flex;
-    justify-content: flex-end;
     flex: 0 0 auto;
+    justify-content: flex-end;
+    width: auto;
+  }
+
+  .purge-item__actions .button,
+  .purge-toolbar__actions .button {
+    width: auto;
   }
 
   @media (max-width: 640px) {
@@ -304,15 +345,19 @@
       width: 100%;
     }
 
+    /* Stack the row so the deck name gets the full width above the action. */
     .purge-item {
+      flex-direction: column;
+      align-items: stretch;
       padding: 12px;
     }
 
-    .purge-item__actions {
-      width: 100%;
-      justify-content: stretch;
+    .purge-item__check {
+      align-items: flex-start;
+      flex: 1 1 auto;
     }
 
+    .purge-item__actions,
     .purge-item__actions .button {
       width: 100%;
     }

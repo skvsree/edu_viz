@@ -799,6 +799,44 @@ def test_deleted_decks_page_offers_multi_select(monkeypatch):
     assert "purge-item" in body
 
 
+def test_deleted_decks_rows_reuse_the_app_card_and_switch_components(monkeypatch):
+    """Rows must be built from the shared card + switch components.
+
+    Regression: the rows were bespoke markup whose selection control was a bare
+    ``<input type="checkbox">`` sitting beside a flexed span. The global
+    ``input { width: 100% }`` rule made that checkbox 871px wide and squeezed
+    the deck-name span down to 0px, so every name wrapped one character per
+    line and this nine-deck page rendered 23,582px tall on a phone.
+    """
+    first, second = _deck(), _deck()
+    monkeypatch.setattr(pages, "deleted_decks", lambda db: [first, second])
+
+    class PageDB(FakeDB):
+        def execute(self, stmt):
+            text = str(stmt).lower()
+            if "from cards" in text:
+                return _Result([(first.id, 2), (second.id, 5)])
+            return _Result([])
+
+    response = pages._deleted_decks_response(
+        make_request(path="/settings/deleted-decks"),
+        user=_system_admin(),
+        db=PageDB(),
+    )
+    body = render_body(response)
+
+    # One shared list card per deck, with the same vocabulary as the other
+    # settings lists (eyebrow, meta pills, action row). Match the attribute
+    # form: the page's own <style> mentions these class names too.
+    assert body.count('class="deck-card purge-item"') == 2
+    assert body.count('class="deck-card__meta purge-item__meta"') == 2
+    assert body.count('class="deck-card__actions deck-card__actions--inline purge-item__actions"') == 2
+    # The selection control is the app's switch (hidden input + slider) rather
+    # than a raw visible checkbox: one in the toolbar, one per deck.
+    assert body.count('class="toggle-switch__slider"') == 3
+    assert 'class="purge-item__check"><input' not in body
+
+
 # --------------------------------------------------------------------------
 # regression: the bulk form must own its checkboxes
 # --------------------------------------------------------------------------
