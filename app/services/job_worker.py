@@ -57,7 +57,7 @@ from app.services.ai_generation import (
 )
 from app.services.purge import clear_deck_generated_content
 from app.services.storage import get_storage, StorageError
-from app.services.textbook_nav import build_deck_title, extract_nav_block
+from app.services.textbook_nav import compose_deck_title, extract_nav_block
 from app.services.concept_map import generate_concept_map
 
 
@@ -1160,14 +1160,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
             text = extract_text_from_pdf(pdf_data)
 
-            # Prefer the title the document prints about itself. Only chapters
-            # that declare a chapter but no unit need the walk-back (Maths has no
-            # navigation block at all, and must not pay for PDF lookups).
+            # Prefer the title the document prints about itself. Chapters whose
+            # PDF declares no unit need the walk-back (Maths has no navigation
+            # block at all, so it must not pay for PDF lookups — it never
+            # declares a unit either way).
             nav_block = extract_nav_block(text)
             nav_unit = nav_carried_unit
-            if nav_unit is None and nav_block is not None and nav_block.unit_no is None:
+            if nav_unit is None and (nav_block is None or nav_block.unit_no is None):
                 nav_unit = _inherited_unit_from_siblings(db, bulk, file_record, storage)
-            nav_title = build_deck_title(nav_block, carried_unit=nav_unit)
             if nav_block is not None and nav_block.unit_no is not None:
                 nav_carried_unit = nav_block.unit_no
 
@@ -1211,6 +1211,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                     flush=True,
                 )
 
+            # The printed block is only complete once the derived title is known:
+            # a chapter that prints no chapter line of its own keeps its name and
+            # gains the unit ("Unit 3 · Between Home and School").
+            nav_title = compose_deck_title(
+                nav_block,
+                carried_unit=nav_unit,
+                derived_title=title,
+            )
             title, title_source = pick_file_title(nav_title=nav_title, derived_title=title)
             if not title:
                 raise AIGenerationError('Unable to derive a usable title from document content.')

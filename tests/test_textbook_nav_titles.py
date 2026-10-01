@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from app.services.textbook_nav import (
     build_deck_title,
+    compose_deck_title,
     derive_nav_title,
     extract_nav_block,
 )
@@ -139,3 +140,106 @@ def test_empty_and_blank_documents_yield_nothing():
     assert extract_nav_block(None) is None
     assert extract_nav_block("") is None
     assert extract_nav_block("Just some prose without any navigation.\n") is None
+
+
+# --- Class II Mridang (bemr101..bemr113): pypdf layout artefacts ------------
+#
+# The line sequences below are verbatim from the real PDFs. pypdf repeats runs
+# that the page draws twice, and merges a page's section header into the title
+# line, so the raw text is "dirtier" than Class I's.
+
+SECTION_HEADER_MERGED_INTO_TITLE = """Take a bus
+Or take a train,
+Take a boat
+Or take a plane,
+Take a taxi,
+Take a car,
+Maybe near
+Or maybe far,
+Sight words
+take | is | the | or | two | may be |
+Unit 3
+Going places
+Chapter 1
+Come Back Soon Let us recite
+Chapter 3.indd   37Chapter 3.indd   37 19-05-2023   10:44:3419-05-2023   10:44:34
+Reprint 2026-27
+"""
+
+DOUBLED_UNIT_AND_TITLE = """Let us sing
+Unit 5Unit 5
+Harmony
+Chapter 1
+Little Drops of Water
+Chapter 5.indd   84Chapter 5.indd   84 19-05-2023   16:36:2619-05-2023   16:36:26
+Reprint 2026-27
+85
+"""
+
+DOUBLED_TITLE_ONLY = """Chapter 2
+Picture ReadingPicture Reading
+Chapter 1.indd   8Chapter 1.indd   8 19-05-2023   10:42:2619-05-2023   10:42:26
+"""
+
+# Chapters 6 and 7 print no usable Chapter line at all — the label arrives
+# doubled *and* merged with the section header, so there is nothing to match.
+UNMATCHABLE_CHAPTER_LINE = """grove and then reach the main road. That is the shortest
+route we take to school. What fun we have every day!
+Chapter 2Chapter 2 Let us read
+Chapter 3.indd 42 12-01-2024 08:52:23
+Reprint 2026-27
+43
+"""
+
+
+def test_a_stripped_section_header_does_not_reach_the_deck_name():
+    """bemr105 verbatim: 'Come Back Soon Let us recite' -> 'Come Back Soon'."""
+    block = extract_nav_block(SECTION_HEADER_MERGED_INTO_TITLE)
+    assert block is not None
+    assert block.unit_no == 3
+    assert block.unit_title == "Going places"
+    assert block.chapter_title == "Come Back Soon"
+    assert build_deck_title(block) == "Unit 3 · Ch 1 · Come Back Soon"
+
+
+def test_a_doubled_unit_label_is_still_a_unit_label():
+    """bemr112 verbatim: 'Unit 5Unit 5' must be read as Unit 5 — otherwise the
+    unit is carried over from unit 4 and two whole chapters are numbered wrongly."""
+    block = extract_nav_block(DOUBLED_UNIT_AND_TITLE)
+    assert block is not None
+    assert block.unit_no == 5
+    assert block.unit_title == "Harmony"
+    assert block.chapter_title == "Little Drops of Water"
+    assert build_deck_title(block) == "Unit 5 · Ch 1 · Little Drops of Water"
+
+
+def test_a_doubled_title_is_halved():
+    block = extract_nav_block(DOUBLED_TITLE_ONLY)
+    assert block is not None
+    assert block.chapter_title == "Picture Reading"
+    assert build_deck_title(block, carried_unit=1) == "Unit 1 · Ch 2 · Picture Reading"
+
+
+def test_a_chapter_with_no_readable_chapter_line_keeps_its_name_and_gains_the_unit():
+    """The Class II chapters 6/7 shape: only the carried unit is known."""
+    assert extract_nav_block(UNMATCHABLE_CHAPTER_LINE) is None
+    assert compose_deck_title(
+        None,
+        carried_unit=3,
+        derived_title="Chapter 03 - Between Home and School",
+    ) == "Unit 3 · Between Home and School"
+
+
+def test_a_page_that_prints_its_chapter_title_wins_outright():
+    """The printed block is preferred over any prefixing (Class I unchanged)."""
+    block = extract_nav_block(MRIDANG_UNIT_AND_CHAPTER)
+    assert compose_deck_title(
+        block, carried_unit=None, derived_title="Chapter 01 - Two Little Hands"
+    ) == "Unit 1 · Ch 1 · Two Little Hands"
+
+
+def test_without_a_unit_the_derived_title_is_left_alone():
+    """Joyful Mathematics prints no navigation block: names must not change."""
+    assert compose_deck_title(
+        None, carried_unit=None, derived_title="Chapter 01 - A Day at the Beach"
+    ) is None

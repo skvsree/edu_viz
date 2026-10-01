@@ -1199,7 +1199,7 @@ def retitle_bulk_ai_upload(
     current name (reported under ``skipped``).
     """
     from app.services.job_worker import extract_text_from_pdf
-    from app.services.textbook_nav import build_deck_title, extract_nav_block
+    from app.services.textbook_nav import compose_deck_title, extract_nav_block
 
     bulk = db.get(BulkAIUpload, bulk_id)
     if not bulk:
@@ -1262,9 +1262,16 @@ def retitle_bulk_ai_upload(
                 continue
 
         block = extract_nav_block(text)
-        nav_title = build_deck_title(block, carried_unit=carried_unit)
         if block is not None and block.unit_no is not None:
             carried_unit = block.unit_no
+        # A chapter that prints no chapter line of its own keeps its current name
+        # and gains the unit — "Chapter 03 - Between Home and School" becomes
+        # "Unit 3 · Between Home and School" rather than staying wrong.
+        nav_title = compose_deck_title(
+            block,
+            carried_unit=carried_unit,
+            derived_title=deck.name,
+        )
         if not nav_title:
             skipped.append(
                 {"file": file_record.original_filename, "reason": "no navigation block in source"}

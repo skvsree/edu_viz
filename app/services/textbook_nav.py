@@ -57,6 +57,22 @@ _NOISE_PATTERNS = (
     re.compile(r"^isbn\b", re.IGNORECASE),
 )
 
+# A page often prints its section header on the same extracted line as the title
+# ("My Bicycle Let us recite"), so the header is stripped off the end of a title.
+_SECTION_LABELS = (
+    "let us recite", "let us read", "let us speak", "let us write", "let us draw",
+    "let us talk", "let us sing", "let us do", "new words", "sight words",
+)
+# The shortest thing left after stripping a header that is still worth keeping.
+MIN_TITLE_LENGTH = 3
+
+# AI/fallback titles carry their own numbering ("Chapter 03 - Between Home and
+# School"), which for a book that restarts numbering inside every unit is often
+# the wrong number — it is dropped when the unit is prefixed instead.
+_LEADING_NUMBERING = re.compile(
+    r"^\s*(?:chapter|unit|lesson)\s+\d{1,3}\s*[-–—:.]\s*", re.IGNORECASE
+)
+
 # Only the head of the document is searched: the navigation block is printed at
 # the start of a chapter, and mid-document text can legitimately mention a
 # chapter number.
@@ -77,8 +93,41 @@ class NavBlock:
         return self.chapter_no is None and self.unit_no is None
 
 
+def _collapse_doubled(value: str) -> str:
+    """Undo pypdf's doubled-run artefacts: ``Unit 5Unit 5`` -> ``Unit 5``.
+
+    NCERT's *Mridang II* draws some runs twice, so the extracted text repeats a
+    whole line (``Unit 5Unit 5``, ``Picture ReadingPicture Reading``) — and a
+    doubled navigation label would otherwise look like no label at all.
+    """
+    for _ in range(4):
+        half, remainder = divmod(len(value), 2)
+        if not remainder and half >= MIN_TITLE_LENGTH and value[:half] == value[half:]:
+            value = value[:half]
+            continue
+        break
+    return value
+
+
 def _clean(line: str | None) -> str:
-    return re.sub(r"\s+", " ", (line or "")).strip()
+    """Collapse whitespace and undo the doubled-run artefacts."""
+    return _collapse_doubled(re.sub(r"\s+", " ", (line or "")).strip())
+
+
+def _strip_section_label(title: str) -> str:
+    """``My Bicycle Let us recite`` -> ``My Bicycle``."""
+    lowered = title.lower()
+    for label in _SECTION_LABELS:
+        if lowered.endswith(label):
+            trimmed = title[: len(title) - len(label)].strip(" -–—·:|.")
+            if len(trimmed) >= MIN_TITLE_LENGTH:
+                return trimmed
+    return title
+
+
+def _title_text(line: str | None) -> str:
+    """The printable title form of an extracted line."""
+    return _strip_section_label(_clean(line))[:MAX_TITLE_LENGTH]
 
 
 def _is_noise(line: str) -> bool:
@@ -96,7 +145,7 @@ def _next_title(lines: list[str], index: int) -> str | None:
         cleaned = _clean(candidate)
         if _is_noise(cleaned):
             continue
-        return cleaned[:MAX_TITLE_LENGTH]
+        return _title_text(candidate)
     return None
 
 
@@ -129,7 +178,7 @@ def extract_nav_block(text: str | None) -> NavBlock | None:
                 continue
             inline = _INLINE_UNIT.match(line)
             if inline:
-                candidate = _clean(inline.group(2))[:MAX_TITLE_LENGTH]
+                candidate = _title_text(inline.group(2))
                 if candidate and not _is_noise(candidate):
                     unit_no = int(inline.group(1))
                     unit_title = candidate
@@ -142,7 +191,7 @@ def extract_nav_block(text: str | None) -> NavBlock | None:
                 continue
             inline = _INLINE_CHAPTER.match(line)
             if inline:
-                candidate = _clean(inline.group(2))[:MAX_TITLE_LENGTH]
+                candidate = _title_text(inline.group(2))
                 if candidate and not _is_noise(candidate):
                     chapter_no = int(inline.group(1))
                     chapter_title = candidate
@@ -166,6 +215,12 @@ def extract_nav_block(text: str | None) -> NavBlock | None:
     return block
 
 
+def unit_prefix(block: NavBlock | None, carried_unit: int | None = None) -> str | None:
+    """``Unit 2`` — the unit as label + number, or ``None`` when it is unknown."""
+    unit = block.unit_no if block is not None and block.unit_no is not None else carried_unit
+    return f"Unit {unit}" if unit is not None else None
+
+
 def build_deck_title(block: NavBlock | None, carried_unit: int | None = None) -> str | None:
     """Render ``Unit 2 · Ch 1 · Picture Time``.
 
@@ -176,9 +231,9 @@ def build_deck_title(block: NavBlock | None, carried_unit: int | None = None) ->
         return None
 
     parts: list[str] = []
-    unit = block.unit_no if block.unit_no is not None else carried_unit
-    if unit is not None:
-        parts.append(f"Unit {unit}")
+    prefix = unit_prefix(block, carried_unit)
+    if prefix:
+        parts.append(prefix)
     if block.chapter_no is not None:
         parts.append(f"Ch {block.chapter_no}")
     if block.chapter_title:
@@ -188,6 +243,31 @@ def build_deck_title(block: NavBlock | None, carried_unit: int | None = None) ->
 
     title = TITLE_SEPARATOR.join(parts).strip()
     return title[:MAX_TITLE_LENGTH] or None
+
+
+def compose_deck_title(block: NavBlock | None, *, carried_unit: int | None = None,
+                       derived_title: str | None = None) -> str | None:
+    """The deck title: the printed block when it names the chapter, else a prefix.
+
+    Call this once the derived (AI/fallback) title is known. Some chapter PDFs
+    print no usable ``Chapter N`` line at all — Class II *Mridang*'s chapters 6
+    and 7 extract as ``Chapter 2Chapter 2 Let us read`` — so the only navigation
+    fact left is the unit carried from the unit's opening chapter. Those decks
+    must read ``Unit 3 · Between Home and School``, not keep the AI's wrong
+    ``Chapter 03 - Between Home and School`` (and not lose the chapter's name to
+    the unit's theme, which is what a plain block render would do).
+    """
+    printed = build_deck_title(block, carried_unit=carried_unit)
+    if block is not None and block.chapter_title:
+        # The page printed its own chapter title; that title wins outright.
+        return printed
+    unit = unit_prefix(block, carried_unit)
+    if unit is None or not derived_title:
+        return printed
+    cleaned = _LEADING_NUMBERING.sub("", derived_title).strip()
+    if len(cleaned) < MIN_TITLE_LENGTH:
+        return printed
+    return f"{unit}{TITLE_SEPARATOR}{cleaned}"[:MAX_TITLE_LENGTH]
 
 
 def derive_nav_title(text: str | None, carried_unit: int | None = None) -> tuple[str | None, int | None]:
