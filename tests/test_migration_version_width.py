@@ -115,7 +115,7 @@ def sort_ids(items) -> list[str]:
 def test_migration_chain_is_intact():
     migrations = _load_migrations()
     chain = _chain_from_base(migrations)
-    assert chain[-1].id == '0033_widen_alembic_version', (
+    assert chain[-1].id == '0034_ai_provider_settings', (
         'unexpected head; if you added a migration, update this test deliberately'
     )
 

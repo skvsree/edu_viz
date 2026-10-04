@@ -220,3 +220,228 @@ def test_blank_ai_endpoint_falls_back_to_the_provider_default(monkeypatch):
         DeepSeekRevisionProvider(session_id="t").api_endpoint
         == settings.revision_notes_api_endpoint
     )
+
+
+# --- the provider/model is a stored setting, not an env-only fact (2026-10-03)
+#
+# Switching vendor used to mean editing AI_PROVIDER/AI_MODEL and recreating the
+# container - and a half-applied switch (new provider, key for the old one) made
+# every call fail with the generic "AI provider did not return usable flashcards
+# or MCQs". The stored setting decides provider+model together, and the key rule
+# below keeps a switch from borrowing the previous provider's key.
+
+
+def _fernet_key(monkeypatch):
+    """A throwaway encryption key so secret storage can be exercised."""
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "ai_secrets_fernet_key", key, raising=False)
+    return key
+
+
+def _stored(monkeypatch, provider, model, key=None):
+    """Pretend the settings row holds this, without touching a database."""
+    from app.services import ai_provider_config
+
+    _fernet_key(monkeypatch)
+    encrypted = None
+    if key is not None:
+        from app.services.ai_auth import encrypt_secret
+
+        encrypted = encrypt_secret(key)
+    monkeypatch.setattr(
+        ai_provider_config,
+        "_read_row",
+        lambda db=None: (provider, model, encrypted),
+    )
+    return ai_provider_config
+
+
+def test_stored_setting_overrides_the_environment(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ai_provider", "deepseek", raising=False)
+    monkeypatch.setattr(settings, "ai_model", "deepseek-flash", raising=False)
+    config = _stored(monkeypatch, "opencode", "deepseek-v4.1-flash")
+
+    assert config.effective_provider() == "opencode"
+    assert config.effective_model() == "deepseek-v4.1-flash"
+    described = config.describe()
+    assert described["source"] == "stored"
+    assert "opencode.ai" in described["endpoint"], described["endpoint"]
+
+
+def test_no_stored_setting_leaves_the_environment_in_charge(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ai_provider", "deepseek", raising=False)
+    monkeypatch.setattr(settings, "ai_model", "deepseek-flash", raising=False)
+    config = _stored(monkeypatch, None, None)
+
+    assert config.effective_provider() == "deepseek"
+    assert config.effective_model() == "deepseek-flash"
+    assert config.describe()["source"] == "environment"
+
+
+def test_environment_key_is_not_borrowed_by_a_switched_provider(monkeypatch):
+    """The whole point of the 2026-09-30 outage, as a regression test."""
+    from app.core.config import settings
+    from app.services import ai_auth
+
+    monkeypatch.setattr(settings, "ai_provider", "deepseek", raising=False)
+    monkeypatch.setattr(settings, "ai_api_key", "sk-deepseek-platform-key", raising=False)
+    _stored(monkeypatch, "opencode", "deepseek-v4.1-flash")
+
+    assert ai_auth._env_credential("deepseek") is not None
+    assert ai_auth._env_credential("opencode") is None
+
+
+def test_stored_key_is_offered_only_for_its_own_provider(monkeypatch):
+    from app.services import ai_auth
+
+    _stored(monkeypatch, "opencode", "deepseek-v4.1-flash", key="sk-zen-key")
+
+    credential = ai_auth._app_credential("opencode")
+    assert credential is not None and credential.source == "app"
+    assert credential.secret == "sk-zen-key"
+    assert ai_auth._app_credential("openai") is None
+
+
+def test_stored_provider_is_the_one_generation_resolves(monkeypatch):
+    from app.services import ai_auth
+
+    _stored(monkeypatch, "opencode", "deepseek-v4.1-flash")
+    seen = {}
+
+    def fake_resolve(db, user, provider, *, allow_env=True):
+        seen["provider"] = provider
+        return ai_auth.AIResolution(credential=None, reason="stub")
+
+    monkeypatch.setattr(ai_auth, "resolve_ai_credential", fake_resolve)
+    ai_auth.resolve_configured_ai_credential(db=object(), user=object())
+    assert seen["provider"] == "opencode"
+
+
+class _Rows:
+    """The subset of a SQLAlchemy result the config service uses."""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+
+    def scalars(self):
+        return self
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+    def all(self):
+        return list(self._rows)
+
+
+class _RowSession:
+    """Session double for the singleton row: enough for save/clear."""
+
+    def __init__(self, row=None):
+        self.row = row
+        self.committed = 0
+        self.deleted = []
+
+    def execute(self, stmt):
+        return _Rows([self.row] if self.row is not None else [])
+
+    def add(self, value):
+        self.row = value
+
+    def delete(self, value):
+        self.deleted.append(value)
+        self.row = None
+
+    def commit(self):
+        self.committed += 1
+
+    def refresh(self, value):
+        pass
+
+
+def test_saving_rejects_an_unknown_provider_or_a_blank_model():
+    from app.services import ai_provider_config
+
+    db = _RowSession()
+    for kwargs in (
+        {"provider": "gemini", "model": "whatever"},
+        {"provider": "opencode", "model": "   "},
+    ):
+        try:
+            ai_provider_config.save_setting(db, **kwargs)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {kwargs}")
+
+
+def test_saving_keeps_the_stored_key_unless_asked_to_change_it(monkeypatch):
+    from app.services import ai_provider_config
+
+    _fernet_key(monkeypatch)
+    db = _RowSession()
+    ai_provider_config.save_setting(
+        db, provider="opencode", model="deepseek-v4.1-flash", api_key="sk-zen-key"
+    )
+    encrypted = db.row.api_key_encrypted
+
+    ai_provider_config.save_setting(
+        db, provider="opencode", model="deepseek-v4.1-flash", api_key=None
+    )
+    assert db.row.api_key_encrypted == encrypted
+
+    ai_provider_config.save_setting(
+        db, provider="opencode", model="deepseek-v4.1-flash", api_key=""
+    )
+    assert db.row.api_key_encrypted is None
+
+
+def test_clearing_the_setting_returns_control_to_the_environment():
+    from app.services import ai_provider_config
+
+    row = ai_provider_config.AIProviderSetting(
+        singleton=True, provider="opencode", model="deepseek-v4.1-flash"
+    )
+    db = _RowSession(row)
+    assert ai_provider_config.clear_setting(db) is True
+    assert ai_provider_config.clear_setting(db) is False
+
+
+def test_only_system_admins_reach_the_ai_provider_page():
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from fastapi import HTTPException
+
+    from app.api.routers import pages
+    from app.services.access import ROLE_ADMIN, ROLE_SYSTEM_ADMIN
+    from app.services import ai_provider_config
+    from tests.test_dashboard_routes import make_request, render_body
+
+    request = make_request("/settings/ai")
+
+    for role in (ROLE_ADMIN, "teacher"):
+        try:
+            pages.settings_ai_page(
+                request, user=SimpleNamespace(role=role, id=uuid4()), db=_RowSession()
+            )
+        except HTTPException as exc:
+            assert exc.status_code == 403, role
+        else:
+            raise AssertionError(f"{role} reached /settings/ai")
+
+    response = pages.settings_ai_page(
+        request,
+        user=SimpleNamespace(role=ROLE_SYSTEM_ADMIN, id=uuid4(), email="a@b.c"),
+        db=_RowSession(),
+    )
+    body = render_body(response)
+    assert "Choose the provider" in body
+    assert "Test this configuration" in body
+    assert ai_provider_config.PROVIDER_OPTIONS

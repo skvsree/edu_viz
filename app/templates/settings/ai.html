@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="stack-lg">
+  {% if error %}
+    <section class="status-banner status-banner--error"><strong>Not saved.</strong> <span>{{ error }}</span></section>
+  {% endif %}
+  {% if notice %}
+    <section class="status-banner status-banner--success"><strong>Done.</strong> <span>{{ notice }}</span></section>
+  {% endif %}
+  {% if info.endpoint_override %}
+    <section class="status-banner status-banner--error">
+      <strong>AI_ENDPOINT is set in the environment.</strong>
+      <span>It overrides the endpoint of every provider, so the current value ({{ info.endpoint_override }}) is used no matter which provider you choose here. Clear AI_ENDPOINT unless you deliberately pin one.</span>
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Administration</p>
+        <h1 class="section-title">AI provider</h1>
+        <p class="muted section-copy">
+          One provider and one model serve every AI call: bulk study packs, MCQ generation and revision notes.
+          Changing it here takes effect for new work without redeploying.
+        </p>
+      </div>
+    </div>
+
+    <article class="deck-card deck-card--dashboard">
+      <div class="deck-card__content">
+        <p class="deck-card__eyebrow">{{ info.source }}</p>
+        <h3 class="deck-card__title">{{ info.label }} · {{ info.model }}</h3>
+        <p class="muted">
+          Endpoint: <code>{{ info.endpoint }}</code><br />
+          API key: {% if info.key_source == "stored" %}stored with this setting{% elif info.key_source == "environment" %}environment (AI_API_KEY){% else %}not configured here — a per-user or per-organization key is required{% endif %}<br />
+          Decided by: {% if info.source == "stored" %}this setting{% else %}the environment (AI_PROVIDER = {{ info.env_provider or "unset" }}, AI_MODEL = {{ info.env_model or "unset" }}){% endif %}
+        </p>
+      </div>
+      <div class="deck-card__stats">
+        <span class="deck-card__meta">Model {{ info.model }}</span>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="section-heading">
+      <div>
+        <p class="panel-label">Configuration</p>
+        <h2 class="section-title">Choose the provider</h2>
+      </div>
+    </div>
+
+    <form method="post" action="/settings/ai" id="ai-provider-form" class="stack-md">
+      <div class="stack-sm">
+        <div>
+          <label for="ai-provider-select">Provider</label>
+          <select id="ai-provider-select" name="provider" data-ai-provider>
+            {% for option in providers %}
+              <option
+                value="{{ option.name }}"
+                data-default-model="{{ option.default_model }}"
+                data-key-hint="{{ option.key_hint }}"
+                {% if info.provider == option.name %}selected{% endif %}
+              >{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="ai-model-input">Model</label>
+          <input id="ai-model-input" name="model" type="text" value="{{ info.model }}" placeholder="model id served by that provider" />
+          <p class="muted">A model id only works on the provider that serves it: OpenCode Zen calls DeepSeek <code>deepseek-v4.1-flash</code>, DeepSeek's own platform calls it <code>deepseek-flash</code>.</p>
+        </div>
+        <div>
+          <label for="ai-key-input">API key</label>
+          <input id="ai-key-input" name="api_key" type="password" autocomplete="new-password" placeholder="leave blank to keep the current key" data-ai-key />
+          <p class="muted" data-ai-key-hint></p>
+        </div>
+        {% if info.key_source == "stored" %}
+          <div>
+            <label for="ai-clear-key"><input id="ai-clear-key" type="checkbox" name="clear_key" value="1" /> Drop the stored key (fall back to the environment)</label>
+          </div>
+        {% endif %}
+      </div>
+
+      <div class="deck-card__actions">
+        <button type="submit" name="action" value="save" class="button">Save provider</button>
+        <button type="button" class="button button-small" data-ai-test>Test this configuration</button>
+        {% if info.source == "stored" %}
+          <button type="submit" name="action" value="reset" class="button button-small">Use the environment instead</button>
+        {% endif %}
+      </div>
+
+      <div id="ai-test-result" class="muted" hidden></div>
+    </form>
+  </section>
+</section>
+
+<script>
+  (function () {
+    const select = document.querySelector('[data-ai-provider]');
+    const modelInput = document.querySelector('#ai-model-input');
+    const keyInput = document.querySelector('[data-ai-key]');
+    const keyHint = document.querySelector('[data-ai-key-hint]');
+    const result = document.querySelector('#ai-test-result');
+    const testButton = document.querySelector('[data-ai-test]');
+    const form = document.querySelector('#ai-provider-form');
+    if (!select || !form) return;
+
+    function syncProviderFields() {
+      const option = select.options[select.selectedIndex];
+      const hint = option.dataset.keyHint || '';
+      if (keyHint) keyHint.textContent = hint;
+      if (keyInput) keyInput.placeholder = hint ? 'leave blank to keep the current key' : '';
+      if (modelInput && !modelInput.dataset.touched) {
+        modelInput.value = option.dataset.defaultModel || modelInput.value;
+      }
+    }
+    select.addEventListener('change', syncProviderFields);
+    if (modelInput) {
+      modelInput.addEventListener('input', function () {
+        modelInput.dataset.touched = '1';
+      });
+    }
+    syncProviderFields();
+
+    if (testButton) {
+      testButton.addEventListener('click', async function () {
+        result.hidden = false;
+        result.textContent = 'Testing… one live call, up to 90s.';
+        const body = new FormData();
+        body.append('provider', select.value);
+        body.append('model', modelInput ? modelInput.value : '');
+        body.append('api_key', keyInput ? keyInput.value : '');
+        try {
+          const response = await fetch('/settings/ai/test', { method: 'POST', body, headers: { 'X-Requested-With': 'fetch' } });
+          const data = await response.json();
+          if (data.ok) {
+            result.textContent = 'OK · ' + data.model + ' via ' + data.endpoint + ' in ' + data.latency_ms + ' ms · reply: ' + (data.reply || '');
+          } else {
+            result.textContent = 'FAILED · ' + (data.endpoint ? data.endpoint + ' · ' : '') + (data.error || 'unknown error');
+          }
+        } catch (error) {
+          result.textContent = 'FAILED · ' + error;
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

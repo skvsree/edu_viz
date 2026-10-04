@@ -263,6 +263,10 @@ def _settings_home_response(
 ):
     _require_settings_access(user)
 
+    from app.services.ai_provider_config import describe as describe_ai
+
+    ai_info = describe_ai(db)
+
     organization_count = (
         db.execute(select(Organization)).scalars().all()
         if user.role == ROLE_SYSTEM_ADMIN
@@ -287,6 +291,7 @@ def _settings_home_response(
         {
             "request": request,
             "user": user,
+            "ai_provider_label": f"{ai_info['label']} · {ai_info['model']}",
             "organization_count": (
                 len(organization_count)
                 if user.role == ROLE_SYSTEM_ADMIN
@@ -2135,6 +2140,185 @@ def settings_home(
         request,
         user=user,
         db=db,
+    )
+
+
+def _ai_provider_page(
+    request: Request,
+    *,
+    user: User,
+    db: Session,
+    notice: str | None = None,
+    error: str | None = None,
+):
+    """The AI provider settings page (system admins only)."""
+    from app.services.ai_provider_config import describe, provider_options
+
+    _require_system_admin(user)
+    return templates.TemplateResponse(
+        "settings/ai.html",
+        {
+            "request": request,
+            "user": user,
+            "info": describe(db),
+            "providers": provider_options(),
+            "notice": notice,
+            "error": error,
+        },
+    )
+
+
+@router.get("/settings/ai", response_class=HTMLResponse)
+def settings_ai_page(
+    request: Request,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    notice = None
+    if request.query_params.get("saved"):
+        notice = "AI provider saved. Every generation path now uses it."
+    elif request.query_params.get("reset"):
+        notice = "Stored AI provider cleared — the environment decides again."
+    return _ai_provider_page(request, user=user, db=db, notice=notice)
+
+
+@router.post("/settings/ai")
+def settings_ai_save(
+    request: Request,
+    provider: str = Form(...),
+    model: str = Form(default=""),
+    api_key: str = Form(default=""),
+    clear_key: str = Form(default=""),
+    action: str = Form(default="save"),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Save (or clear) the app-wide provider and model.
+
+    A blank key field keeps the stored key: clearing it has to be explicit, so
+    saving the form without retyping a secret cannot silently drop it.
+    """
+    from app.services.ai_provider_config import clear_setting, save_setting
+
+    _require_system_admin(user)
+    if action == "reset":
+        clear_setting(db)
+        return RedirectResponse("/settings/ai?reset=1", status_code=303)
+
+    key_argument: str | None = None
+    if api_key.strip():
+        key_argument = api_key
+    elif clear_key:
+        key_argument = ""
+    try:
+        save_setting(
+            db,
+            provider=provider,
+            model=model,
+            api_key=key_argument,
+            user_email=user.email,
+        )
+    except ValueError as exc:
+        return _ai_provider_page(request, user=user, db=db, error=str(exc))
+    return RedirectResponse("/settings/ai?saved=1", status_code=303)
+
+
+@router.post("/settings/ai/test")
+def settings_ai_test(
+    provider: str = Form(...),
+    model: str = Form(default=""),
+    api_key: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Fire one tiny live call with the submitted configuration.
+
+    A provider/model/key mismatch otherwise only shows up hours later as a job
+    full of "AI provider did not return usable flashcards or MCQs", so the page
+    can run exactly what the worker would run and report the real error.
+    """
+    import time as _time
+
+    from app.services.ai_generation import AICredential, get_study_pack_provider
+    from app.services.ai_provider_config import endpoint_for, stored_api_key
+
+    _require_system_admin(user)
+    name = (provider or "").strip().lower()
+
+    try:
+        implementation = get_study_pack_provider(name)
+        endpoint = getattr(implementation, "api_endpoint", endpoint_for(name))
+    except Exception as exc:  # unsupported provider name
+        return JSONResponse(
+            {"ok": False, "error": f"Unknown provider {name!r}: {exc}"[:400]}
+        )
+
+    secret = api_key.strip() or (stored_api_key(db) or "")
+    if not secret:
+        env_provider = (settings.ai_provider or "").strip().lower()
+        if env_provider == name and settings.ai_api_key:
+            secret = settings.ai_api_key
+    if not secret:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": (
+                    "No API key available for this provider — enter one here or "
+                    "keep a compatible key in the environment."
+                ),
+            }
+        )
+
+    credential = AICredential(
+        provider=name, auth_type="api_key", secret=secret, source="settings-test"
+    )
+    if model.strip():
+        # Test what was submitted, not what is currently stored: the whole point
+        # is to catch a model id that this endpoint does not serve.
+        implementation.model = model.strip()
+
+    started = _time.perf_counter()
+    reply = None
+    last_error: Exception | None = None
+    # Zen intermittently answers with an empty body for this model, and a
+    # reasoning model can spend a small budget thinking and emit nothing, so a
+    # single empty response is not proof the configuration is wrong: give the
+    # call room and try twice before telling the admin their provider is broken.
+    for attempt in (1, 2):
+        try:
+            try:
+                reply = implementation.generate_text(
+                    "Reply with the single word OK.",
+                    credential,
+                    max_tokens=1024,
+                    timeout=90,
+                )
+            except TypeError:  # a provider that takes no per-call budget
+                reply = implementation.generate_text("Reply with the single word OK.", credential)
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt == 2 or "empty response" not in str(exc).lower():
+                break
+    if last_error is not None:
+        return JSONResponse(
+            {
+                "ok": False,
+                "endpoint": endpoint,
+                "model": getattr(implementation, "model", model),
+                "latency_ms": int((_time.perf_counter() - started) * 1000),
+                "error": f"{type(last_error).__name__}: {last_error}"[:400],
+            }
+        )
+    return JSONResponse(
+        {
+            "ok": True,
+            "endpoint": endpoint,
+            "model": getattr(implementation, "model", model),
+            "latency_ms": int((_time.perf_counter() - started) * 1000),
+            "reply": (reply or "").strip()[:120],
+        }
     )
 
 

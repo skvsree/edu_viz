@@ -50,15 +50,41 @@ def decrypt_secret(token: str) -> str:
 
 
 def _env_credential(provider: str) -> ResolvedAICredential | None:
+    """The environment key, for the provider that key actually belongs to.
+
+    ``AI_API_KEY`` is only valid on the endpoint ``AI_PROVIDER`` names, so the
+    comparison is against the *environment* provider, not the effective one: a
+    stored override that switches provider must not borrow the old provider's
+    key (that is what posted a DeepSeek key to Zen and 401'd every call).
+    """
     provider = provider.strip().lower()
-    if settings.ai_api_key and provider == settings.ai_provider.strip().lower():
+    env_provider = (settings.ai_provider or "").strip().lower()
+    if settings.ai_api_key and provider == env_provider:
         return ResolvedAICredential(
-            provider=settings.ai_provider.strip().lower(),
+            provider=env_provider,
             auth_type="api_key",
             secret=settings.ai_api_key,
             source="env",
         )
     return None
+
+
+def _app_credential(provider: str) -> ResolvedAICredential | None:
+    """The key stored with the app-wide provider setting, when it applies."""
+    from app.services.ai_provider_config import effective_provider, stored_api_key
+
+    name = provider.strip().lower()
+    if name != effective_provider():
+        return None
+    secret = stored_api_key()
+    if not secret:
+        return None
+    return ResolvedAICredential(
+        provider=name,
+        auth_type="api_key",
+        secret=secret,
+        source="app",
+    )
 
 
 def get_env_ai_provider_name() -> str | None:
@@ -97,6 +123,7 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
         return AIResolution(None, reason="No provider specified.")
 
     env_cred = _env_credential(provider)
+    app_cred = _app_credential(provider)
 
     if getattr(user, "id", None):
         user_cred = db.query(AICredentialScope).filter_by(
@@ -146,6 +173,10 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
                 scope="organization",
                 allowed=True,
             )
+        if app_cred and allow_env:
+            return AIResolution(
+                credential=app_cred, source="app", scope="app", allowed=True
+            )
         if env_cred and allow_env:
             return AIResolution(credential=env_cred, source="env", scope="organization", allowed=True)
         return AIResolution(
@@ -157,6 +188,9 @@ def resolve_ai_credential(db: Session, user: User, provider: str, *, allow_env: 
                 "Your organization is AI-enabled, but no usable provider is configured."
             ),
         )
+
+    if app_cred and allow_env:
+        return AIResolution(credential=app_cred, source="app", scope="app", allowed=True)
 
     if env_cred and allow_env:
         return AIResolution(credential=env_cred, source="env", scope="env", allowed=True)
@@ -175,9 +209,17 @@ def resolve_configured_ai_credential(
     be sent a model id that vendor does not serve. Scope credentials are still
     honoured *for that provider*, so bring-your-own-key keeps working.
     """
-    provider = (settings.ai_provider or "").strip().lower()
+    from app.services.ai_provider_config import effective_provider
+
+    provider = effective_provider(db)
     if not provider:
-        return AIResolution(None, reason="No AI provider configured (set AI_PROVIDER).")
+        return AIResolution(
+            None,
+            reason=(
+                "No AI provider configured "
+                "(set AI_PROVIDER or choose one in Settings → AI provider)."
+            ),
+        )
     return resolve_ai_credential(db, user, provider, allow_env=allow_env)
 
 

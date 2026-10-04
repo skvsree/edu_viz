@@ -20,6 +20,7 @@ from app.models.bulk_revision_notes import (  # noqa: F401
     BulkRevisionNoteStatus,
 )
 from app.models.concept_map import ConceptMap, ConceptMapStatus  # noqa: F401
+from app.models.ai_provider_setting import AIProviderSetting  # noqa: F401
 from app.models.review import Review
 from app.models.tag import Tag, deck_tags
 from app.models.test import Test

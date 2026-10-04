@@ -508,7 +508,9 @@ class DeepSeekRevisionProvider:
             (settings.ai_endpoint or "").strip()
             or settings.revision_notes_api_endpoint
         )
-        self.model = settings.ai_model or settings.revision_notes_model
+        from app.services.ai_provider_config import effective_model
+
+        self.model = effective_model()
         self.max_tokens = settings.revision_notes_max_tokens
         # Stick to one session per provider instance so every call of the
         # same job/conversation reuses the same OpenCode routing bucket.
@@ -622,7 +624,9 @@ class OpencodeStudyPackProvider:
             (settings.ai_endpoint or "").strip()
             or settings.opencode_api_endpoint
         )
-        self.model = settings.ai_model or settings.opencode_model
+        from app.services.ai_provider_config import effective_model
+
+        self.model = effective_model()
         # One session per provider instance: OpenCode Go wants a stable
         # x-opencode-session per conversation for routing + prompt caching.
         self.session_id = session_id or opencode_session_id()
