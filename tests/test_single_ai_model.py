@@ -582,3 +582,50 @@ def test_model_listing_route_is_admin_only_and_reports_the_source(monkeypatch):
     page = pages.settings_ai_page(make_request("/settings/ai"), user=admin, db=_RowSession())
     html = page.body.decode()
     assert "Fetch models" in html and 'id="ai-model-options"' in html
+
+
+def test_saving_a_provider_with_no_reachable_key_says_so(monkeypatch):
+    """A switch must not silently leave every generation path without a key."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.api.routers import pages
+    from app.services import ai_provider_config
+    from app.services.access import ROLE_SYSTEM_ADMIN
+    from tests.test_dashboard_routes import make_request
+
+    _fernet_key(monkeypatch)
+    monkeypatch.setattr(ai_provider_config, "_read_row", lambda db=None: (None, None, None))
+
+    saved = {}
+
+    def fake_save(db, *, provider, model, api_key=None, user_email=None):
+        saved.update(provider=provider, model=model, api_key=api_key)
+        monkeypatch.setattr(
+            ai_provider_config, "_read_row", lambda db=None: (provider, model, None)
+        )
+        return SimpleNamespace(provider=provider, model=model)
+
+    monkeypatch.setattr(ai_provider_config, "save_setting", fake_save)
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ai_provider", "deepseek", raising=False)
+    monkeypatch.setattr(settings, "ai_api_key", "sk-deepseek-platform-key", raising=False)
+
+    request = make_request("/settings/ai")
+    admin = SimpleNamespace(role=ROLE_SYSTEM_ADMIN, id=uuid4(), email="a@b.c")
+    response = pages.settings_ai_save(
+        request,
+        provider="opencode",
+        model="deepseek-v4.1-flash",
+        api_key="",
+        clear_key="",
+        action="save",
+        user=admin,
+        db=_RowSession(),
+    )
+    body = response.body.decode()
+    assert saved["provider"] == "opencode", "the save must still happen"
+    assert "Saved, but no API key" in body, "the page must warn about the missing key"
+    assert "No AI credential configured" in body

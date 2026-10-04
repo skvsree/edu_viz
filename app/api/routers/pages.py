@@ -2220,6 +2220,24 @@ def settings_ai_save(
         )
     except ValueError as exc:
         return _ai_provider_page(request, user=user, db=db, error=str(exc))
+
+    from app.services.ai_provider_config import key_source
+
+    if key_source(db) == "unset":
+        # Saving a provider with no reachable key is how a switch empties every
+        # generation path at once, so say so here instead of letting the admin
+        # discover it from a job full of failed chapters.
+        return _ai_provider_page(
+            request,
+            user=user,
+            db=db,
+            error=(
+                "Saved, but no API key is configured for this provider — every AI call will "
+                "fail with \u201cNo AI credential configured\u201d until a key is stored here, a "
+                "per-user or per-organization key exists for it, or AI_API_KEY in the environment "
+                "belongs to this same provider."
+            ),
+        )
     return RedirectResponse("/settings/ai?saved=1", status_code=303)
 
 
