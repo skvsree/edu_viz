@@ -7,6 +7,12 @@
   {% if notice %}
     <section class="status-banner status-banner--success"><strong>Done.</strong> <span>{{ notice }}</span></section>
   {% endif %}
+  {% if not info.can_store_keys %}
+    <section class="status-banner status-banner--error">
+      <strong>Storing a key is unavailable on this deployment.</strong>
+      <span>It needs <code>AI_SECRETS_FERNET_KEY</code> in the environment — any urlsafe base64 key, e.g. <code>python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"</code>. Until that is set, leave the key field blank and rely on <code>AI_API_KEY</code> (for the provider named by <code>AI_PROVIDER</code>) or on a per-user / per-organization key.</span>
+    </section>
+  {% endif %}
   {% if info.endpoint_override %}
     <section class="status-banner status-banner--error">
       <strong>AI_ENDPOINT is set in the environment.</strong>
@@ -77,8 +83,20 @@
         </div>
         <div>
           <label for="ai-key-input">API key</label>
-          <input id="ai-key-input" name="api_key" type="password" autocomplete="new-password" placeholder="leave blank to keep the current key" data-ai-key />
+          <input id="ai-key-input" name="api_key" type="password" autocomplete="new-password" placeholder="paste a key to store it encrypted" data-ai-key />
           <p class="muted" data-ai-key-hint></p>
+          <p class="muted">
+            A stored key is encrypted with the app's secret key and never shown again. Keys are kept
+            <strong>per provider</strong>, so switching provider keeps each provider's own key and never
+            hands one provider's key to another.
+            {% if info.stored_key_providers %}
+              Stored: <code>{{ info.stored_key_providers|join('</code>, <code>') }}</code>.
+            {% else %}
+              Nothing stored yet.
+            {% endif %}
+            Leaving this blank keeps whatever is stored for <code>{{ info.provider }}</code>; tick the box
+            below to drop it.
+          </p>
         </div>
         {% if info.key_source == "stored" %}
           <div>

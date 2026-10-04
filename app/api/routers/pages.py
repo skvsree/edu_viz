@@ -2249,7 +2249,7 @@ def _settings_ai_api_key(db: Session, provider: str, submitted: str) -> str:
     """
     from app.services.ai_provider_config import stored_api_key
 
-    secret = (submitted or "").strip() or (stored_api_key(db) or "")
+    secret = (submitted or "").strip() or (stored_api_key(db, provider=provider) or "")
     if not secret and (settings.ai_provider or "").strip().lower() == provider:
         secret = settings.ai_api_key or ""
     return secret

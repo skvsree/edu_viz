@@ -70,13 +70,15 @@ def _env_credential(provider: str) -> ResolvedAICredential | None:
 
 
 def _app_credential(provider: str) -> ResolvedAICredential | None:
-    """The key stored with the app-wide provider setting, when it applies."""
-    from app.services.ai_provider_config import effective_provider, stored_api_key
+    """The key stored on the settings page for this exact provider, if any.
+
+    Keys are stored per provider, so this cannot hand a provider a key that was
+    entered for a different one.
+    """
+    from app.services.ai_provider_config import stored_api_key
 
     name = provider.strip().lower()
-    if name != effective_provider():
-        return None
-    secret = stored_api_key()
+    secret = stored_api_key(provider=name)
     if not secret:
         return None
     return ResolvedAICredential(

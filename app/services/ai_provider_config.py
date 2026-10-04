@@ -146,14 +146,60 @@ def effective_model(db: Session | None = None) -> str:
     return (stored_model or settings.ai_model or "").strip()
 
 
-def stored_api_key(db: Session | None = None) -> str | None:
-    """The API key stored with the setting, decrypted; ``None`` when unset."""
-    _provider, _model, encrypted = _read_row(db)
+def _stored_key_map(db: Session | None = None) -> dict[str, str]:
+    """``provider -> encrypted key`` for every key stored with the setting.
+
+    Keys are kept per provider. Switching provider must never lend one provider's
+    key to another, and switching back must find its key again. A row written
+    before keys became per-provider holds a bare ciphertext, which belongs to the
+    provider recorded on that row.
+    """
+    provider, _model, stored = _read_row(db)
+    if not stored:
+        return {}
+    try:
+        parsed = json.loads(stored)
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, dict):
+        return {str(name): str(value) for name, value in parsed.items() if value}
+    return {provider: stored} if provider else {}
+
+
+def stored_key_providers(db: Session | None = None) -> list[str]:
+    """Which providers have a key stored with this setting (names only)."""
+    return sorted(_stored_key_map(db))
+
+
+def stored_api_key(db: Session | None = None, provider: str | None = None) -> str | None:
+    """The key stored for ``provider`` (default: the effective provider).
+
+    Decrypted on the way out and never logged or re-displayed by the UI.
+    """
+    name = (provider or effective_provider(db) or "").strip().lower()
+    encrypted = _stored_key_map(db).get(name)
     if not encrypted:
         return None
     from app.services.ai_auth import decrypt_secret
 
-    return decrypt_secret(encrypted)
+    try:
+        return decrypt_secret(encrypted)
+    except Exception:  # a key written with a different encryption key
+        return None
+
+
+def secrets_encryption_available() -> bool:
+    """Whether a key can be stored at all (needs the Fernet key in the env)."""
+    key = (getattr(settings, "ai_secrets_fernet_key", None) or "").strip()
+    if not key:
+        return False
+    try:
+        from cryptography.fernet import Fernet
+
+        Fernet(key.encode())
+    except Exception:
+        return False
+    return True
 
 
 def endpoint_for(provider: str | None) -> str:
@@ -179,12 +225,13 @@ def endpoint_override_active() -> bool:
     return bool((settings.ai_endpoint or "").strip())
 
 
-def key_source(db: Session | None = None) -> str:
-    """Where the key for the effective provider comes from, for display."""
-    if stored_api_key(db):
+def key_source(db: Session | None = None, provider: str | None = None) -> str:
+    """Where the key for ``provider`` comes from, for display."""
+    name = (provider or effective_provider(db) or "").strip().lower()
+    if stored_api_key(db, provider=name):
         return "stored"
     env_provider = (settings.ai_provider or "").strip().lower()
-    if settings.ai_api_key and env_provider == effective_provider(db):
+    if settings.ai_api_key and env_provider == name:
         return "environment"
     return "unset"
 
@@ -201,7 +248,9 @@ def describe(db: Session | None = None) -> dict[str, object]:
         "label": (option_for(effective).label if option_for(effective) else effective),
         "endpoint": endpoint_for(effective),
         "endpoint_override": (settings.ai_endpoint or "").strip(),
-        "key_source": key_source(db),
+        "key_source": key_source(db, effective),
+        "stored_key_providers": stored_key_providers(db),
+        "can_store_keys": secrets_encryption_available(),
         "env_provider": (settings.ai_provider or "").strip().lower(),
         "env_model": (settings.ai_model or "").strip(),
         "source": "stored" if provider else "environment",
@@ -237,7 +286,23 @@ def save_setting(
     row.provider = name
     row.model = cleaned_model
     if api_key is not None:
-        row.api_key_encrypted = encrypt_secret(api_key.strip()) if api_key.strip() else None
+        # Keys live per provider: a blank field clears only this provider's key,
+        # and a switch never inherits (or lends) another provider's.
+        keys = _stored_key_map(db)
+        if api_key.strip():
+            try:
+                keys[name] = encrypt_secret(api_key.strip())
+            except Exception as exc:
+                raise ValueError(
+                    "Cannot store an API key: this deployment has no AI_SECRETS_FERNET_KEY. "
+                    "Add one to the environment — generate it with python -c \"from "
+                    "cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\" "
+                    "— and recreate the container, or leave this field blank and set AI_API_KEY "
+                    "for the provider named by AI_PROVIDER instead."
+                ) from exc
+        else:
+            keys.pop(name, None)
+        row.api_key_encrypted = json.dumps(keys) if keys else None
     row.updated_by_email = (user_email or "").strip() or None
     db.commit()
     db.refresh(row)

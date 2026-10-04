@@ -629,3 +629,123 @@ def test_saving_a_provider_with_no_reachable_key_says_so(monkeypatch):
     assert saved["provider"] == "opencode", "the save must still happen"
     assert "Saved, but no API key" in body, "the page must warn about the missing key"
     assert "No AI credential configured" in body
+
+
+def test_keys_are_stored_per_provider_and_never_lent(monkeypatch):
+    """A key entered for one provider must not become another provider's key."""
+    from app.services import ai_auth, ai_provider_config
+
+    _fernet_key(monkeypatch)
+    db = _RowSession()
+
+    def fake_read_row(session=None):
+        """Serve the session's row whether or not a session was passed in."""
+        source = session if getattr(session, "row", None) is not None else db
+        if getattr(source, "row", None) is None:
+            return None, None, None
+        return source.row.provider, source.row.model, source.row.api_key_encrypted
+
+    monkeypatch.setattr(ai_provider_config, "_read_row", fake_read_row)
+    ai_provider_config.save_setting(
+        db, provider="opencode", model="deepseek-v4.1-flash", api_key="sk-zen-key"
+    )
+    ai_provider_config.save_setting(
+        db, provider="deepseek", model="deepseek-flash", api_key="sk-deepseek-key"
+    )
+    assert ai_provider_config.stored_key_providers(db) == ["deepseek", "opencode"]
+    assert ai_provider_config.stored_api_key(db, provider="opencode") == "sk-zen-key"
+    assert ai_provider_config.stored_api_key(db, provider="deepseek") == "sk-deepseek-key"
+    assert ai_provider_config.stored_api_key(db, provider="openai") is None
+
+    assert ai_auth._app_credential("deepseek").secret == "sk-deepseek-key"
+    assert ai_auth._app_credential("openai") is None
+
+    # Switching back to a provider with a blank field keeps its own key.
+    ai_provider_config.save_setting(
+        db, provider="opencode", model="deepseek-v4.1-flash", api_key=None
+    )
+    assert ai_provider_config.stored_api_key(db, provider="opencode") == "sk-zen-key"
+    assert ai_provider_config.stored_api_key(db, provider="deepseek") == "sk-deepseek-key"
+
+
+def test_clearing_one_providers_key_leaves_the_others_alone(monkeypatch):
+    from app.services import ai_provider_config
+
+    _fernet_key(monkeypatch)
+    db = _RowSession()
+    ai_provider_config.save_setting(db, provider="opencode", model="m", api_key="sk-zen")
+    ai_provider_config.save_setting(db, provider="openai", model="m", api_key="sk-openai")
+
+    ai_provider_config.save_setting(db, provider="opencode", model="m", api_key="")
+    assert ai_provider_config.stored_api_key(db, provider="opencode") is None
+    assert ai_provider_config.stored_api_key(db, provider="openai") == "sk-openai"
+
+
+def test_a_stored_key_is_encrypted_at_rest(monkeypatch):
+    from app.services import ai_provider_config
+
+    _fernet_key(monkeypatch)
+    db = _RowSession()
+    ai_provider_config.save_setting(
+        db, provider="opencode", model="deepseek-v4.1-flash", api_key="sk-plain-text-key"
+    )
+    stored = db.row.api_key_encrypted
+    assert "sk-plain-text-key" not in stored, "the key must not be readable in the column"
+    assert stored.startswith("{"), "keys are stored per provider"
+    assert ai_provider_config.stored_api_key(db, provider="opencode") == "sk-plain-text-key"
+
+
+def test_a_legacy_single_key_row_belongs_to_its_own_provider(monkeypatch):
+    """Rows written before keys were per-provider hold a bare ciphertext."""
+    from app.services import ai_provider_config
+    from app.services.ai_auth import encrypt_secret
+
+    _fernet_key(monkeypatch)
+    encrypted = encrypt_secret("sk-legacy")
+    monkeypatch.setattr(
+        ai_provider_config, "_read_row", lambda db=None: ("deepseek", "deepseek-flash", encrypted)
+    )
+    assert ai_provider_config.stored_key_providers() == ["deepseek"]
+    assert ai_provider_config.stored_api_key(provider="deepseek") == "sk-legacy"
+    assert ai_provider_config.stored_api_key(provider="opencode") is None
+
+
+def test_storing_a_key_without_the_encryption_key_fails_clearly(monkeypatch):
+    """No Fernet key means the key cannot be stored - say so, do not traceback."""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.core.config import settings
+    from app.services import ai_provider_config
+    from tests.test_dashboard_routes import make_request
+
+    monkeypatch.setattr(settings, "ai_secrets_fernet_key", "", raising=False)
+    assert ai_provider_config.secrets_encryption_available() is False
+
+    db = _RowSession()
+    try:
+        ai_provider_config.save_setting(db, provider="opencode", model="m", api_key="sk-x")
+    except ValueError as exc:
+        assert "AI_SECRETS_FERNET_KEY" in str(exc)
+    else:
+        raise AssertionError("a key must not be silently dropped")
+
+    from app.api.routers import pages
+    from app.services.access import ROLE_SYSTEM_ADMIN
+
+    admin = SimpleNamespace(role=ROLE_SYSTEM_ADMIN, id=uuid4(), email="a@b.c")
+    body = pages.settings_ai_page(
+        make_request("/settings/ai"), user=admin, db=_RowSession()
+    ).body.decode()
+    assert "Storing a key is unavailable" in body
+    assert "AI_SECRETS_FERNET_KEY" in body
+
+
+def test_storing_a_key_works_when_encryption_is_configured(monkeypatch):
+    from app.core.config import settings
+    from app.services import ai_provider_config
+
+    _fernet_key(monkeypatch)
+    assert ai_provider_config.secrets_encryption_available() is True
+    monkeypatch.setattr(settings, "ai_secrets_fernet_key", "not-a-valid-key", raising=False)
+    assert ai_provider_config.secrets_encryption_available() is False
