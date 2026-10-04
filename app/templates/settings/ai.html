@@ -67,7 +67,12 @@
         </div>
         <div>
           <label for="ai-model-input">Model</label>
-          <input id="ai-model-input" name="model" type="text" value="{{ info.model }}" placeholder="model id served by that provider" />
+          <input id="ai-model-input" name="model" type="text" list="ai-model-options" value="{{ info.model }}" placeholder="model id served by that provider" />
+          <datalist id="ai-model-options"></datalist>
+          <div class="deck-card__actions">
+            <button type="button" class="button button-small" data-ai-models>Fetch models</button>
+          </div>
+          <p class="muted" data-ai-models-status>Fetch the list the provider actually serves instead of typing an id from memory.</p>
           <p class="muted">A model id only works on the provider that serves it: OpenCode Zen calls DeepSeek <code>deepseek-v4.1-flash</code>, DeepSeek's own platform calls it <code>deepseek-flash</code>.</p>
         </div>
         <div>
@@ -103,6 +108,9 @@
     const keyHint = document.querySelector('[data-ai-key-hint]');
     const result = document.querySelector('#ai-test-result');
     const testButton = document.querySelector('[data-ai-test]');
+    const modelsButton = document.querySelector('[data-ai-models]');
+    const modelsStatus = document.querySelector('[data-ai-models-status]');
+    const modelsList = document.querySelector('#ai-model-options');
     const form = document.querySelector('#ai-provider-form');
     if (!select || !form) return;
 
@@ -122,6 +130,40 @@
       });
     }
     syncProviderFields();
+
+    if (modelsButton) {
+      modelsButton.addEventListener('click', async function () {
+        modelsStatus.textContent = 'Asking ' + select.value + '…';
+        const body = new FormData();
+        body.append('provider', select.value);
+        body.append('api_key', keyInput ? keyInput.value : '');
+        try {
+          const response = await fetch('/settings/ai/models', { method: 'POST', body, headers: { 'X-Requested-With': 'fetch' } });
+          const data = await response.json();
+          if (!data.ok) {
+            modelsStatus.textContent = 'Could not list models · ' + (data.error || data.note || 'unknown error');
+            return;
+          }
+          if (modelsList) {
+            modelsList.innerHTML = '';
+            data.models.forEach(function (id) {
+              const option = document.createElement('option');
+              option.value = id;
+              modelsList.appendChild(option);
+            });
+          }
+          const where = data.source === 'provider'
+            ? "the provider's own list"
+            : 'the public models.dev catalog';
+          const tail = data.source === 'provider'
+            ? ' — click the model field to pick one.'
+            : (data.note ? ' · ' + data.note : '');
+          modelsStatus.textContent = data.count + ' model(s) from ' + where + tail;
+        } catch (error) {
+          modelsStatus.textContent = 'Could not list models · ' + error;
+        }
+      });
+    }
 
     if (testButton) {
       testButton.addEventListener('click', async function () {

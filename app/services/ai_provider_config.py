@@ -16,8 +16,11 @@ worker threads with no session in hand, so the stored row is cached for
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
+import urllib.request
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -251,3 +254,197 @@ def clear_setting(db: Session) -> bool:
     db.commit()
     invalidate_cache()
     return True
+
+
+# --- which models a provider serves (asked, not guessed) --------------------
+#
+# A model id has to match the endpoint exactly, and a mismatch is invisible until
+# every call fails. Both halves are discoverable: every OpenAI-compatible vendor
+# lists its models, and models.dev is a public catalog that covers the providers
+# whose own listing needs a key this app may not have.
+
+CATALOG_URL = "https://models.dev/api.json"
+CATALOG_TTL_SECONDS = 3600
+_HTTP_TIMEOUT_SECONDS = 20
+
+
+@dataclass(frozen=True)
+class ModelListing:
+    """How to ask one provider which model ids it serves."""
+
+    provider: str
+    catalog_id: str
+    auth: str
+    url: str = ""
+
+
+MODEL_LISTINGS: dict[str, ModelListing] = {
+    "opencode": ModelListing("opencode", "opencode", "opencode"),
+    "deepseek": ModelListing("deepseek", "deepseek", "bearer"),
+    "openai": ModelListing("openai", "openai", "bearer", "https://api.openai.com/v1/models"),
+    "claude": ModelListing(
+        "claude", "anthropic", "anthropic", "https://api.anthropic.com/v1/models"
+    ),
+    "minimax": ModelListing("minimax", "minimax", "bearer"),
+}
+
+_catalog_cache: tuple[float, dict] = (0.0, {})
+
+
+def models_endpoint(provider: str | None) -> str:
+    """Where to ask a provider for its own model ids (``""`` when unknown).
+
+    Derived from that provider's chat endpoint rather than ``AI_ENDPOINT``, so a
+    stale override cannot make this ask one vendor for another's models.
+    """
+    name = (provider or "").strip().lower()
+    listing = MODEL_LISTINGS.get(name)
+    if listing is None:
+        return ""
+    if listing.url:
+        return listing.url
+    if name == "opencode":
+        chat = (settings.opencode_api_endpoint or "").strip()
+    elif name == "deepseek":
+        chat = (settings.revision_notes_api_endpoint or "").strip()
+    else:
+        return ""
+    if not chat:
+        return ""
+    if chat.endswith("/chat/completions"):
+        return chat[: -len("/chat/completions")] + "/models"
+    return f"{chat.rstrip('/')}/models"
+
+
+def _listing_headers(listing: ModelListing, api_key: str | None) -> dict[str, str]:
+    key = (api_key or "").strip()
+    user_agent = (settings.opencode_client_ua or "eduviz/1.0")
+    if listing.auth == "opencode":
+        session_id = f"models-{uuid.uuid4().hex[:8]}"
+        if not key:
+            # The listing is public, and an empty "Bearer " header is not.
+            return {
+                "Accept": "application/json",
+                "User-Agent": user_agent,
+                "x-opencode-session": session_id,
+            }
+        from app.services.ai_generation import _opencode_headers
+
+        return _opencode_headers(key, session_id)
+    headers = {"Accept": "application/json", "User-Agent": user_agent}
+    if listing.auth == "anthropic":
+        headers["anthropic-version"] = "2023-06-01"
+        if key:
+            headers["x-api-key"] = key
+    elif key:
+        headers["Authorization"] = f"Bearer {key}"
+    return headers
+
+
+def _get_json(url: str, headers: dict[str, str], timeout: int) -> object:
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8", "replace"))
+
+
+def _model_ids(payload: object) -> list[str]:
+    """Model ids out of either listing shape, in the order the vendor sent them.
+
+    ``{"data": [{"id": …}]}`` (OpenAI, OpenCode and Anthropic) and
+    ``{"models": [...]}`` both appear in the wild.
+    """
+    if isinstance(payload, dict):
+        items = payload.get("data") or payload.get("models") or []
+    else:
+        items = payload if isinstance(payload, list) else []
+    ids: list[str] = []
+    for item in items:
+        value = item.get("id") or item.get("name") if isinstance(item, dict) else item
+        if isinstance(value, str) and value.strip() and value.strip() not in ids:
+            ids.append(value.strip())
+    return ids
+
+
+def _catalog_models(catalog_id: str) -> list[str]:
+    """Model ids from the public models.dev catalog (cached: it is ~5 MB)."""
+    global _catalog_cache
+    with _lock:
+        fetched_at, payload = _catalog_cache
+    if not payload or time.time() - fetched_at > CATALOG_TTL_SECONDS:
+        fetched = _get_json(
+            CATALOG_URL,
+            {"Accept": "application/json", "User-Agent": settings.opencode_client_ua or "eduviz/1.0"},
+            max(_HTTP_TIMEOUT_SECONDS, 30),
+        )
+        payload = fetched if isinstance(fetched, dict) else {}
+        with _lock:
+            _catalog_cache = (time.time(), payload)
+    entry = payload.get(catalog_id) if isinstance(payload, dict) else None
+    models = entry.get("models") if isinstance(entry, dict) else None
+    if isinstance(models, dict):
+        return [str(name) for name in models]
+    return _model_ids(models)
+
+
+def list_models(
+    provider: str | None,
+    *,
+    api_key: str | None = None,
+    timeout: int = _HTTP_TIMEOUT_SECONDS,
+) -> dict[str, object]:
+    """Ask the provider, then the public catalog, which model ids it serves.
+
+    Never raises for a provider-side failure: the caller shows which source the
+    list came from, because "the vendor would not tell us" and "here is the
+    vendor's own list" are different answers.
+    """
+    name = (provider or "").strip().lower()
+    listing = MODEL_LISTINGS.get(name)
+    if listing is None:
+        raise ValueError(f"Unsupported AI provider: {provider!r}")
+
+    endpoint = models_endpoint(name)
+    provider_error = ""
+    if endpoint:
+        try:
+            payload = _get_json(endpoint, _listing_headers(listing, api_key), timeout)
+            ids = _model_ids(payload)
+            if ids:
+                return {
+                    "provider": name,
+                    "models": ids,
+                    "count": len(ids),
+                    "source": "provider",
+                    "endpoint": endpoint,
+                    "note": "",
+                }
+            provider_error = "the provider listed no models"
+        except Exception as exc:
+            provider_error = f"{type(exc).__name__}: {exc}"[:200]
+
+    catalog_error = ""
+    try:
+        ids = _catalog_models(listing.catalog_id)
+    except Exception as exc:
+        ids = []
+        catalog_error = f"{type(exc).__name__}: {exc}"[:200]
+    if ids:
+        note = "public catalog (models.dev)"
+        if provider_error:
+            note = f"{note} — the provider's own listing said: {provider_error}"
+        return {
+            "provider": name,
+            "models": ids,
+            "count": len(ids),
+            "source": "catalog",
+            "endpoint": CATALOG_URL,
+            "note": note,
+        }
+    return {
+        "provider": name,
+        "models": [],
+        "count": 0,
+        "source": "none",
+        "endpoint": endpoint or CATALOG_URL,
+        "note": provider_error or catalog_error or "no models found",
+    }

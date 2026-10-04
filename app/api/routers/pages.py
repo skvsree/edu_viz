@@ -2223,6 +2223,44 @@ def settings_ai_save(
     return RedirectResponse("/settings/ai?saved=1", status_code=303)
 
 
+def _settings_ai_api_key(db: Session, provider: str, submitted: str) -> str:
+    """The key to probe with: submitted, then stored, then the environment.
+
+    Mirrors what the provider would actually be called with after saving, so a
+    probe cannot succeed on a key the app would not then use.
+    """
+    from app.services.ai_provider_config import stored_api_key
+
+    secret = (submitted or "").strip() or (stored_api_key(db) or "")
+    if not secret and (settings.ai_provider or "").strip().lower() == provider:
+        secret = settings.ai_api_key or ""
+    return secret
+
+
+@router.post("/settings/ai/models")
+def settings_ai_models(
+    provider: str = Form(...),
+    api_key: str = Form(default=""),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Ask the chosen provider which model ids it serves.
+
+    A model id has to match the endpoint exactly, and a mismatch only shows up as
+    failed jobs, so offer the vendor's own list — falling back to the public
+    models.dev catalog when the vendor's listing needs a key we do not hold.
+    """
+    from app.services.ai_provider_config import list_models
+
+    _require_system_admin(user)
+    name = (provider or "").strip().lower()
+    try:
+        info = list_models(name, api_key=_settings_ai_api_key(db, name, api_key))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+    return JSONResponse({"ok": bool(info["models"]), **info})
+
+
 @router.post("/settings/ai/test")
 def settings_ai_test(
     provider: str = Form(...),
@@ -2240,7 +2278,7 @@ def settings_ai_test(
     import time as _time
 
     from app.services.ai_generation import AICredential, get_study_pack_provider
-    from app.services.ai_provider_config import endpoint_for, stored_api_key
+    from app.services.ai_provider_config import endpoint_for
 
     _require_system_admin(user)
     name = (provider or "").strip().lower()
@@ -2253,11 +2291,7 @@ def settings_ai_test(
             {"ok": False, "error": f"Unknown provider {name!r}: {exc}"[:400]}
         )
 
-    secret = api_key.strip() or (stored_api_key(db) or "")
-    if not secret:
-        env_provider = (settings.ai_provider or "").strip().lower()
-        if env_provider == name and settings.ai_api_key:
-            secret = settings.ai_api_key
+    secret = _settings_ai_api_key(db, name, api_key)
     if not secret:
         return JSONResponse(
             {

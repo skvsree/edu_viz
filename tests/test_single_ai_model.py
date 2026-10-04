@@ -445,3 +445,140 @@ def test_only_system_admins_reach_the_ai_provider_page():
     assert "Choose the provider" in body
     assert "Test this configuration" in body
     assert ai_provider_config.PROVIDER_OPTIONS
+
+
+# --- listing the models a provider serves (2026-10-03) ----------------------
+#
+# A model id must match the endpoint exactly, and the mismatch is invisible until
+# every call fails. Both the vendor's own listing and the public models.dev
+# catalog are reachable, so the settings page offers them instead of asking an
+# admin to recall an id.
+
+
+def test_model_ids_reads_both_listing_shapes():
+    from app.services.ai_provider_config import _model_ids
+
+    assert _model_ids({"data": [{"id": "a"}, {"id": "a"}, {"name": "b"}]}) == ["a", "b"]
+    assert _model_ids({"models": [{"id": "c"}, "d"]}) == ["c", "d"]
+    assert _model_ids({"data": []}) == []
+    assert _model_ids("nonsense") == []
+
+
+def test_models_endpoint_ignores_the_ai_endpoint_override(monkeypatch):
+    """A stale AI_ENDPOINT must not make this ask the wrong vendor's list."""
+    from app.core.config import settings
+    from app.services import ai_provider_config
+
+    monkeypatch.setattr(
+        settings, "ai_endpoint", "https://gateway.example/v1/chat/completions", raising=False
+    )
+    assert ai_provider_config.models_endpoint("opencode").endswith("opencode.ai/zen/go/v1/models")
+    assert "api.deepseek.com" in ai_provider_config.models_endpoint("deepseek")
+    assert "api.openai.com" in ai_provider_config.models_endpoint("openai")
+    assert "api.anthropic.com" in ai_provider_config.models_endpoint("claude")
+    assert ai_provider_config.models_endpoint("minimax") == ""
+
+
+def test_list_models_prefers_the_provider_own_listing(monkeypatch):
+    from app.services import ai_provider_config
+
+    monkeypatch.setattr(ai_provider_config, "_catalog_cache", (0.0, {}))
+    monkeypatch.setattr(
+        ai_provider_config,
+        "_get_json",
+        lambda url, headers, timeout: {"data": [{"id": "deepseek-v4.1-flash"}, {"id": "glm-5.3"}]},
+    )
+    info = ai_provider_config.list_models("opencode", api_key="sk-test")
+    assert info["source"] == "provider"
+    assert info["models"] == ["deepseek-v4.1-flash", "glm-5.3"]
+    assert info["endpoint"].endswith("/models")
+
+
+def test_list_models_falls_back_to_the_public_catalog(monkeypatch):
+    from app.services import ai_provider_config
+
+    monkeypatch.setattr(ai_provider_config, "_catalog_cache", (0.0, {}))
+    calls = []
+
+    def fake_get(url, headers, timeout):
+        calls.append(url)
+        if "models.dev" in url:
+            return {"openai": {"models": {"gpt-5.4": {"id": "gpt-5.4"}, "gpt-5.4-mini": {}}}}
+        raise OSError("HTTP Error 401: Unauthorized")
+
+    monkeypatch.setattr(ai_provider_config, "_get_json", fake_get)
+    info = ai_provider_config.list_models("openai")
+    assert info["source"] == "catalog"
+    assert sorted(info["models"]) == ["gpt-5.4", "gpt-5.4-mini"]
+    assert "401" in info["note"]
+
+    before = len(calls)
+    ai_provider_config.list_models("openai")
+    catalog_calls = [url for url in calls if "models.dev" in url]
+    assert len(catalog_calls) == 1, "the ~5 MB catalog must be cached, not re-downloaded"
+    assert len(calls) == before + 1, "only the provider listing may be retried"
+
+
+def test_list_models_reports_nothing_rather_than_raising(monkeypatch):
+    from app.services import ai_provider_config
+
+    monkeypatch.setattr(ai_provider_config, "_catalog_cache", (0.0, {}))
+    monkeypatch.setattr(
+        ai_provider_config, "_get_json", lambda url, headers, timeout: (_ for _ in ()).throw(OSError("down"))
+    )
+    info = ai_provider_config.list_models("claude")
+    assert info["source"] == "none" and info["models"] == [] and info["note"]
+
+    try:
+        ai_provider_config.list_models("gemini")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("an unknown provider must be rejected")
+
+
+def test_model_listing_route_is_admin_only_and_reports_the_source(monkeypatch):
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from fastapi import HTTPException
+
+    from app.api.routers import pages
+    from app.services import ai_provider_config
+    from app.services.access import ROLE_SYSTEM_ADMIN
+    from tests.test_dashboard_routes import make_request
+
+    try:
+        pages.settings_ai_models(
+            provider="opencode", api_key="", user=SimpleNamespace(role="teacher"), db=_RowSession()
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 403
+    else:
+        raise AssertionError("a non-admin reached the model listing")
+
+    monkeypatch.setattr(
+        ai_provider_config,
+        "list_models",
+        lambda provider, api_key=None, timeout=20: {
+            "provider": provider,
+            "models": ["deepseek-v4.1-flash"],
+            "count": 1,
+            "source": "provider",
+            "endpoint": "https://example/models",
+            "note": "",
+        },
+    )
+    response = pages.settings_ai_models(
+        provider="opencode",
+        api_key="",
+        user=SimpleNamespace(role=ROLE_SYSTEM_ADMIN, id=uuid4(), email="a@b.c"),
+        db=_RowSession(),
+    )
+    body = response.body.decode()
+    assert '"ok":true' in body and "deepseek-v4.1-flash" in body and '"source":"provider"' in body
+
+    admin = SimpleNamespace(role=ROLE_SYSTEM_ADMIN, id=uuid4(), email="a@b.c")
+    page = pages.settings_ai_page(make_request("/settings/ai"), user=admin, db=_RowSession())
+    html = page.body.decode()
+    assert "Fetch models" in html and 'id="ai-model-options"' in html
