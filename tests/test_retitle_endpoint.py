@@ -17,6 +17,7 @@ session-only).
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -124,6 +125,11 @@ class _FakeStorage:
             raise FileNotFoundError(key)
         return (self.texts[key].encode(), "application/pdf")
 
+    def download_to_file(self, *, key, dest, **kwargs):
+        data, _content_type = self.open_bytes(key)
+        dest.write(data)
+        return "application/pdf"
+
 
 def _build(monkeypatch, *, rows, folder_id=None):
     """rows: list of (filename, storage_key, source_text, current_deck_name)."""
@@ -169,7 +175,9 @@ def _build(monkeypatch, *, rows, folder_id=None):
     monkeypatch.setattr("app.api.routers.bulk_ai_upload.get_storage", lambda: _FakeStorage(texts))
     monkeypatch.setattr(
         "app.services.job_worker.extract_text_from_pdf",
-        lambda pdf_bytes: pdf_bytes.decode() if isinstance(pdf_bytes, bytes) else str(pdf_bytes),
+        lambda source: (
+            source.decode() if isinstance(source, bytes) else Path(source).read_text()
+        ),
     )
     # Anything that would wipe or rewrite cards must explode if reached.
 

@@ -33,6 +33,24 @@ class BaseStorage:
     def open_bytes(self, *, key: str) -> tuple[bytes, str | None]:
         raise NotImplementedError
 
+    def download_to_file(
+        self,
+        *,
+        key: str,
+        dest: BinaryIO,
+        chunk_size: int = _DEFAULT_STREAM_CHUNK,
+    ) -> str | None:
+        """Stream an object into an already-open binary file.
+
+        Unlike ``open_bytes`` this never holds the object in Python memory, so a
+        large PDF can be handed to a parser straight from disk. Returns the
+        content type when the backend knows it.
+        """
+        chunks, content_type, _size = self.open_stream(key=key, chunk_size=chunk_size)
+        for chunk in chunks:
+            dest.write(chunk)
+        return content_type
+
     def save_stream(
         self,
         *,

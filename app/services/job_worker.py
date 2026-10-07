@@ -5,12 +5,14 @@ Run as: python -m app.services.job_worker
 
 from __future__ import annotations
 
+import gc
 import io
 import logging
 import os
 import re
 import signal
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -86,9 +88,23 @@ _active_jobs: set[uuid.UUID] = set()
 _active_jobs_lock = threading.Lock()
 
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
+def extract_text_from_pdf(source) -> str:
+    """Extract a PDF's text.
+
+    ``source`` may be bytes (callers that already hold them), a path, or an open
+    binary stream. The bulk worker passes a file handle: it streams the stored
+    PDF to a temp file and hands that over, so a large chapter is parsed from
+    disk instead of being copied into a second full-size buffer in memory.
+    """
+    handle = None
     try:
-        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+        if isinstance(source, (bytes, bytearray)):
+            handle = io.BytesIO(source)
+        elif isinstance(source, (str, Path)):
+            handle = open(source, "rb")
+        else:
+            handle = source
+        reader = pypdf.PdfReader(handle)
         text_parts = []
         for page in reader.pages:
             text = page.extract_text()
@@ -97,6 +113,45 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         return "\n".join(text_parts)
     except Exception:
         return ""
+    finally:
+        # Only close what we opened ourselves.
+        if handle is not None and handle is not source:
+            try:
+                handle.close()
+            except Exception:
+                pass
+
+
+def materialise_upload_file(storage, key: str) -> Path:
+    """Stream a stored upload into a temp file and return its path.
+
+    The caller owns the file and must unlink it. Keeping the PDF on disk means
+    the parser reads it lazily instead of the process holding the whole blob -
+    a chapter costs roughly 3.6x its size in RSS when it is read into memory.
+    """
+    suffix = Path(key).suffix or ".pdf"
+    handle = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="eduviz-bulk-")
+    try:
+        storage.download_to_file(key=key, dest=handle)
+        return Path(handle.name)
+    finally:
+        handle.close()
+
+
+def release_memory() -> None:
+    """Give a finished file's memory back to the OS.
+
+    pypdf's object model plus the page text costs several times the PDF's size,
+    and glibc keeps those arenas after the objects are freed, so without this a
+    bulk run leaves the container at its high-water mark until it restarts.
+    """
+    gc.collect()
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 def _clean_title_line(line: str) -> str:
@@ -964,10 +1019,13 @@ def _inherited_unit_from_siblings(db: Session, bulk, file_record, storage) -> in
             if not storage_key:
                 continue
             try:
-                pdf_bytes, _content_type = storage.open_bytes(key=storage_key)
-            except (FileNotFoundError, StorageError):
+                sibling_path = materialise_upload_file(storage, storage_key)
+            except (FileNotFoundError, StorageError, OSError):
                 continue
-            block = extract_nav_block(extract_text_from_pdf(pdf_bytes))
+            try:
+                block = extract_nav_block(extract_text_from_pdf(sibling_path))
+            finally:
+                sibling_path.unlink(missing_ok=True)
             if block is not None and block.unit_no is not None:
                 print(
                     f"[job-worker] inherited unit {block.unit_no} from "
@@ -1133,18 +1191,22 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
         file_record.error_message = None
         db.commit()
 
-        upload_bytes = None
+        pdf_path = None
+        pdf_source = None
         if file_record.storage_key:
             try:
-                upload_bytes, _content_type = storage.open_bytes(key=file_record.storage_key)
-            except FileNotFoundError:
-                upload_bytes = None
-            except StorageError:
-                upload_bytes = None
-        if upload_bytes is None and file_record.content_text is not None:
-            upload_bytes = file_record.content_text.encode('utf-8')
+                # Stream the chapter to disk and parse it from there. Reading the
+                # whole PDF into bytes (and then handing pypdf a second in-memory
+                # copy) is what made one file cost several times its own size.
+                pdf_path = materialise_upload_file(storage, file_record.storage_key)
+                pdf_source = open(pdf_path, "rb")
+            except (FileNotFoundError, StorageError, OSError):
+                pdf_path = None
+                pdf_source = None
+        if pdf_source is None and file_record.content_text is not None:
+            pdf_source = io.BytesIO(file_record.content_text.encode('utf-8'))
 
-        if upload_bytes is None:
+        if pdf_source is None:
             file_record.status = BulkAIUploadFileStatus.FAILED.value
             file_record.error_message = 'Queued upload file missing'
             file_record.completed_at = datetime.utcnow()
@@ -1153,12 +1215,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             continue
 
         pdf_name = file_record.original_filename or bulk.filename or 'upload.pdf'
-        pdf_data = upload_bytes
         mode_executor = None  # assigned inside the try block
 
         try:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
-            text = extract_text_from_pdf(pdf_data)
+            text = extract_text_from_pdf(pdf_source)
+            # The parse is the biggest single allocation of the file: hand its
+            # memory back now instead of holding it for the whole generation.
+            release_memory()
 
             # Prefer the title the document prints about itself. Chapters whose
             # PDF declares no unit need the walk-back (Maths has no navigation
@@ -1602,7 +1666,18 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             # would leak 3 threads per failed file.
             if mode_executor is not None:
                 mode_executor.shutdown(wait=True)
+            # Release this file's temp PDF and its page buffer before the next
+            # one starts, so peak memory does not accumulate across a book.
+            if pdf_source is not None:
+                try:
+                    pdf_source.close()
+                except Exception:
+                    pass
+            if pdf_path is not None:
+                pdf_path.unlink(missing_ok=True)
+                pdf_path = None
         db.commit()
+        release_memory()
         if hard_fail_job:
             break
 

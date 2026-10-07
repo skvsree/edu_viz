@@ -215,6 +215,10 @@ def _patch_router_dependencies(monkeypatch):
         def open_bytes(self, key):
             return (b"fake-pdf-bytes", "application/pdf")
 
+        def download_to_file(self, *, key, dest, **kwargs):
+            dest.write(b"fake-pdf-bytes")
+            return "application/pdf"
+
     monkeypatch.setattr(
         "app.api.routers.bulk_ai_upload.get_storage",
         lambda: _FakeStorage(),

@@ -422,7 +422,10 @@ def test_resume_bulk_ai_upload_rejects_missing_storage():
             self.commits += 1
 
     db = ResumeDB()
-    storage = SimpleNamespace(open_bytes=lambda key: (_ for _ in ()).throw(FileNotFoundError(key)))
+    storage = SimpleNamespace(
+        open_bytes=lambda key: (_ for _ in ()).throw(FileNotFoundError(key)),
+        download_to_file=lambda **kwargs: (_ for _ in ()).throw(FileNotFoundError("missing")),
+    )
 
     with patch.object(bulk_ai_upload, "get_storage", return_value=storage):
         try:

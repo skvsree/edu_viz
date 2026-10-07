@@ -1198,7 +1198,7 @@ def retitle_bulk_ai_upload(
     ``Chapter N``. Files whose document declares no navigation block keep their
     current name (reported under ``skipped``).
     """
-    from app.services.job_worker import extract_text_from_pdf
+    from app.services.job_worker import extract_text_from_pdf, materialise_upload_file
     from app.services.textbook_nav import compose_deck_title, extract_nav_block
 
     bulk = db.get(BulkAIUpload, bulk_id)
@@ -1253,13 +1253,18 @@ def retitle_bulk_ai_upload(
         text = None
         if file_record.storage_key:
             try:
-                pdf_bytes, _content_type = storage.open_bytes(key=file_record.storage_key)
-                text = extract_text_from_pdf(pdf_bytes)
-            except (FileNotFoundError, StorageError) as exc:
+                # Stream to disk and parse from there, so a whole-book retitle
+                # does not hold every chapter's PDF in memory at once.
+                pdf_path = materialise_upload_file(storage, file_record.storage_key)
+            except (FileNotFoundError, StorageError, OSError) as exc:
                 skipped.append(
                     {"file": file_record.original_filename, "reason": f"source unreadable: {exc}"}
                 )
                 continue
+            try:
+                text = extract_text_from_pdf(pdf_path)
+            finally:
+                pdf_path.unlink(missing_ok=True)
 
         block = extract_nav_block(text)
         if block is not None and block.unit_no is not None:

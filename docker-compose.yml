@@ -11,6 +11,20 @@ services:
       # 500 MiB hard cap on a single bulk-AI upload (matches the upload
       # endpoint default). Lower this on memory-tight hosts.
       MAX_BULK_UPLOAD_MB: "500"
+      # Connection pool. The SQLAlchemy defaults (5 + 10) were too tight once the
+      # worker, the SSE streams and every request share the same pool.
+      DB_POOL_SIZE: "10"
+      DB_MAX_OVERFLOW: "20"
+      DB_POOL_TIMEOUT: "30"
+      DB_POOL_RECYCLE: "1800"
+      # Nothing may hold a connection forever - a runaway statement is what turns
+      # one bad job into "every write stalls". 0 disables the cap.
+      DB_STATEMENT_TIMEOUT_MS: "300000"
+    # A big chapter costs several times its own size while it is being parsed and
+    # generated, so cap the container and let it restart instead of taking the
+    # host down with it.
+    mem_limit: 1536m
+    restart: unless-stopped
     depends_on:
       - pgbouncer
       - seaweedfs
