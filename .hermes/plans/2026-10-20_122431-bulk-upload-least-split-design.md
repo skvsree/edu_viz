@@ -232,6 +232,19 @@ same 36 cards:
 | **`none`** | **12.2 s** | **2,868** | **80** |
 | `none` + `response_format=json_object` | 11.4 s | 2,782 | 77 |
 
+**Ask size with thinking ON and `max_tokens=32768` (chosen setting):**
+
+| ask | latency | cards | output | reasoning | tokens/card |
+|---|---|---|---|---|---|
+| 18 + 18 | 24.9 s | 36 | 6,356 | 3,702 | 177 |
+| **24 + 24** | **30.6 s** | **48** | **6,731** | **4,051** | **140** |
+| 30 + 30 | 56.0 s | 60 | 13,283 | 10,010 | 221 |
+
+24+24 is the sweet spot: best tokens per card, 30 s per call, and it yields 48 cards per pass instead
+of 36 — so a 7-chunk chapter needs the same 21 calls but returns up to 1,008 cards instead of 756.
+30+30 is where reasoning explodes (10,010 tokens) for worse efficiency, so 32,768 is the right
+ceiling; going higher only buys the ability to ask for more cards per call, not cheaper cards.
+
 Provider ceilings for `deepseek-flash` (api-docs, Oct 2026): context **1M**, `max_tokens` **1–384K
 (393,216)**, default **8K** non-thinking / **64K** thinking (128K at effort `max`), concurrency 2,500.
 Our app caps it well below that: `revision_notes_max_tokens=16384` on the DeepSeek path and
