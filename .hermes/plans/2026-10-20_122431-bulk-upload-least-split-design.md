@@ -202,7 +202,42 @@ Notes:
   retries — prod's 11-minute 0-card failures are therefore a *different* cause and still need the
   `/settings/ai` "Test this configuration" check.
 
-## 9. Open questions (need answers before code)
+## 9. Measured on QA, 2026-10-20 (replaces the estimates in §2/§4)
+
+QA now runs `deepseek` / `deepseek-flash` (stored DB override cleared, env decides),
+`revision_notes_max_tokens=16384`, 300 s provider timeout, 18+18 items, 1 round, 7 chunks
+for a 34,939-char chapter.
+
+| Measurement | Result |
+|---|---|
+| pass latency at 18+18, mt=16384 | **33 s**, 18 cards + 18 MCQs, `finish_reason=stop` |
+| output tokens per 18+18 pass | **7,878**, of which **5,216 are reasoning tokens** |
+| same at mt=8192 | **truncated** (`finish_reason=length`, 7,085 reasoning of 8,192) → invalid JSON → **0 cards** |
+| same at 12+12, mt=8192 | **also truncated** → 0 cards |
+| 12+12 at mt=16384 | 24 s, 4,819 out, **201 tokens/card** |
+| 18+18 at mt=16384 | 33 s, 7,878 out, **219 tokens/card** |
+| 6+6 at mt=16384 | 18 s, 3,261 out, **272 tokens/card** |
+| cache hits, current prompt order | **0 of 1,863** on three consecutive passes over the same chunk |
+| cache hits, text-first order | **1,536 of 1,782 (86%)**, latency 30 s → **15 s** |
+| end-to-end chapter (7 chunks × 3 modes) | **752 cards (375 + 377) in 14.1 min, 53 cards/min** |
+
+**Root cause of the failure wave is now proven:** at 8,192 output tokens the reasoning trace consumes
+the whole budget, the JSON is truncated mid-object, the parser sees a format error, and
+`MAX_AI_FORMAT_RETRIES=5` re-sends the identical prompt up to five times — each attempt burning up to
+8,192 output tokens for zero cards. That is exactly "a lot of tokens during retry".
+
+**Revised implications:**
+- Truncation, not chunk count, was the token sink. The provider switch (16,384 + 300 s) already
+  removes it; the code change is to detect `finish_reason=length` and **stop** rather than retry
+  (new T9).
+- Reasoning dominates cost: ~5,200 of ~7,900 output tokens per pass. Ask size barely changes it per
+  card (201–272 tokens/card across 6+6, 12+12, 18+18), so **T3 is not a big token lever** — pick
+  12+12 for the best per-card ratio and a shorter, safer call, or keep 18+18 for fewer calls.
+- **T7 is confirmed and cheap**: 86% cached input and half the latency, with zero effect on output.
+- **T4 (bigger chunks) is much less attractive**: input is ~19% of tokens and mostly cacheable, while a
+  bigger chunk raises timeout and truncation risk. Deprioritise it behind T7/T9.
+
+## 10. Open questions (need answers before code)
 
 1. **Mode merge (T6):** collapse the three lenses into one call (up to 3× fewer input tokens, but a
    longer completion that may 503), or keep three calls and take the wins from T3/T4/T7 only?
