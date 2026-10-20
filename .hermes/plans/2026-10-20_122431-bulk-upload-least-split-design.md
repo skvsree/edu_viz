@@ -221,6 +221,22 @@ for a 34,939-char chapter.
 | cache hits, text-first order | **1,536 of 1,782 (86%)**, latency 30 s → **15 s** |
 | end-to-end chapter (7 chunks × 3 modes) | **752 cards (375 + 377) in 14.1 min, 53 cards/min** |
 
+**Thinking mode is the dominant cost (provider-side, measured 2026-10-20).** DeepSeek defaults to
+`thinking: enabled` at effort `high`, so every pass spends 3.3–5.2k tokens reasoning. Same prompt,
+same 36 cards:
+
+| `reasoning_effort` | latency | output tokens | tokens/card |
+|---|---|---|---|
+| default (`high`) | 26.8 s | 5,467 | 152 |
+| `low` | 20.4 s | 3,949 | 110 |
+| **`none`** | **12.2 s** | **2,868** | **80** |
+| `none` + `response_format=json_object` | 11.4 s | 2,782 | 77 |
+
+Provider ceilings for `deepseek-flash` (api-docs, Oct 2026): context **1M**, `max_tokens` **1–384K
+(393,216)**, default **8K** non-thinking / **64K** thinking (128K at effort `max`), concurrency 2,500.
+Our app caps it well below that: `revision_notes_max_tokens=16384` on the DeepSeek path and
+`OPENCODE_MAX_TOKENS=8192` on the old opencode path — the 8,192 value is what truncated.
+
 **Root cause of the failure wave is now proven:** at 8,192 output tokens the reasoning trace consumes
 the whole budget, the JSON is truncated mid-object, the parser sees a format error, and
 `MAX_AI_FORMAT_RETRIES=5` re-sends the identical prompt up to five times — each attempt burning up to
