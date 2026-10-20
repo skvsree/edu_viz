@@ -21,11 +21,11 @@ fix `c3fe79f`).
 | chunk size | **6,000 chars** (+800 overlap → 5,200-char stride) | `job_worker.py:564` |
 | prompt text cap | **12,000 chars** — `sample = text[:12000]`: any chunk bigger than this is silently truncated | `ai_generation.py:294` |
 | extraction modes | 3 — `core`, `mechanisms`, `traps` | `job_worker.py:1339` |
-| rounds per chunk | 3 | `ai_pass_rounds` |
-| items per pass | 6 flashcards + 6 MCQs | `ai_pass_items` |
+| rounds per chunk | 3 by default, **1 on QA** (`AI_PASS_ROUNDS=1`) | `ai_pass_rounds` |
+| items per pass | 6 + 6 by default, **18 + 18 on QA** (`AI_PASS_ITEMS=18`) | `ai_pass_items` |
 | passes in flight | 1 (serial) | `ai_pass_concurrency` |
 | per-pass read timeout | 60 s | `opencode_request_timeout` |
-| completion budget | 4,096 tokens | `opencode_max_tokens` |
+| completion budget | 4,096 default, **8,192 on QA** (`OPENCODE_MAX_TOKENS`) | `opencode_max_tokens` |
 | timeout retries | 2 identical sends | `MAX_TIMEOUT_RETRIES` (`job_worker.py:77`) |
 | transient retries | 4 identical sends | `MAX_TRANSIENT_RETRIES` (`:74`) |
 | 529 / format retries | 5 identical sends | `:70`, `:73` |
@@ -34,6 +34,14 @@ fix `c3fe79f`).
 Per chunk: 3 modes × up to 3 rounds = 9 passes, each sending **the same chunk text** with a
 different lens and only the last 15 covered items for context. A ~36,000-character chapter is ~7
 chunks → up to **63 passes**, which matches the observed 321–586 cards per Class VII chapter.
+
+**QA is not running the defaults.** `.env` sets `AI_PASS_ITEMS=18` (so 18 + 18 = **36 items per
+call** — exactly the size the config comments say returns 503s), `AI_PASS_ROUNDS=1`, and
+`OPENCODE_MAX_TOKENS=8192` with a 60 s read timeout. That combination asks for ~2,000–3,000 output
+tokens per call inside a 60 s window, which is a plausible cause of the `Read timed out (read
+timeout=60)` and `Partial generation: timeout x29` in the logs. With 1 round and 18 items, passes per
+chunk are 3 (not 9) and the coverage ceiling is 54 flashcards + 54 MCQs per chunk — so QA trades
+rounds for pass size, at the riskier end of the provider's measured tolerance.
 
 The config comments also record the provider's measured limits, which explain the current shape:
 1 pass in flight never failed while 3 lost one in three and 6 lost one in two; 18 + 18 items in one
