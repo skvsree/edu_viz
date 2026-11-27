@@ -430,6 +430,8 @@ def _classify_pass_failure(exc: Exception) -> str:
             return f"HTTP {status}"
     if _is_retryable_529_error(exc):
         return "HTTP 529"
+    if "finish_reason=length" in message or "truncated" in lowered:
+        return "truncated response"
     if _is_retryable_ai_format_error(exc):
         return "unparseable response"
     return "other error"
@@ -561,7 +563,26 @@ def _resolve_ai_provider_and_credential(
     return credential.provider, credential
 
 
-def _split_text_for_ai_upload(text: str, *, max_chars: int = 6000, overlap_chars: int = 800) -> list[str]:
+def _split_text_for_ai_upload(
+    text: str,
+    *,
+    max_chars: int | None = None,
+    overlap_chars: int | None = None,
+) -> list[str]:
+    if max_chars is None:
+        try:
+            from app.core.config import settings
+
+            max_chars = max(1000, int(getattr(settings, "ai_chunk_chars", 6000) or 6000))
+        except Exception:  # noqa: BLE001 - never fail splitting over config
+            max_chars = 6000
+    if overlap_chars is None:
+        try:
+            from app.core.config import settings
+
+            overlap_chars = max(0, int(getattr(settings, "ai_chunk_overlap_chars", 800) or 800))
+        except Exception:  # noqa: BLE001 - never fail splitting over config
+            overlap_chars = 800
     source = (text or "").strip()
     if not source:
         return []
@@ -910,14 +931,26 @@ def _reset_file_attempt_counters(db: Session, file_record, bulk) -> None:
     """
     previous_flashcards = file_record.flashcards_generated or 0
     previous_mcqs = file_record.mcqs_generated or 0
-    if bulk is not None and (previous_flashcards or previous_mcqs):
+    previous_input = file_record.input_tokens or 0
+    previous_output = file_record.output_tokens or 0
+    previous_cache = file_record.cache_hit_tokens or 0
+    if bulk is not None and (
+        previous_flashcards or previous_mcqs
+        or previous_input or previous_output or previous_cache
+    ):
         bulk.flashcards_generated = max(
             0, (bulk.flashcards_generated or 0) - previous_flashcards
         )
         bulk.mcqs_generated = max(0, (bulk.mcqs_generated or 0) - previous_mcqs)
+        bulk.input_tokens = max(0, (bulk.input_tokens or 0) - previous_input)
+        bulk.output_tokens = max(0, (bulk.output_tokens or 0) - previous_output)
+        bulk.cache_hit_tokens = max(0, (bulk.cache_hit_tokens or 0) - previous_cache)
     file_record.flashcards_generated = 0
     file_record.mcqs_generated = 0
     file_record.duplicate_count = 0
+    file_record.input_tokens = 0
+    file_record.output_tokens = 0
+    file_record.cache_hit_tokens = 0
 
 
 def _reclaim_orphaned_processing_files(
@@ -1216,6 +1249,7 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
 
         pdf_name = file_record.original_filename or bulk.filename or 'upload.pdf'
         mode_executor = None  # assigned inside the try block
+        provider_client.reset_usage()
 
         try:
             print(f"[job-worker] start file job={job.id} file={pdf_name}", flush=True)
@@ -1335,16 +1369,21 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             if not chunks:
                 raise AIGenerationError('No usable study text found in uploaded file.')
 
+            from app.core.config import settings as _settings
+
             aggregate = merge_study_packs()
-            modes = ('core', 'mechanisms', 'traps')
+            if getattr(_settings, "ai_merge_modes", False):
+                modes = ('merged',)
+            else:
+                modes = ('core', 'mechanisms', 'traps')
             existing_flashcards: set[tuple[str, str]] = set()
             existing_mcqs: set[str] = set()
 
-            # Per-file mode executor: 3 workers so the 3 extraction
-            # modes within each chunk can run concurrently. Created
-            # per-file (not per-chunk) so the worker pool overhead is
-            # amortized across all chunks in a file. Closed at the
-            # end of the per-file block via the with-statement below.
+            # Per-file mode executor: one worker per extraction mode so the
+            # modes within each chunk can run concurrently. With ai_merge_modes
+            # there is a single 'merged' mode, so this is one worker. Created
+            # per-file (not per-chunk) to amortize the pool overhead. Closed
+            # via the with-statement at the end of the per-file block.
             mode_executor = ThreadPoolExecutor(
                 max_workers=len(modes),
                 thread_name_prefix=f"modes-{pdf_name[:20]}",
@@ -1355,7 +1394,6 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 f"chunks={len(chunks)} provider={credential.provider}",
                 flush=True,
             )
-            from app.core.config import settings as _settings
 
             pass_items = max(1, int(getattr(_settings, "ai_pass_items", 6) or 1))
             pass_rounds = max(1, int(getattr(_settings, "ai_pass_rounds", 3) or 1))
@@ -1574,6 +1612,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
             file_record.mcqs_generated = mcqs_generated
             file_record.duplicate_count = duplicate_count
             file_record.completed_at = datetime.utcnow()
+            usage = provider_client.snapshot_usage()
+            file_record.input_tokens = usage.prompt_tokens
+            file_record.output_tokens = usage.completion_tokens
+            file_record.cache_hit_tokens = usage.cache_hit_tokens
+            if bulk is not None:
+                bulk.input_tokens = (bulk.input_tokens or 0) + file_record.input_tokens
+                bulk.output_tokens = (bulk.output_tokens or 0) + file_record.output_tokens
+                bulk.cache_hit_tokens = (bulk.cache_hit_tokens or 0) + file_record.cache_hit_tokens
             if failed_pass_total:
                 file_record.error_message = (
                     f"Partial generation: {failed_pass_total} of {total_passes} "
@@ -1652,6 +1698,14 @@ def process_bulk_ai_upload(db: Session, job: Job) -> None:
                 file_record.status = BulkAIUploadFileStatus.FAILED.value
             file_record.error_message = str(e)[:500]
             file_record.completed_at = datetime.utcnow()
+            usage = provider_client.snapshot_usage()
+            file_record.input_tokens = usage.prompt_tokens
+            file_record.output_tokens = usage.completion_tokens
+            file_record.cache_hit_tokens = usage.cache_hit_tokens
+            if bulk is not None:
+                bulk.input_tokens = (bulk.input_tokens or 0) + file_record.input_tokens
+                bulk.output_tokens = (bulk.output_tokens or 0) + file_record.output_tokens
+                bulk.cache_hit_tokens = (bulk.cache_hit_tokens or 0) + file_record.cache_hit_tokens
             job.failed_items += 1
             if str(e) == AI_FORMAT_RETRY_FAILURE_MESSAGE:
                 hard_fail_job = True

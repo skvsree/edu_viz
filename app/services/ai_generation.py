@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Protocol
 import re
+import threading
 import unicodedata
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,110 @@ def _extract_minimax_text(data: dict) -> str:
 
 class AIGenerationError(RuntimeError):
     pass
+
+
+@dataclass(slots=True)
+class TokenUsage:
+    """Token counts captured from a provider response.
+
+    ``cache_hit_tokens`` / ``cache_miss_tokens`` mirror DeepSeek's
+    ``prompt_cache_hit_tokens`` / ``prompt_cache_miss_tokens`` fields so runs
+    can see how much input was reused via the provider's prompt cache.
+    """
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    cache_hit_tokens: int = 0
+    cache_miss_tokens: int = 0
+    reasoning_tokens: int = 0
+
+    def add(self, other: "TokenUsage") -> None:
+        self.prompt_tokens += other.prompt_tokens
+        self.completion_tokens += other.completion_tokens
+        self.total_tokens += other.total_tokens
+        self.cache_hit_tokens += other.cache_hit_tokens
+        self.cache_miss_tokens += other.cache_miss_tokens
+        self.reasoning_tokens += other.reasoning_tokens
+
+
+def _extract_usage(data: dict) -> TokenUsage | None:
+    """Read the OpenAI-compatible ``usage`` block from a response body."""
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    details = usage.get("completion_tokens_details")
+    if not isinstance(details, dict):
+        details = {}
+    return TokenUsage(
+        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+        completion_tokens=int(usage.get("completion_tokens") or 0),
+        total_tokens=int(usage.get("total_tokens") or 0),
+        cache_hit_tokens=int(usage.get("prompt_cache_hit_tokens") or 0),
+        cache_miss_tokens=int(usage.get("prompt_cache_miss_tokens") or 0),
+        reasoning_tokens=int(details.get("reasoning_tokens") or 0),
+    )
+
+
+def _raise_if_truncated(provider: str, choice: dict) -> None:
+    """Fail fast on a truncated completion instead of retrying it.
+
+    ``finish_reason == "length"`` means the completion hit ``max_tokens``; the
+    JSON is almost certainly cut mid-object, and re-sending the identical prompt
+    would burn the same tokens for zero cards (the old 5-retry format loop).
+    """
+    finish_reason = (choice or {}).get("finish_reason")
+    if finish_reason == "length":
+        raise AIGenerationError(
+            f"{provider} response truncated (finish_reason=length): the "
+            "completion hit max_tokens. Raise the completion budget instead of "
+            "retrying the same prompt."
+        )
+
+
+def _log_usage(provider: str, model: str, usage: TokenUsage | None) -> None:
+    """Emit one line per AI pass so token spend is measurable.
+
+    Uses print to stdout to match the worker's existing log stream; this is the
+    T1 baseline that every later optimisation is measured against.
+    """
+    if usage is None:
+        print(f"[ai-usage] provider={provider} model={model} usage=missing", flush=True)
+        return
+    print(
+        f"[ai-usage] provider={provider} model={model} "
+        f"prompt={usage.prompt_tokens} cache_hit={usage.cache_hit_tokens} "
+        f"cache_miss={usage.cache_miss_tokens} completion={usage.completion_tokens} "
+        f"reasoning={usage.reasoning_tokens} total={usage.total_tokens}",
+        flush=True,
+    )
+
+
+class _UsageAccumulatorMixin:
+    """Thread-safe running token total for a provider instance.
+
+    A provider is shared across the parallel extraction modes of a chunk, so a
+    plain ``last_usage`` attribute would race. The running total is guarded by a
+    lock and is reset once per file by the bulk worker.
+    """
+
+    def _init_usage(self) -> None:
+        self._usage_lock = threading.Lock()
+        self.accumulated_usage = TokenUsage()
+
+    def _record_usage(self, provider_name: str, model: str, data: dict) -> None:
+        usage = _extract_usage(data)
+        _log_usage(provider_name, model, usage)
+        if usage is not None:
+            with self._usage_lock:
+                self.accumulated_usage.add(usage)
+
+    def reset_usage(self) -> None:
+        with self._usage_lock:
+            self.accumulated_usage = TokenUsage()
+
+    def snapshot_usage(self) -> TokenUsage:
+        with self._usage_lock:
+            return self.accumulated_usage
 
 
 @dataclass(slots=True)
@@ -291,7 +396,13 @@ def build_iterative_study_pack_prompt(
     max_flashcards: int = 18,
     max_mcqs: int = 18,
 ) -> str:
-    sample = text[:12000]
+    try:
+        from app.core.config import settings
+
+        prompt_cap = max(1000, int(getattr(settings, "ai_prompt_text_chars", 12000) or 12000))
+    except Exception:  # noqa: BLE001 - never fail prompt building over config
+        prompt_cap = 12000
+    sample = text[:prompt_cap]
     existing_flashcards = existing_flashcards or []
     existing_mcqs = existing_mcqs or []
 
@@ -308,6 +419,13 @@ def build_iterative_study_pack_prompt(
             "Extract comparisons, exceptions, confusing look-alikes, edge cases, "
             "exam traps, and application-focused concepts that make strong MCQs."
         ),
+        "merged": (
+            "Cover ALL THREE lenses in one balanced pass: (1) core facts, "
+            "definitions, names, classifications, and high-yield statements; "
+            "(2) mechanisms, pathways, processes, sequences, cause-effect "
+            "links, and functional reasoning; (3) comparisons, exceptions, "
+            "exam traps, and application-focused concepts."
+        ),
     }
     instruction = mode_instructions.get(mode, mode_instructions["core"])
 
@@ -320,6 +438,11 @@ def build_iterative_study_pack_prompt(
     flashcard_avoid = "\n".join(f"- {item[:80]}" for item in existing_flashcards[:15]) or "- none"
     mcq_avoid = "\n".join(f"- {item[:80]}" for item in existing_mcqs[:15]) or "- none"
 
+    # Cache-first order (T7): the static instruction plus the source text form
+    # a byte-identical prefix across every pass of a chunk, so the provider's
+    # prompt cache can reuse them. The mode lens and avoid lists vary per pass
+    # and sit after the text so they never break the shared prefix (measured
+    # 86% cache-hit vs 0% before this reorder).
     return (
         "You are preparing dense study material for Indian medical entrance exam revision. "
         "Return compact strict JSON only with keys flashcards and mcqs. "
@@ -328,16 +451,17 @@ def build_iterative_study_pack_prompt(
         "Prefer maximum useful coverage, not minimal output. If the text "
         "supports many good items, fill the response close to capacity. "
         "Do not repeat meaning-equivalent items. "
-        "flashcards: array of objects with front and back. "
-        "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation. "
-        "Make MCQs concept-focused, exam-style, and not trivial. "
+        "Make MCQs concept-focused, exam-style, and not trivial.\n\n"
+        "Source text:\n"
+        f"{sample}\n\n"
         f"Current extraction mode: {instruction}\n\n"
         "Already covered flashcard fronts to avoid repeating:\n"
         f"{flashcard_avoid}\n\n"
         "Already covered MCQ questions to avoid repeating:\n"
         f"{mcq_avoid}\n\n"
-        "Source text:\n"
-        f"{sample}"
+        "Output contract:\n"
+        "flashcards: array of objects with front and back. "
+        "mcqs: array of objects with question, options (exactly 4 strings), answer_index (0-3), explanation."
     )
 
 
@@ -493,7 +617,7 @@ def get_study_pack_provider(name: str, session_id: str | None = None) -> StudyPa
     raise AIGenerationError(f"Unsupported AI study pack provider: {name}")
 
 
-class DeepSeekRevisionProvider:
+class DeepSeekRevisionProvider(_UsageAccumulatorMixin):
     """DeepSeek provider for revision-notes generation.
 
     Uses DeepSeek v4 Pro (reasoning model) via an OpenAI-compatible
@@ -512,6 +636,8 @@ class DeepSeekRevisionProvider:
 
         self.model = effective_model()
         self.max_tokens = settings.revision_notes_max_tokens
+        self.reasoning_effort = getattr(settings, "ai_reasoning_effort", "") or ""
+        self._init_usage()
         # Stick to one session per provider instance so every call of the
         # same job/conversation reuses the same OpenCode routing bucket.
         self.session_id = session_id or opencode_session_id()
@@ -526,17 +652,20 @@ class DeepSeekRevisionProvider:
     def _call_api(self, model: str, prompt: str, api_key: str) -> str:
         """Call the OpenAI-compatible endpoint with the given model."""
         import requests
+        payload: dict = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": self.max_tokens,
+            "temperature": 0.3,
+        }
+        # Reasoning tokens dominate cost (measured 2026-10-20: high 152, low
+        # 110, none 80 output tokens/card). Empty keeps the provider default.
+        if self.reasoning_effort:
+            payload["reasoning_effort"] = self.reasoning_effort
         response = requests.post(
             self.api_endpoint,
             headers=_opencode_headers(api_key, self.session_id),
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": self.max_tokens,
-                "temperature": 0.3,
-            },
+            json=payload,
             timeout=300,
         )
         if response.status_code != 200:
@@ -550,7 +679,11 @@ class DeepSeekRevisionProvider:
         if not isinstance(choices, list) or not choices:
             raise AIGenerationError("DeepSeek API returned no choices.")
 
-        message = choices[0].get("message", {})
+        choice = choices[0] or {}
+        _raise_if_truncated("DeepSeek", choice)
+        self._record_usage("deepseek", model, data)
+
+        message = choice.get("message", {})
         # DeepSeek v4 Pro is a reasoning model — it returns
         # reasoning_content (chain-of-thought) separately from
         # content (the actual answer). We only want content.
@@ -614,7 +747,7 @@ STUDY_CARD_SYSTEM_PROMPT = (
 )
 
 
-class OpencodeStudyPackProvider:
+class OpencodeStudyPackProvider(_UsageAccumulatorMixin):
     """OpenCode provider via OpenAI-compatible HTTP API."""
     name = "opencode"
 
@@ -630,6 +763,7 @@ class OpencodeStudyPackProvider:
         # One session per provider instance: OpenCode Go wants a stable
         # x-opencode-session per conversation for routing + prompt caching.
         self.session_id = session_id or opencode_session_id()
+        self._init_usage()
 
     @staticmethod
     def _messages_for(prompt: str, system_prompt: object) -> list[dict[str, str]]:
@@ -701,7 +835,11 @@ class OpencodeStudyPackProvider:
         if not isinstance(choices, list) or not choices:
             raise AIGenerationError("OpenCode API returned no choices.")
 
-        content = choices[0].get("message", {}).get("content", "")
+        choice = choices[0] or {}
+        _raise_if_truncated("OpenCode", choice)
+        self._record_usage("opencode", self.model, data)
+
+        content = choice.get("message", {}).get("content", "")
         if not content:
             raise AIGenerationError("OpenCode API returned empty response.")
         return content

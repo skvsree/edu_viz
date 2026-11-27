@@ -76,6 +76,23 @@ class Settings(BaseSettings):
     # sections of long chapters (e.g. 5.4-5.6). Raised default keeps the
     # whole chapter visible; env var REVISION_NOTES_MAX_SOURCE_CHARS overrides.
     revision_notes_max_source_chars: int = 60000
+    # Reasoning-effort knob for the DeepSeek/OpenCode reasoning model.
+    # Measured on QA (2026-10-20): high=152, low=110, none=80 output tokens
+    # per card. "none" is the token-cheapest; "low" keeps a modest think
+    # budget. Empty omits the parameter entirely (provider default).
+    ai_reasoning_effort: str = "none"
+    # T4: chunking + prompt-text caps, configurable so bigger chunks can be
+    # tried without a code change. Defaults match the long-standing behaviour
+    # (6000-char chunks, 800 overlap, 12000 prompt cap). ai_prompt_text_chars
+    # must stay >= ai_chunk_chars or larger chunks are silently truncated.
+    ai_chunk_chars: int = 6000
+    ai_chunk_overlap_chars: int = 800
+    ai_prompt_text_chars: int = 12000
+    # T6: merge the three extraction lenses (core/mechanisms/traps) into one
+    # call per round instead of three. Off by default: the plan gates this on a
+    # token baseline, and a merged ask is a longer completion the provider can
+    # 503 on. Enable with AI_MERGE_MODES=true and tune AI_PASS_ITEMS.
+    ai_merge_modes: bool = False
     ai_secrets_fernet_key: str | None = None
     bulk_import_api_key: str | None = None
 

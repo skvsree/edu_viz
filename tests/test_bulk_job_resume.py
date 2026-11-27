@@ -98,36 +98,63 @@ def test_resumed_attempt_resets_the_file_and_bulk_counters():
         flashcards_generated=102,
         mcqs_generated=101,
         duplicate_count=7,
+        input_tokens=1000,
+        output_tokens=2000,
+        cache_hit_tokens=500,
     )
-    bulk = SimpleNamespace(flashcards_generated=102, mcqs_generated=101)
+    bulk = SimpleNamespace(
+        flashcards_generated=102,
+        mcqs_generated=101,
+        input_tokens=1000,
+        output_tokens=2000,
+        cache_hit_tokens=500,
+    )
 
     job_worker._reset_file_attempt_counters(_CounterSession(), file_record, bulk)
 
     assert file_record.flashcards_generated == 0
     assert file_record.mcqs_generated == 0
     assert file_record.duplicate_count == 0
+    assert file_record.input_tokens == 0
+    assert file_record.output_tokens == 0
+    assert file_record.cache_hit_tokens == 0
     assert bulk.flashcards_generated == 0
     assert bulk.mcqs_generated == 0
+    assert bulk.input_tokens == 0
+    assert bulk.output_tokens == 0
+    assert bulk.cache_hit_tokens == 0
 
 
 def test_counter_reset_never_goes_negative():
     file_record = SimpleNamespace(
-        flashcards_generated=5, mcqs_generated=4, duplicate_count=1
+        flashcards_generated=5, mcqs_generated=4, duplicate_count=1,
+        input_tokens=50, output_tokens=40, cache_hit_tokens=10,
     )
-    bulk = SimpleNamespace(flashcards_generated=3, mcqs_generated=2)
+    bulk = SimpleNamespace(
+        flashcards_generated=3, mcqs_generated=2,
+        input_tokens=30, output_tokens=20, cache_hit_tokens=5,
+    )
 
     job_worker._reset_file_attempt_counters(_CounterSession(), file_record, bulk)
 
     assert bulk.flashcards_generated == 0
     assert bulk.mcqs_generated == 0
+    assert bulk.input_tokens == 0
+    assert bulk.output_tokens == 0
+    assert bulk.cache_hit_tokens == 0
 
 
 def test_counter_reset_is_a_noop_for_a_first_attempt():
     file_record = SimpleNamespace(
-        flashcards_generated=0, mcqs_generated=0, duplicate_count=0
+        flashcards_generated=0, mcqs_generated=0, duplicate_count=0,
+        input_tokens=0, output_tokens=0, cache_hit_tokens=0,
     )
-    bulk = SimpleNamespace(flashcards_generated=0, mcqs_generated=0)
+    bulk = SimpleNamespace(
+        flashcards_generated=0, mcqs_generated=0,
+        input_tokens=0, output_tokens=0, cache_hit_tokens=0,
+    )
 
     job_worker._reset_file_attempt_counters(_CounterSession(), file_record, bulk)
 
     assert (file_record.flashcards_generated, bulk.flashcards_generated) == (0, 0)
+    assert (file_record.input_tokens, bulk.input_tokens) == (0, 0)

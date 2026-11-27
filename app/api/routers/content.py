@@ -73,9 +73,23 @@ logger = logging.getLogger(__name__)
 def _split_text_for_ai_upload(
     text: str,
     *,
-    max_chars: int = 6000,
-    overlap_chars: int = 800,
+    max_chars: int | None = None,
+    overlap_chars: int | None = None,
 ) -> list[str]:
+    if max_chars is None:
+        try:
+            from app.core.config import settings
+
+            max_chars = max(1000, int(getattr(settings, "ai_chunk_chars", 6000) or 6000))
+        except Exception:  # noqa: BLE001
+            max_chars = 6000
+    if overlap_chars is None:
+        try:
+            from app.core.config import settings
+
+            overlap_chars = max(0, int(getattr(settings, "ai_chunk_overlap_chars", 800) or 800))
+        except Exception:  # noqa: BLE001
+            overlap_chars = 800
     source = (text or "").strip()
     if not source:
         return []
@@ -199,7 +213,11 @@ def _generate_iterative_ai_upload_pack(text: str, *, credential) -> tuple:
         raise AIGenerationError("No usable study text found in uploaded file.")
 
     aggregate = merge_study_packs()
-    modes = ("core", "mechanisms", "traps")
+    from app.core.config import settings
+    if getattr(settings, "ai_merge_modes", False):
+        modes = ("merged",)
+    else:
+        modes = ("core", "mechanisms", "traps")
 
     for chunk in chunks:
         chunk_pack = merge_study_packs()
@@ -300,7 +318,11 @@ def _run_ai_upload_generation(*, generation_id: str, deck_id: str, user_id: str,
 
         provider_client = get_study_pack_provider(credential.provider)
         aggregate = merge_study_packs()
-        modes = ("core", "mechanisms", "traps")
+        from app.core.config import settings
+        if getattr(settings, "ai_merge_modes", False):
+            modes = ("merged",)
+        else:
+            modes = ("core", "mechanisms", "traps")
 
         existing_flashcards = {
             (normalize_generated_text(card.front or ""), normalize_generated_text(card.back or ""))

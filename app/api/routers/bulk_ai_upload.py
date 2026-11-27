@@ -741,6 +741,9 @@ def get_bulk_ai_upload(
         "processed_files": bulk.processed_files,
         "flashcards_generated": bulk.flashcards_generated,
         "mcqs_generated": bulk.mcqs_generated,
+        "input_tokens": bulk.input_tokens,
+        "output_tokens": bulk.output_tokens,
+        "cache_hit_tokens": bulk.cache_hit_tokens,
         "skipped_files": bulk.skipped_files,
         "failed_files": bulk.failed_files,
         "error_message": bulk.error_message,
@@ -757,6 +760,9 @@ def get_bulk_ai_upload(
                 "status": f.status,
                 "flashcards_generated": f.flashcards_generated,
                 "mcqs_generated": f.mcqs_generated,
+                "input_tokens": f.input_tokens,
+                "output_tokens": f.output_tokens,
+                "cache_hit_tokens": f.cache_hit_tokens,
                 "duplicate_count": f.duplicate_count,
                 "error_message": f.error_message,
             }
@@ -1124,6 +1130,9 @@ def resume_bulk_ai_upload(
         bulk.skipped_files = 0
         bulk.flashcards_generated = 0
         bulk.mcqs_generated = 0
+        bulk.input_tokens = 0
+        bulk.output_tokens = 0
+        bulk.cache_hit_tokens = 0
         bulk.completed_at = None
         total_items = len(target_file_records)
     db.commit()
