@@ -62,6 +62,12 @@
                 <div class="jobs-bulk-card__title-main">
                   <div class="jobs-bulk-card__filename-row">
                     <div class="jobs-bulk-card__filename">{{ bulk.filename or "Uploaded file" }}</div>
+                    {% if bulk.deck_id %}
+                      {% set bulk_deck = decks.get(bulk.deck_id) %}
+                      {% if bulk_deck %}
+                        <a class="jobs-inline-link jobs-inline-link--subtle" href="/decks/{{ bulk.deck_id }}">{{ bulk_deck.name }}</a>
+                      {% endif %}
+                    {% endif %}
                     {% if job_count and job_count > 1 %}
                       <span
                         class="jobs-bulk-card__retries-badge"
