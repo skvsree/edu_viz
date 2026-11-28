@@ -1178,7 +1178,7 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
     # ---------- Contents (hairline-framed, no fill) ----------
     story.append(P.Paragraph("What's inside", P.H3))
     contents_lines = [
-        f"<b>{i + 1}.</b> {t.title}" for i, t in enumerate(doc.topics)
+        f"<b>{i + 1}.</b> {P.sanitise_text(t.title)}" for i, t in enumerate(doc.topics)
     ]
     contents_box = P.Table(
         [[P.Paragraph(line, P.BULLET)] for line in contents_lines],
@@ -1276,7 +1276,7 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
                     if len(p) >= 80 and len(p) <= 280
                 ]
             if not flat_lines and topic.sections:
-                flat_lines = [f"{h}." for h, _ in topic.sections]
+                flat_lines = [f"{P.sanitise_text(h)}." for h, _ in topic.sections]
             if flat_lines:
                 short = [ln for ln in flat_lines if len(ln) <= 220]
                 long = [ln for ln in flat_lines if len(ln) > 220]
@@ -1297,7 +1297,7 @@ def render_revision_pdf(doc: RevisionDoc, deck_name: str) -> tuple[bytes, int]:
     # alone on page N+1.
     if doc.topics:
         from reportlab.platypus import KeepTogether
-        recall_lines = [f"• {t.title}" for t in doc.topics]
+        recall_lines = [f"• {P.sanitise_text(t.title)}" for t in doc.topics]
         recall_box = P.Table(
             [[P.Paragraph(line, P.CALLOUT)] for line in recall_lines],
             colWidths=[P.BODY_WIDTH],

@@ -10,6 +10,8 @@ and rules, only SOFT_RULE for hairlines and borders, no fills.
 """
 from __future__ import annotations
 
+import unicodedata
+
 from reportlab.lib.colors import HexColor
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
@@ -169,10 +171,10 @@ def topic_banner(title: str, subtitle: str | None = None) -> list:
     """
     out = [
         Paragraph("TOPIC", SECT_TAG),
-        Paragraph(title, H2),
+        Paragraph(sanitise_text(title), H2),
     ]
     if subtitle:
-        out.append(Paragraph(subtitle, SUB_STYLE))
+        out.append(Paragraph(sanitise_text(subtitle), SUB_STYLE))
     out.append(
         HRFlowable(
             width="100%",
@@ -312,7 +314,7 @@ _EMOJI_PREFIXES = {
 
 
 def sanitise_text(value: str) -> str:
-    """Drop problematic emoji glyphs and substitute text labels."""
+    """Drop problematic glyphs, strip diacritics, substitute text labels."""
     if not value:
         return ""
     out = value
@@ -320,4 +322,9 @@ def sanitise_text(value: str) -> str:
         out = out.replace(emo, repl)
     # Drop remaining high-plane unicode (anything > 0x2740) so missing
     # glyphs cannot render as missing-glyph boxes in print.
-    return "".join(ch if ord(ch) < 0x2740 else "" for ch in out)
+    out = "".join(ch if ord(ch) < 0x2740 else "" for ch in out)
+    # Strip combining diacritics (ā -> a, ṅ -> n, é -> e) so the PDF never
+    # depends on a glyph the embedded font might be missing.
+    out = unicodedata.normalize("NFKD", out)
+    out = "".join(ch for ch in out if not unicodedata.combining(ch))
+    return out
