@@ -649,13 +649,26 @@ class DeepSeekRevisionProvider(_UsageAccumulatorMixin):
         raw = self.generate_text(prompt, credential)
         return _parse_study_pack_json(raw)
 
-    def _call_api(self, model: str, prompt: str, api_key: str) -> str:
+    def _call_api(
+        self,
+        model: str,
+        prompt: str,
+        api_key: str,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        timeout: int | None = None,
+    ) -> str:
         """Call the OpenAI-compatible endpoint with the given model."""
         import requests
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": str(system_prompt)})
+        messages.append({"role": "user", "content": prompt})
         payload: dict = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": self.max_tokens,
+            "messages": messages,
+            "max_tokens": max_tokens or self.max_tokens,
             "temperature": 0.3,
         }
         # Reasoning tokens dominate cost (measured 2026-10-20: high 152, low
@@ -666,7 +679,7 @@ class DeepSeekRevisionProvider(_UsageAccumulatorMixin):
             self.api_endpoint,
             headers=_opencode_headers(api_key, self.session_id),
             json=payload,
-            timeout=300,
+            timeout=timeout or 300,
         )
         if response.status_code != 200:
             body = response.text[:500]
@@ -692,7 +705,15 @@ class DeepSeekRevisionProvider(_UsageAccumulatorMixin):
             raise AIGenerationError("DeepSeek API returned empty response.")
         return content
 
-    def generate_text(self, prompt: str, credential: AICredential | None = None) -> str:
+    def generate_text(
+        self,
+        prompt: str,
+        credential: AICredential | None = None,
+        *,
+        system_prompt: str | None = None,
+        max_tokens: int | None = None,
+        timeout: int | None = None,
+    ) -> str:
         if not credential or not credential.secret:
             raise AIGenerationError(
                 "DeepSeek credential (API key) is required. "
@@ -704,7 +725,14 @@ class DeepSeekRevisionProvider(_UsageAccumulatorMixin):
         # Try primary model. If it's unavailable (503), the
         # higher-level code in generate_ai_topics() will catch
         # the exception and fall back to the heuristic path.
-        return self._call_api(self.model, prompt, api_key)
+        return self._call_api(
+            self.model,
+            prompt,
+            api_key,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            timeout=timeout,
+        )
 
 
 def _opencode_timeout() -> int:
